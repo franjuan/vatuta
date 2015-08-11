@@ -71,7 +71,7 @@
 
 	<reporting>
 		<plugins>
-			<!-- Analysis and Docs -->
+			<!-- Analysis -->
 			<plugin>
 				<groupId>gr.abiss.mvn.plugins</groupId>
 				<artifactId>maven-jstools-plugin</artifactId>
@@ -85,10 +85,22 @@
 					<reportSet>
 						<reports>
 							<report>jslint</report>
-							<report>jsdoc</report>
 						</reports>
 					</reportSet>
 				</reportSets>
+			</plugin>
+			<!-- Docs -->
+			<plugin>
+				<groupId>com.phasebash.jsdoc</groupId>
+				<artifactId>jsdoc3-maven-plugin</artifactId>
+				<version>1.1.0</version>
+				<configuration>
+					<recursive>true</recursive>
+					<directoryRoots>
+						<directoryRoot>${basedir}/src/main/webapp</directoryRoot>
+						<directoryRoot>${basedir}/src/main/javascript</directoryRoot>
+					</directoryRoots>
+				</configuration>
 			</plugin>
 		</plugins>
 	</reporting>
