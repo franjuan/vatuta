@@ -7,8 +7,12 @@
 <script src="vatuta.js"></script>
 </head>
 <body>
-<script type="text/javascript">
-var task = new Task("Tarea");
-</script>
+	<canvas id="canvas" width="500" height="300"></canvas>
+	<script type="text/javascript">
+		var stage = new createjs.Stage("canvas");
+		var task = new Task("tarea", 5);
+		stage.addChild(task.getContainer());
+		stage.update();
+	</script>
 </body>
 </html>
