@@ -10,9 +10,26 @@
 	<canvas id="canvas" width="500" height="300"></canvas>
 	<script type="text/javascript">
 		var stage = new createjs.Stage("canvas");
-		var task = new Task("tarea", 5);
-		stage.addChild(task.getContainer());
+		var task1 = new Task("tarea", 5);
+		stage.addChild(task1.getContainer());
+		
+		var task2 = new Task("siguiente", 15);
+		stage.addChild(task2.getContainer());
+		task2.getContainer().y=70;
+		task2.getContainer().x=100;
+		
+		var c1 = task1.getContainer();
+		var c2 = task2.getContainer();
+		var line = new createjs.Shape();
+		line.graphics.setStrokeStyle(2);
+		line.graphics.beginStroke("Black");
+		line.graphics.moveTo(c1.x + c1.getBounds().width, c1.y + c1.getBounds().height);
+		line.graphics.lineTo(c2.x, c2.y + c2.getBounds().height/2);
+		line.graphics.endStroke();
+		stage.addChild(line);
+		
 		stage.update();
+
 	</script>
 </body>
 </html>
