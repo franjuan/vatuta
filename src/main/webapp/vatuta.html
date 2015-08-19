@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <title>Vatuta</title>
 <script src="https://code.createjs.com/easeljs-0.8.1.min.js"></script>
+<script src="https://code.jquery.com/jquery-2.1.4.js"></script>
+
 <script type="text/javascript" src="project.js"></script>
 <script src="vatuta.js"></script>
 </head>
@@ -30,9 +32,11 @@
 		stage.addChild(line);
 		
 		stage.update();
-		
-		alert(project);
 
+		$.getJSON('project.json', function(data) {
+			data.streams[0].tasks[0].__proto__=Task.prototype;
+		    alert(data.streams[0].tasks[0].getDescription());
+		});
 	</script>
 </body>
 </html>
