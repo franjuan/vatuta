@@ -53,8 +53,69 @@ Task.prototype.getContainer = function() {
 		text.y = 50 / 2;
 		text.m
 		this.container.addChild(text);
-		
+
 		this.container.setBounds(0, 0, 10 * this.getDuration(), 50);
 	}
 	return this.container;
+}
+
+Task.prepareAfterCreating = function(task) {
+	var oTask = new Task(task.description, task.duration);
+
+	return oTask;
+}
+
+/**
+ * Project
+ * 
+ * @constructor
+ * @param {string}
+ *            Name string of project, no processing over it.
+ * @return A new project type
+ */
+function Project(name) {
+	this.name = name;
+};
+
+Project.loadProjectFromJSON = function(url) {
+	var project;
+	$.getJSON(url, function(data) {
+		project=data;
+	});
+	
+	return Project.prepareAfterCreating(project);
+}
+
+Project.prepareAfterCreating = function(project) {
+	var oProject = new Project(project.name);
+	oProject.streams = [];
+	
+	project.streams.forEach(function(stream) {
+		oProject.streams.push(Stream.prepareAfterCreating(stream));
+	});
+
+	return oProject;
+}
+
+/**
+ * Stream
+ * 
+ * @constructor
+ * @param {string}
+ *            Name string of stream, no processing over it.
+ * @return A new project type
+ */
+function Stream(name) {
+	this.name = name;
+}
+
+Stream.prepareAfterCreating = function(stream) {
+	var oStream = new Stream(stream.name)
+	oStream.tasks = [];
+	
+	stream.tasks.forEach(function(task) {
+		oStream.tasks.push(Task.prepareAfterCreating(task));
+	});
+	
+	return oStream;
 }

@@ -30,13 +30,10 @@
 		line.graphics.lineTo(c2.x, c2.y + c2.getBounds().height/2);
 		line.graphics.endStroke();
 		stage.addChild(line);
-		
-		stage.update();
 
-		$.getJSON('project.json', function(data) {
-			data.streams[0].tasks[0].__proto__=Task.prototype;
-		    alert(data.streams[0].tasks[0].getDescription());
-		});
+		var project = Project.loadProjectFromJSON('project.json');
+		alert(project.getPrototypeOf());
+		stage.update();
 	</script>
 </body>
 </html>
