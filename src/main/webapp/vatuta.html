@@ -1,39 +1,55 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Vatuta</title>
-<script src="https://code.createjs.com/easeljs-0.8.1.min.js"></script>
-<script src="https://code.jquery.com/jquery-2.1.4.js"></script>
-
-<script type="text/javascript" src="project.js"></script>
-<script src="vatuta.js"></script>
+	<meta charset="UTF-8">
+	<title>Vatuta</title>
+	<script src="https://code.createjs.com/easeljs-0.8.1.min.js"></script>
+	<script src="https://code.jquery.com/jquery-2.1.4.js"></script>
+	<script src="https://ajax.googleapis.com/ajax/libs/dojo/1.10.4/dojo/dojo.js"
+            data-dojo-config="async: true"></script>
+	
+	<script type="text/javascript" src="project.js"></script>
+	<script src="vatuta.js"></script>
 </head>
 <body>
 	<canvas id="canvas" width="500" height="300"></canvas>
+	<h1 id="greeting">Hello</h1>
 	<script type="text/javascript">
 		var stage = new createjs.Stage("canvas");
 		var task1 = new Task("tarea", 5);
 		stage.addChild(task1.getContainer());
-		
+
 		var task2 = new Task("siguiente", 15);
 		stage.addChild(task2.getContainer());
-		task2.getContainer().y=70;
-		task2.getContainer().x=100;
-		
+		task2.getContainer().y = 70;
+		task2.getContainer().x = 100;
+
 		var c1 = task1.getContainer();
 		var c2 = task2.getContainer();
 		var line = new createjs.Shape();
 		line.graphics.setStrokeStyle(2);
 		line.graphics.beginStroke("Black");
-		line.graphics.moveTo(c1.x + c1.getBounds().width, c1.y + c1.getBounds().height);
-		line.graphics.lineTo(c2.x, c2.y + c2.getBounds().height/2);
+		line.graphics.moveTo(c1.x + c1.getBounds().width, c1.y
+				+ c1.getBounds().height);
+		line.graphics.lineTo(c2.x, c2.y + c2.getBounds().height / 2);
 		line.graphics.endStroke();
 		stage.addChild(line);
 
 		var project = Project.loadProjectFromJSON('project.json');
 		alert(project.getPrototypeOf());
 		stage.update();
+	</script>
+	<script>
+		require(
+				[ "dojo/dom",
+				  "dojo/dom-construct",
+				  "./vatuta/project.js" ],
+				function(dom, domConstruct, project) {
+					var greetingNode = dom.byId('greeting');
+					var pr = new project();
+					console.log(pr);
+					domConstruct.place(pr.getHello(), greetingNode);
+				});
 	</script>
 </body>
 </html>
