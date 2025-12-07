@@ -1,0 +1,29 @@
+rag:
+  model_id: "bedrock/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+  temperature: 0.2
+
+sources:
+  slack:
+    slack-main:
+      enabled: true
+      workspace_domain: "https://your-workspace.slack.com"
+      channel_types:
+        - "public_channel"
+        - "private_channel"
+        - "im"
+        - "mpim"
+      initial_lookback_days: 30
+      channel_window_minutes: 60
+
+  jira:
+    jira-main:
+      enabled: true
+      url: "https://your-domain.atlassian.net"
+      projects: ["PROJECT1", "PROJECT2"]
+
+  confluence:
+    confluence-main:
+      enabled: true
+      url: "https://your-domain.atlassian.net"
+      spaces: ["SPACE1"]
+      initial_lookback_days: 30

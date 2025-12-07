@@ -1,0 +1,14 @@
+# Pyrefly configuration file
+# Documentation: https://pyrefly.org
+
+# Directories to analyze
+project-includes = ["src", "tests"]
+
+# Python version and platform
+python-version = "3.12"
+python-platform = "linux"
+
+# Error configuration
+[errors]
+# Enable or disable specific error checks
+# is-enabled = true

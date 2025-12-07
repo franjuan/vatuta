@@ -6,7 +6,7 @@ default:
     @just --list
 
 # Install dependencies
-install:
+install: install-spacy
     poetry install
 
 # Install development dependencies
@@ -27,7 +27,7 @@ test-coverage:
 
 # Lint code
 lint:
-    poetry run flake8 src tests
+    poetry run ruff check src tests
     poetry run mypy src
 
 # Format code
@@ -39,6 +39,11 @@ format:
 format-check:
     poetry run black --check src tests
     poetry run isort --check-only src tests
+
+# Audit dependencies for vulnerabilities
+audit:
+    poetry run pip-audit --desc
+
 
 # Clean up temporary files
 clean:
@@ -53,19 +58,11 @@ clean:
 
 # Run the assistant
 run:
-    poetry run python -m src.main
-
-# Run the assistant with the vatuta command
-assistant:
     poetry run vatuta
 
-# Run the API server
-api:
-    poetry run uvicorn src.api.main:app --reload
-
-# Run the API server with specific host and port
-api-dev host="0.0.0.0" port="8000":
-    poetry run uvicorn src.api.main:app --host {{host}} --port {{port}} --reload
+# Run the assistant with query and stats (k defaults to 20)
+assistant query k="20":
+    poetry run vatuta --query "{{query}}" --k {{k}} --show-stats --show-sources
 
 # Build the package
 build:
@@ -86,29 +83,27 @@ check:
     just test
 
 # Setup development environment
-setup: install dev
+setup: install dev install-spacy
     @echo "Development environment setup complete!"
-    @echo "Run 'just run' to start the assistant or 'just api' to start the API server"
+    @echo "Run 'just run' to start the assistant"
 
 # Show help
 help:
     @echo "Available commands:"
     @just --list
 
-# Initialize git repository
-git-init:
-    git init
-    git add .
-    git commit -m "Initial commit: Vatuta Personal Assistant"
-
 # Add all files and commit
 commit message:
     git add .
     git commit -m "{{message}}"
 
-# Push to remote repository
+# Push to remote repository (current branch)
 push:
-    git push origin main
+    git push origin $(git branch --show-current)
+
+# Push to remote repository with specific branch
+push-branch branch:
+    git push origin {{branch}}
 
 # Create a new branch
 branch name:
@@ -118,6 +113,18 @@ branch name:
 main:
     git checkout main
 
+# Switch to a specific branch
+switch branch:
+    git checkout {{branch}}
+
+# List all branches
+branches:
+    git branch -a
+
+# Delete a branch (local)
+delete-branch branch:
+    git branch -d {{branch}}
+
 # Show git status
 status:
     git status
@@ -125,6 +132,26 @@ status:
 # Show git log
 log:
     git log --oneline -10
+
+# Pull latest changes from remote
+pull:
+    git pull origin $(git branch --show-current)
+
+# Pull from specific branch
+pull-branch branch:
+    git pull origin {{branch}}
+
+# Merge a branch into current branch
+merge branch:
+    git merge {{branch}}
+
+# Rebase current branch onto main
+rebase:
+    git rebase main
+
+# Show current branch
+current-branch:
+    git branch --show-current
 
 # Run pre-commit hooks
 pre-commit:
@@ -201,3 +228,7 @@ direnv-status:
 # Reload direnv environment
 direnv-reload:
     direnv reload
+
+# Install spaCy model (required for text splitting)
+install-spacy:
+    poetry run python -m spacy download en_core_web_sm

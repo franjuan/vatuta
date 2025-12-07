@@ -7,22 +7,59 @@ readme = "README.md"
 packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = ">=3.12,<3.14"
+jira = "^3.10.5"
+atlassian-python-api = "^4.0.7"
+langchain = "^1.1.0"
+langchain-community = "^0.4"
+langchain-aws = "^1.1.0"
+langchain-huggingface = "^1.1.0"
+langchain-text-splitters = "^1.0.0"
+faiss-cpu = "^1.12.0"
+sentence-transformers = "^5.1.2"
+spacy = "^3.8.7"
+slack-sdk = "^3.37.0"
+python-gitlab = "^6.5.0"
+dspy-ai = "^3.0.4"
+anthropic = "^0.71.0"
+langgraph = "^1.0.2"
+#Google
+google-api-python-client = "^2.185.0"
+google-auth-httplib2 = "^0.2.0"
+google-auth-oauthlib = "^1.2.2"
+icalendar = "^6.3.1"
+pydantic = "^2.12.4"
+markdownify = "^1.2.2"
+beautifulsoup4 = "^4.14.3"
+typer = "^0.20.0"
+rich = "^14.2.0"
+prometheus-client = "^0.23.1"
+pyyaml = "^6.0.3"
 
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^7.4.4"
+pytest = "^8.4.2"
+pyrefly = "^0.42.2"
+black = "^25.11.0"
+isort = "^7.0.0"
+mypy = "^1.18.2"
+pre-commit = "^4.4.0"
+ruff = "^0.14.7"
+detect-secrets = "^1.5.0"
+bandit = "^1.9.2"
+pip-audit = "^2.9.0"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-vatuta = "src.main:main"
+vatuta = "src.client.client:app"
+bedrock = "pocs.bedrock_tool:main"
 
 [tool.black]
-line-length = 88
-target-version = ['py38']
+line-length = 120
+target-version = ['py312']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -37,6 +74,10 @@ extend-exclude = '''
   | dist
 )/
 '''
+
+[tool.isort]
+profile = "black"
+line_length = 120
 
 [tool.mypy]
 python_version = "3.12"
@@ -59,3 +100,8 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+fix = true

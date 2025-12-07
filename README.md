@@ -1,4 +1,8 @@
-# Vatuta - Personal AI Assistant
+<div align="center">
+  <img src="vatuta.png" alt="Vatuta Logo" width="200"/>
+</div>
+
+# Vatuta - Virtual Assistant for Task Understanding, Tracking & Automation
 
 An intelligent personal assistant built with LangChain that can help you with various daily tasks.
 
@@ -10,21 +14,27 @@ An intelligent personal assistant built with LangChain that can help you with va
 - 🗄️ Personal information management
 - 🔍 Document search and processing
 - 📝 Content generation
+- 🎫 JIRA ticket import and management
+- 📄 Confluence page integration
+- 🧠 Vector-based knowledge base
 
 ## Installation
 
 1. Clone the repository:
+
 ```bash
 git clone git@github.com:franjuan/vatuta.git
 cd vatuta
 ```
 
 2. Install Poetry (if not already installed):
+
 ```bash
 curl -sSL https://install.python-poetry.org | python3 -
 ```
 
 3. Install Just (if not already installed):
+
 ```bash
 # On macOS with Homebrew
 brew install just
@@ -37,6 +47,7 @@ choco install just
 ```
 
 4. Install direnv (optional but recommended for automatic environment loading):
+
 ```bash
 # On macOS with Homebrew
 brew install direnv
@@ -49,22 +60,31 @@ choco install direnv
 ```
 
 5. Install dependencies:
+
 ```bash
 poetry install
 ```
 
 6. Configure environment variables:
+
 ```bash
 cp env.example .env
 # Edit the .env file with your API keys
 ```
 
 7. Allow direnv to load the environment (if using direnv):
+
 ```bash
 direnv allow
 ```
 
+**Note**: If you get `layout_poetry: command not found`, you have two options:
+
+- **Option A**: Use the basic direnv setup (recommended)
+- **Option B**: Install direnv Poetry plugin: `pip install direnv-poetry`
+
 8. Install pre-commit hooks (optional but recommended):
+
 ```bash
 just pre-commit-install
 ```
@@ -76,46 +96,45 @@ just pre-commit-install
 ```bash
 just run
 # or
-just assistant
-```
-
-### REST API
-
-```bash
-just api
-```
-
-### Development server
-
-```bash
-just api-dev
+just assistant query="My query" k="20"
 ```
 
 ### Development
 
+Setup development environment:
+
+```bash
+just setup
+```
+
 Run tests:
+
 ```bash
 just test
 ```
 
 Format code:
+
 ```bash
 just format
 ```
 
 Lint code:
+
 ```bash
 just lint
 ```
 
 Run all checks:
+
 ```bash
 just check
 ```
 
-Setup development environment:
+Audit dependencies:
+
 ```bash
-just setup
+just audit
 ```
 
 ### Environment Management
@@ -128,6 +147,7 @@ The project supports automatic environment loading with **direnv**:
 - **Cross-directory support**: Works seamlessly across different project directories
 
 With direnv enabled:
+
 - Environment variables from `.env` are loaded automatically
 - Poetry virtual environment is activated automatically
 - Simply `cd` into the project directory and everything is ready
@@ -137,44 +157,74 @@ With direnv enabled:
 The project uses pre-commit hooks to ensure code quality and consistency:
 
 - **Automatic formatting**: Code is automatically formatted with Black
-- **Linting**: Code is checked with flake8 and mypy
+- **Linting**: Code is checked with ruff and mypy
 - **Import sorting**: Imports are automatically organized with isort
 - **Basic checks**: Trailing whitespace, file endings, and merge conflicts are detected
 
 Install pre-commit hooks:
+
 ```bash
 just pre-commit-install
 ```
 
 Run pre-commit hooks manually:
+
 ```bash
 just pre-commit
 ```
 
 For more commands, run:
+
 ```bash
 just --list
 ```
+
+### Quick Start
+
+1. Configure your credentials in `.env` (see `env.example`)
+2. Configure sources in `config/vatuta.yaml` (see `config/vatuta.yaml.example`)
+3. Install dependencies: `just install`
+4. Query the assistant: `just assistant query="your question" k="20"`
 
 ## Project Structure
 
 ```
 vatuta/
 ├── src/                    # Main source code
-│   ├── assistant/         # Assistant module
-│   ├── utils/            # Utilities
-│   ├── integrations/     # External integrations
-│   └── api/              # REST API
-├── config/               # Configuration files
-├── data/                 # User data
-├── logs/                 # Log files
-├── tests/               # Unit tests
-└── docs/                # Documentation
+│   ├── sources/           # Data source integrations (Slack, Jira, Confluence)
+│   ├── models/            # Data models and schemas
+│   ├── rag/               # RAG (Retrieval-Augmented Generation) components
+│   ├── client/            # Client interfaces
+│   ├── metrics/           # Metrics and monitoring
+│   └── utils/             # Utility functions
+├── pocs/                   # Proof-of-concept scripts and experiments
+├── config/                 # Configuration files (vatuta.yaml)
+├── data/                   # User data and cached source data
+├── logs/                   # Log files
+├── tests/                  # Unit tests
+└── docs/                   # Documentation
+    └── sources/           # Source-specific documentation
 ```
 
 ## Configuration
 
+## Integrations
 
+Vatuta supports multiple data source integrations including:
+
+- **JIRA**: Import tickets and issues
+- **Confluence**: Import pages and documentation
+- **Slack**: Import channels and conversations
+- **GitLab**: Import issues and merge requests (PoC)
+
+All sources support:
+
+- Vector-based semantic search
+- Incremental updates with checkpointing
+- Configurable filtering and date ranges
+- Unified query interface
+
+For detailed setup instructions and usage examples, see [docs/integrations.md](docs/integrations.md).
 
 ## Contributing
 
