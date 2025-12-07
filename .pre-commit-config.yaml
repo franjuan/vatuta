@@ -1,35 +1,98 @@
 repos:
+  # ------------------------------
+  # 1) Hooks genéricos de higiene
+  # ------------------------------
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
+        args: ['--maxkb=2000']
       - id: check-merge-conflict
       - id: debug-statements
 
+  # ------------------------------
+  # 2) Formato y estilo
+  # ------------------------------
   - repo: https://github.com/psf/black
-    rev: 23.12.1
+    rev: 25.11.0
     hooks:
       - id: black
-        language_version: python3
-
-  - repo: https://github.com/pycqa/flake8
-    rev: 7.0.0
-    hooks:
-      - id: flake8
-        args: [--max-line-length=88, --extend-ignore=E203]
+        language_version: python3.12
 
   - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
+    rev: 7.0.0
     hooks:
       - id: isort
+        language_version: python3.12
         args: ["--profile", "black"]
 
+  # Ruff = linter rápido que sustituye a flake8 (+ muchos plugins)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.7
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+        language_version: python3.12
+
+  # ------------------------------
+  # 3) Tipado estático (mypy)
+  # ------------------------------
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.8.0
+    rev: v1.19.0
     hooks:
       - id: mypy
-        additional_dependencies: [types-all]
+        language_version: python3.12
+        #additional_dependencies: [types-all]
         args: [--ignore-missing-imports]
+        exclude: ^pocs/
+
+  # ------------------------------
+  # 4) Seguridad de código
+  # ------------------------------
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.2
+    hooks:
+      - id: bandit
+        language_version: python3.12
+        args: ["-q", "-ll"]
+
+  # ------------------------------
+  # 5) Estilo de docstrings (pydocstyle)
+  # ------------------------------
+  - repo: https://github.com/PyCQA/pydocstyle
+    rev: 6.3.0
+    hooks:
+      - id: pydocstyle
+        language_version: python3.12
+        # Ajusta select/ignore según el estilo que quieras (Google, NumPy, etc.)
+        # Por ejemplo, para algo razonable sin ser super estricto:
+        # args: ["--convention=google"]
+        # Si quieres empezar suave, puedes dejarlo sin args y ver qué se queja.
+        # args: []
+        exclude: ^pocs/
+
+  # ------------------------------
+  # 6) Detección de secretos
+  # ------------------------------
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        language_version: python3.12
+        args:
+          - "--baseline"
+          - ".secrets.baseline"
+
+  # ------------------------------
+  # 7) Auditoría de dependencias (Poetry)
+  # ------------------------------
+  - repo: https://github.com/pypa/pip-audit
+    rev: v2.9.0
+    hooks:
+      - id: pip-audit
+        entry: poetry run pip-audit
+        language: system
+        pass_filenames: false

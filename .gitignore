@@ -125,12 +125,18 @@ venv.bak/
 .dmypy.json
 dmypy.json
 
+# ruff
+.ruff_cache/
+.ruff.toml
+
 # Pyre type checker
 .pyre/
 
 # Project specific
 data/
 logs/
+config/*
+!config/*.example
 *.db
 *.sqlite
 config/local.py
@@ -147,3 +153,5 @@ config/local.py
 # OS
 .DS_Store
 Thumbs.db
+credentials.json
+token.json
