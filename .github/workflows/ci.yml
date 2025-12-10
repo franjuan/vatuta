@@ -188,3 +188,5 @@ jobs:
 
       - name: Run codespell
         uses: codespell-project/actions-codespell@v2
+        with:
+          path: src tests
