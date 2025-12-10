@@ -5,7 +5,9 @@ Status: Accepted
 
 ## Context
 
-We ingest Jira issues to provide context on project tracking, bugs, and feature requests. Key requirements include capturing rich metadata (status, priority, assignee) and the conversational context within comments.
+We ingest Jira issues to provide context on project tracking, bugs, and feature requests. Key
+requirements include capturing rich metadata (status, priority, assignee) and the
+conversational context within comments.
 
 ## Decision
 
@@ -20,7 +22,8 @@ We ingest Jira issues to provide context on project tracking, bugs, and feature 
    - System tags allow filtering by `status`, `priority`, `type`, `label`, and `component`.
 
 3. **Chunk model**
-   - **Chunk 0 (Description)**: A formatted Markdown representation of the issue, including a metadata table (Key, Type, Status, etc.) and the full Description.
+   - **Chunk 0 (Description)**: A formatted Markdown representation of the issue, including a
+   metadata table (Key, Type, Status, etc.) and the full Description.
    - **Chunk 1..N (Comments)**: Each comment is a separate chunk, tagged with `type:comment` and `author:<name>`.
 
 4. **Incremental Collection**
@@ -34,8 +37,10 @@ We ingest Jira issues to provide context on project tracking, bugs, and feature 
 
 ## Rationale
 
-- **Rich Metadata Embedding**: Including a metadata table in the primary chunk helps the LLM understand the state of the work item immediately.
-- **Comments as Chunks**: Discussions in Jira comments often contain critical decisions or debugging details. treating them as separate chunks allows specific retrieval of these insights.
+- **Rich Metadata Embedding**: Including a metadata table in the primary chunk helps the LLM
+understand the state of the work item immediately.
+- **Comments as Chunks**: Discussions in Jira comments often contain critical decisions or
+debugging details. treating them as separate chunks allows specific retrieval of these insights.
 - **JQL Efficiency**: JQL is powerful for incremental fetching (`updated >= '...'`).
 
 ## Configuration
@@ -50,7 +55,8 @@ We ingest Jira issues to provide context on project tracking, bugs, and feature 
 **Optional:**
 
 - `enabled` (bool): Default `True`.
-- `jql_query` (str): Custom template. Defaults to `project = '{project}' AND updated >= '{updated_since}' order by updated ASC`.
+- `jql_query` (str): Custom template. Defaults to
+`project = '{project}' AND updated >= '{updated_since}' order by updated ASC`.
 - `initial_lookback_days` (int): Days, default 30.
 - `include_comments` (bool): Default `True`.
 - `use_cached_data` (bool): Default `False`.

@@ -1,6 +1,7 @@
 # Integrations
 
-Vatuta supports multiple data source integrations for importing content into a searchable knowledge base. This document covers setup and usage for each integration.
+Vatuta supports multiple data source integrations for importing content into a searchable
+knowledge base. This document covers setup and usage for each integration.
 
 ## JIRA Integration
 
@@ -18,7 +19,7 @@ JIRA_INSTANCE_URL=https://yourcompany.atlassian.net
 JIRA_CLOUD=True
 ```
 
-2. Install required spaCy model:
+1. Install required spaCy model:
 
 ```bash
 just install-spacy
@@ -26,7 +27,8 @@ just install-spacy
 
 ### Using JIRA Integration
 
-The JIRA source can be configured in `config/vatuta.yaml`. See the [JIRA source documentation](sources/jira.md) for detailed configuration options.
+The JIRA source can be configured in `config/vatuta.yaml`. See the [JIRA source documentation]
+(sources/jira.md) for detailed configuration options.
 
 To query the assistant with JIRA data:
 
@@ -53,7 +55,8 @@ Note: Confluence uses the same JIRA credentials (same Atlassian instance).
 
 ### Using Confluence Integration
 
-The Confluence source can be configured in `config/vatuta.yaml`. See the [Confluence source documentation](sources/confluence.md) for detailed configuration options.
+The Confluence source can be configured in `config/vatuta.yaml`. See the
+ [Confluence source documentation](sources/confluence.md) for detailed configuration options.
 
 To query the assistant with Confluence data:
 
@@ -79,7 +82,7 @@ SLACK_CHANNEL_TYPES=public_channel,private_channel,im,mpim
 SLACK_OLDEST_TIMESTAMP= # e.g. 1712816400.000000 (epoch seconds as float str)
 ```
 
-2. Install dependencies (if not already):
+1. Install dependencies (if not already):
 
 ```bash
 poetry install
@@ -87,7 +90,8 @@ poetry install
 
 ### Using Slack Integration
 
-The Slack source can be configured in `config/vatuta.yaml`. See the [Slack source documentation](sources/slack.md) for detailed configuration options including:
+The Slack source can be configured in `config/vatuta.yaml`. See the
+ [Slack source documentation](sources/slack.md) for detailed configuration options including:
 
 - Channel filtering by ID or name patterns
 - Date range filtering with `initial_lookback_days`
@@ -138,7 +142,9 @@ All integrations share these common features:
 
 ## Configuration
 
-All sources are configured via `config/vatuta.yaml`. Each source can be enabled/disabled individually and supports specific configuration options. See the individual source documentation in `docs/sources/` for detailed configuration schemas.
+All sources are configured via `config/vatuta.yaml`. Each source can be enabled/disabled
+ individually and supports specific configuration options. See the individual source
+ documentation in `docs/sources/` for detailed configuration schemas.
 
 Example configuration structure:
 

@@ -1,8 +1,8 @@
+# Vatuta - Virtual Assistant for Task Understanding, Tracking & Automation
+
 <div align="center">
   <img src="vatuta.png" alt="Vatuta Logo" width="200"/>
 </div>
-
-# Vatuta - Virtual Assistant for Task Understanding, Tracking & Automation
 
 An intelligent personal assistant built with LangChain that can help you with various daily tasks.
 
@@ -27,13 +27,13 @@ git clone git@github.com:franjuan/vatuta.git
 cd vatuta
 ```
 
-2. Install Poetry (if not already installed):
+1. Install Poetry (if not already installed):
 
 ```bash
 curl -sSL https://install.python-poetry.org | python3 -
 ```
 
-3. Install Just (if not already installed):
+1. Install Just (if not already installed):
 
 ```bash
 # On macOS with Homebrew
@@ -46,7 +46,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -
 choco install just
 ```
 
-4. Install direnv (optional but recommended for automatic environment loading):
+1. Install direnv (optional but recommended for automatic environment loading):
 
 ```bash
 # On macOS with Homebrew
@@ -59,20 +59,20 @@ curl -sfL https://direnv.net/install.sh | bash
 choco install direnv
 ```
 
-5. Install dependencies:
+1. Install dependencies:
 
 ```bash
 poetry install
 ```
 
-6. Configure environment variables:
+1. Configure environment variables:
 
 ```bash
 cp env.example .env
 # Edit the .env file with your API keys
 ```
 
-7. Allow direnv to load the environment (if using direnv):
+1. Allow direnv to load the environment (if using direnv):
 
 ```bash
 direnv allow
@@ -83,7 +83,7 @@ direnv allow
 - **Option A**: Use the basic direnv setup (recommended)
 - **Option B**: Install direnv Poetry plugin: `pip install direnv-poetry`
 
-8. Install pre-commit hooks (optional but recommended):
+1. Install pre-commit hooks (optional but recommended):
 
 ```bash
 just pre-commit-install
@@ -182,13 +182,13 @@ just --list
 ### Quick Start
 
 1. Configure your credentials in `.env` (see `env.example`)
-2. Configure sources in `config/vatuta.yaml` (see `config/vatuta.yaml.example`)
-3. Install dependencies: `just install`
-4. Query the assistant: `just assistant query="your question" k="20"`
+1. Configure sources in `config/vatuta.yaml` (see `config/vatuta.yaml.example`)
+1. Install dependencies: `just install`
+1. Query the assistant: `just assistant query="your question" k="20"`
 
 ## Project Structure
 
-```
+```text
 vatuta/
 ├── src/                    # Main source code
 │   ├── sources/           # Data source integrations (Slack, Jira, Confluence)
@@ -229,10 +229,10 @@ For detailed setup instructions and usage examples, see [docs/integrations.md](d
 ## Contributing
 
 1. Fork the project
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+1. Create a feature branch (`git checkout -b feature/AmazingFeature`)
+1. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+1. Push to the branch (`git push origin feature/AmazingFeature`)
+1. Open a Pull Request
 
 ## License
 

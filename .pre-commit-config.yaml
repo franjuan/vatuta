@@ -1,9 +1,11 @@
+---
+exclude: ^pocs/
 repos:
   # ------------------------------
-  # 1) Hooks genéricos de higiene
+  # 1) Generic hygiene hooks
   # ------------------------------
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+    rev: v5.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -14,68 +16,70 @@ repos:
       - id: debug-statements
 
   # ------------------------------
-  # 2) Formato y estilo
+  # 2) Format and style
   # ------------------------------
   - repo: https://github.com/psf/black
-    rev: 25.11.0
+    rev: 24.10.0
     hooks:
       - id: black
         language_version: python3.12
 
   - repo: https://github.com/pycqa/isort
-    rev: 7.0.0
+    rev: 5.13.2
     hooks:
       - id: isort
         language_version: python3.12
         args: ["--profile", "black"]
 
-  # Ruff = linter rápido que sustituye a flake8 (+ muchos plugins)
+  # Ruff: fast linter replacing flake8 (+ many plugins)
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.7
+    rev: v0.8.2
     hooks:
       - id: ruff
         args: ["--fix"]
         language_version: python3.12
 
   # ------------------------------
-  # 3) Tipado estático (mypy)
+  # 3) Static typing (mypy)
   # ------------------------------
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.0
+    rev: v1.13.0
     hooks:
       - id: mypy
         language_version: python3.12
-        #additional_dependencies: [types-all]
+        # additional_dependencies: [types-all]
         args: [--ignore-missing-imports]
         exclude: ^pocs/
 
   # ------------------------------
-  # 4) Seguridad de código
+  # 4) Code security
   # ------------------------------
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.9.2
+    rev: 1.8.0
     hooks:
       - id: bandit
         language_version: python3.12
         args: ["-q", "-ll"]
 
+  - repo: https://github.com/returntocorp/semgrep
+    rev: v1.99.0
+    hooks:
+      - id: semgrep
+        args: ["--config", "p/ci"]
+
   # ------------------------------
-  # 5) Estilo de docstrings (pydocstyle)
+  # 5) Docstring style (pydocstyle)
   # ------------------------------
   - repo: https://github.com/PyCQA/pydocstyle
     rev: 6.3.0
     hooks:
       - id: pydocstyle
         language_version: python3.12
-        # Ajusta select/ignore según el estilo que quieras (Google, NumPy, etc.)
-        # Por ejemplo, para algo razonable sin ser super estricto:
-        # args: ["--convention=google"]
-        # Si quieres empezar suave, puedes dejarlo sin args y ver qué se queja.
-        # args: []
+        args: ["--convention=google"]
         exclude: ^pocs/
 
   # ------------------------------
-  # 6) Detección de secretos
+  # 6) Secret detection
   # ------------------------------
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
@@ -86,13 +90,35 @@ repos:
           - "--baseline"
           - ".secrets.baseline"
 
-  # ------------------------------
-  # 7) Auditoría de dependencias (Poetry)
-  # ------------------------------
   - repo: https://github.com/pypa/pip-audit
-    rev: v2.9.0
+    rev: v2.7.3
     hooks:
       - id: pip-audit
         entry: poetry run pip-audit
         language: system
         pass_filenames: false
+
+  # ------------------------------
+  # 7) Spell checking
+  # ------------------------------
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        additional_dependencies:
+          - tomli
+        args: ["-L", "assertIn"]
+
+  # ------------------------------
+  # 8) Docs & Polishing
+  # ------------------------------
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.15.0
+    hooks:
+      - id: markdownlint-cli2
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: ["-d", "{extends: default, rules: {line-length: disable, truthy: {check-keys: false}}}"]

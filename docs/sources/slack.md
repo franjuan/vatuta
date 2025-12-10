@@ -5,12 +5,17 @@ Status: Accepted
 
 ## Context
 
-We ingest Slack conversations for RAG and analytics. The ingestion must be reliable under Slack rate limits, observable, and produce embeddings-friendly chunks while minimizing re-fetches and avoiding storing excessive PII or payload.
+We ingest Slack conversations for RAG and analytics. The ingestion must be reliable under
+Slack rate limits, observable, and produce embeddings-friendly chunks while minimizing
+re-fetches and avoiding storing excessive PII or payload.
 
 ## Decision
 
 1. Single-pass extraction (documents + chunks)
-   - Implement a combined method `collect_documents_and_chunks(checkpoint, update_checkpoint=True, use_cached_data=True, filters=None) -> (List[DocumentUnit], List[ChunkRecord])` that fetches messages, builds logical documents, and immediately produces flat chunks (one per message).
+   - Implement a combined method
+   `collect_documents_and_chunks(checkpoint, update_checkpoint=True, use_cached_data=True, filters=None)`
+   `-> (List[DocumentUnit], List[ChunkRecord])`
+   that fetches messages, builds logical documents, and immediately produces flat chunks (one per message).
    - Result: no separate chunking step and no re-fetch needed for chunking.
 
 2. Document model
@@ -51,7 +56,8 @@ We ingest Slack conversations for RAG and analytics. The ingestion must be relia
 
 ## Rationale
 
-- Combining documents and chunk creation removes an extra pass and avoids re-fetching, improving latency and reducing rate-limit pressure.
+- Combining documents and chunk creation removes an extra pass and avoids re-fetching,
+improving latency and reducing rate-limit pressure.
 - The adaptive limiter and Retry-After compliance maintain reliability under Slack’s per-method tiering.
 
 ## Consequences
@@ -63,7 +69,8 @@ We ingest Slack conversations for RAG and analytics. The ingestion must be relia
   - Clear and minimal `DocumentUnit` footprint without messages in metadata.
 - Cons:
   - Changing chunking strategy later requires re-running the combined extractor.
-  - Fallback permalinks require `workspace_domain` configuration and may differ from Slack’s official `chat.getPermalink` in edge cases.
+  - Fallback permalinks require `workspace_domain` configuration and may differ from Slack’s
+  official `chat.getPermalink` in edge cases.
 
 ## Alternatives considered
 
@@ -110,7 +117,8 @@ Optional tier overrides:
 ## Checkpointing
 
 - `SlackCheckpoint` tracks `latest_ts` and `earliest_ts` **per channel**.
-  - `latest_ts`: Used as the `oldest` parameter for `conversations.history` to fetch new messages. Defaults to `now - initial_lookback_days` if not present.
+  - `latest_ts`: Used as the `oldest` parameter for `conversations.history` to fetch new
+  messages. Defaults to `now - initial_lookback_days` if not present.
   - `earliest_ts`: Tracks the oldest message timestamp collected for the channel.
   After successfully writing the channel’s JSONL file, the checkpoint updates that specific channel and persists `checkpoint.json`.
 

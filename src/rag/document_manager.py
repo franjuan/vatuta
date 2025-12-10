@@ -83,8 +83,7 @@ class DocumentManager:
             print(f"⚠️ Error saving vector store: {e}")
 
     def add_documents(self, documents: List[Document]) -> bool:
-        """
-        Add documents to the knowledge base.
+        """Add documents to the knowledge base.
 
         Args:
             documents: List of Document objects to add
@@ -222,8 +221,7 @@ class DocumentManager:
             return f"doc_{content_hash}"
 
     def search_documents(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
-        """
-        Search for documents using semantic similarity.
+        """Search for documents using semantic similarity.
 
         Args:
             query: Search query
@@ -259,8 +257,7 @@ class DocumentManager:
             return []
 
     def get_document_stats(self) -> Dict[str, Any]:
-        """
-        Get statistics about the documents in the knowledge base.
+        """Get statistics about the documents in the knowledge base.
 
         Returns:
             Dictionary with document statistics
@@ -283,8 +280,7 @@ class DocumentManager:
         return stats
 
     def list_documents(self, source: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        List documents in the knowledge base.
+        """List documents in the knowledge base.
 
         Args:
             source: Filter by source (jira, confluence, etc.)
@@ -314,8 +310,7 @@ class DocumentManager:
         return documents[:limit]
 
     def clear_all_documents(self) -> bool:
-        """
-        Clear all documents from the knowledge base.
+        """Clear all documents from the knowledge base.
 
         Returns:
             True if successful, False otherwise

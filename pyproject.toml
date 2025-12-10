@@ -35,6 +35,7 @@ typer = "^0.20.0"
 rich = "^14.2.0"
 prometheus-client = "^0.23.1"
 pyyaml = "^6.0.3"
+pydocstyle = "^6.3.0"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -48,6 +49,9 @@ ruff = "^0.14.7"
 detect-secrets = "^1.5.0"
 bandit = "^1.9.2"
 pip-audit = "^2.9.0"
+pytest-cov = "^6.0.0"
+types-requests = "^2.32.4"
+types-PyYAML = "^6.0.12"
 
 [build-system]
 requires = ["poetry-core"]
@@ -61,23 +65,25 @@ bedrock = "pocs.bedrock_tool:main"
 line-length = 120
 target-version = ['py312']
 include = '\.pyi?$'
-extend-exclude = '''
+exclude = '''
 /(
-  # directories
-  \.eggs
-  | \.git
+    \.git
   | \.hg
   | \.mypy_cache
   | \.tox
   | \.venv
+  | _build
+  | buck-out
   | build
   | dist
+  | pocs
 )/
 '''
 
 [tool.isort]
 profile = "black"
 line_length = 120
+skip_glob = ["pocs/*"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -92,7 +98,34 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
-strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "langchain.*",
+    "langchain_community.*",
+    "langchain_aws.*",
+    "langchain_huggingface.*",
+    "langchain_text_splitters.*",
+    "faiss.*",
+    "sentence_transformers.*",
+    "spacy.*",
+    "slack_sdk.*",
+    "gitlab.*",
+    "dspy.*",
+    "anthropic.*",
+    "langgraph.*",
+    "googleapiclient.*",
+    "google.auth.*",
+    "google_auth_oauthlib.*",
+    "icalendar.*",
+    "markdownify.*",
+    "bs4.*",
+    "typer.*",
+    "rich.*",
+    "prometheus_client.*",
+    "yaml.*"
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -104,4 +137,15 @@ addopts = "-v --tb=short"
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-fix = true
+exclude = ["pocs"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "C",   # convention
+    "B",   # flake8-bugbear
+]
+ignore = ["B008", "C901", "E501"]
