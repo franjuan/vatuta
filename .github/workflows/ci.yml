@@ -64,7 +64,7 @@ jobs:
       - name: Run tests with coverage (Pytest)
         run: |
           poetry run pytest \
-            --cov="${{ env.PACKAGE_NAME }}" \
+            --cov=src \
             --cov-report=xml \
             --junitxml=pytest-report.xml
 
