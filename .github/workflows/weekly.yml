@@ -1,0 +1,50 @@
+name: Weekly Security Audit
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+jobs:
+  security:
+    name: Security Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-3.12-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+
+      - name: Install project
+        run: poetry install --no-interaction
+
+      - name: Security audit (Pip-audit)
+        run: poetry run pip-audit
+
+      - name: Check for secrets (Detect Secrets)
+        run: |
+          if [ -f .secrets.baseline ]; then
+            poetry run detect-secrets-hook --baseline .secrets.baseline $(git ls-files)
+          else
+            echo "No .secrets.baseline found, skipping strict check."
+            poetry run detect-secrets scan
+          fi

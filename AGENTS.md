@@ -2,7 +2,9 @@
 
 ## Project Context
 
-You are working on **Vatuta** (Virtual Assistant for Task Understanding, Tracking & Automation), a Personal AI Assistant built with LangChain and DSPy. This is a modern Python project with comprehensive development tooling and best practices.
+You are working on **Vatuta** (Virtual Assistant for Task Understanding, Tracking &
+ Automation), a Personal AI Assistant built with LangChain and DSPy. This is a modern Python
+ project with comprehensive development tooling and best practices.
 
 ## Key Technologies
 
@@ -251,7 +253,8 @@ just packages       # Show installed packages
 - Test edge cases and error conditions
 - Ensure tests are isolated and repeatable
 
-Remember: This is a **modern Python project** with **comprehensive tooling**. Always follow **best practices** and maintain **high code quality**.
+Remember: This is a **modern Python project** with **comprehensive tooling**. Always follow
+**best practices** and maintain **high code quality**.
 
 ## Python Project Rules
 

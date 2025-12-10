@@ -6,7 +6,7 @@ This module defines the configuration structure for RAG settings and data source
 from pathlib import Path
 from typing import Dict
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 from pydantic import BaseModel, Field
 
 from src.sources.confluence import ConfluenceConfig

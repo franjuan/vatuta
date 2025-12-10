@@ -130,7 +130,7 @@ class SlackSource(Source[SlackConfig]):
     Secrets:
         - bot_token: Slack bot OAuth token.
 
-    TODO:
+    Todo:
     - Add support for hierarchical chunking
     - Add support for optional enrichment (NER/Pii) for tags at chunk or document level.
     - Add support to retrieve and update edited messages.
@@ -1162,9 +1162,12 @@ class SlackSource(Source[SlackConfig]):
             use_cached_data: If True, replay cached JSONL.gz files newer than the checkpoint
                 before issuing API calls.
             filters: Optional list of identifiers by filtering type to restrict processing.
+
         Returns:
             Tuple[List[DocumentUnit], List[ChunkRecord]]: The documents discovered and
             their corresponding flat chunks.
+
+        Todo: Group by space like Jira? "data/confluence/{source_id}/{space_key}/{space_key}.jsonl.gz"
 
         Notes:
             - Documents and chunks are returned but not persisted here; the caller is

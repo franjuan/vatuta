@@ -5,7 +5,9 @@ Status: Accepted
 
 ## Context
 
-We ingest Confluence pages for RAG and analytics. The ingestion must be reliable, handle incremental updates efficiently, and produce LLM-friendly markdown content from Confluence's internal HTML storage format.
+We ingest Confluence pages for RAG and analytics. The ingestion must be reliable, handle
+incremental updates efficiently, and produce LLM-friendly markdown content from Confluence's
+internal HTML storage format.
 
 ## Decision
 
@@ -34,8 +36,10 @@ We ingest Confluence pages for RAG and analytics. The ingestion must be reliable
 
 ## Rationale
 
-- **Markdown Conversion**: Confluence stores content as XHTML. Converting to Markdown is standard for RAG applications to reduce token usage and improve readability for LLMs.
-- **Per-Space Checkpointing**: Spaces are the natural boundary for content in Confluence. Tracking updates per space allows for granular incremental syncs.
+- **Markdown Conversion**: Confluence stores content as XHTML. Converting to Markdown is
+standard for RAG applications to reduce token usage and improve readability for LLMs.
+- **Per-Space Checkpointing**: Spaces are the natural boundary for content in Confluence.
+Tracking updates per space allows for granular incremental syncs.
 
 ## Configuration
 

@@ -172,7 +172,7 @@ class JiraSource(Source[JiraConfig]):
         chunks: List[ChunkRecord] = []
         max_updated_ts = latest_ts
 
-        next_page_token = None
+        next_page_token: Optional[str] = None
         max_results = JiraSource.JIRA_API_LIMIT
         total_fetched = 0
 

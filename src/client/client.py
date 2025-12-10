@@ -73,7 +73,7 @@ def get_ids_help() -> str:
     return "Filter by source ID (e.g. slack-main)"
 
 
-@app.callback()  # type: ignore[untyped-decorator]
+@app.callback()  # type: ignore[misc]
 def main(
     ctx: typer.Context,
     config: str = typer.Option("config/vatuta.yaml", "--config", help="Path to configuration file"),
@@ -98,7 +98,7 @@ def main(
     Path(data).mkdir(parents=True, exist_ok=True)
 
 
-@app.command()  # type: ignore[untyped-decorator]
+@app.command()  # type: ignore[misc]
 def reset() -> None:
     """Reset the Knowledge Base (Clear all documents)."""
     if typer.confirm("Are you sure you want to clear the entire Knowledge Base?", default=False):
@@ -156,7 +156,7 @@ def _ingest_docs(dm: DocumentManager, docs: list, chunks: list, source_name: str
         console.print(f"[red]   Failed to ingest {source_name} data.[/red]")
 
 
-@app.command()  # type: ignore[untyped-decorator]
+@app.command()  # type: ignore[misc]
 def load(
     source: Optional[SourceType] = typer.Option(None, help="Filter by source type"),
     source_id: Optional[str] = typer.Option(None, help=get_ids_help()),
@@ -197,7 +197,7 @@ def load(
                 logging.exception("Load error")
 
 
-@app.command()  # type: ignore[untyped-decorator]
+@app.command()  # type: ignore[misc]
 def update(
     source: Optional[SourceType] = typer.Option(None, help="Filter by source type"),
     source_id: Optional[str] = typer.Option(None, help=get_ids_help()),
@@ -265,7 +265,7 @@ def update(
                 logging.exception("Update error")
 
 
-@app.command()  # type: ignore[untyped-decorator]
+@app.command()  # type: ignore[misc]
 def ask(
     question: str = typer.Argument(..., help="The question to ask"),
     k: int = typer.Option(4, "--k", help="Number of documents to retrieve"),
