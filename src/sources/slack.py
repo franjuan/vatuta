@@ -267,6 +267,7 @@ class SlackSource(Source[SlackConfig]):
         logger.debug(f"list_conversations: start types={types_str}")
         conversations: list[dict] = []
         cursor = None
+        consecutive_errors = 0
         while True:
             # Proactive limiter
             self.rate_limiter.acquire("conversations.list")
@@ -278,6 +279,7 @@ class SlackSource(Source[SlackConfig]):
                     types=types_str,
                     exclude_archived=True,
                 )
+                consecutive_errors = 0
             except SlackApiError as e:
                 # Rate limiting management
                 status = str(getattr(getattr(e, "response", None), "status_code", 429))
@@ -294,6 +296,18 @@ class SlackSource(Source[SlackConfig]):
                     self.rate_limiter.on_rate_limited("conversations.list", wait_seconds)
                     time.sleep(wait_seconds)
                     continue
+
+                # Handle non-JSON response (transient server/network error)
+                if "Received a response in a non-JSON format" in str(e):
+                    consecutive_errors += 1
+                    if consecutive_errors <= 3:
+                        wait_seconds = 2**consecutive_errors
+                        logger.warning(
+                            f"Non-JSON response from Slack API in conversations.list (attempt {consecutive_errors}/3). Retrying in {wait_seconds}s..."
+                        )
+                        time.sleep(wait_seconds)
+                        continue
+
                 raise
             status = str(getattr(resp, "status_code", 200))
             # Collect metrics
@@ -437,6 +451,7 @@ class SlackSource(Source[SlackConfig]):
         logger.debug(f"list_messages: start channel={channel_id}")
         messages: list[dict] = []
         cursor = None
+        consecutive_errors = 0
         while True:
             # Get latest timestamp from checkpoint or override if provided
             latest_ts = latest_ts_override if latest_ts_override is not None else checkpoint.get_latest_ts(channel_id)
@@ -451,6 +466,7 @@ class SlackSource(Source[SlackConfig]):
                     limit=SlackSource.SLACK_API_LIMIT,
                     oldest=latest_ts_str,
                 )
+                consecutive_errors = 0
             except SlackApiError as e:
                 # Rate limiting management
                 status = str(getattr(getattr(e, "response", None), "status_code", 429))
@@ -467,6 +483,18 @@ class SlackSource(Source[SlackConfig]):
                     self.rate_limiter.on_rate_limited("conversations.history", wait_seconds)
                     time.sleep(wait_seconds)
                     continue
+
+                # Handle non-JSON response (transient server/network error)
+                if "Received a response in a non-JSON format" in str(e):
+                    consecutive_errors += 1
+                    if consecutive_errors <= 3:
+                        wait_seconds = 2**consecutive_errors
+                        logger.warning(
+                            f"Non-JSON response from Slack API in conversations.history (attempt {consecutive_errors}/3). Retrying in {wait_seconds}s..."
+                        )
+                        time.sleep(wait_seconds)
+                        continue
+
                 raise
             status = str(getattr(resp, "status_code", 200))
             # Collect metrics
@@ -510,11 +538,13 @@ class SlackSource(Source[SlackConfig]):
             return cast(Dict[str, Any], entry)
         USER_CACHE_MISSES.inc()
         logger.debug(f"user cache MISS for {user_id}")
+        consecutive_errors = 0
         while True:
             self.rate_limiter.acquire("users.info")
             call_start = perf_counter()
             try:
                 resp = self.client.users_info(user=user_id)
+                consecutive_errors = 0
             except SlackApiError as e:
                 # Rate limiting management
                 status = str(getattr(getattr(e, "response", None), "status_code", 429))
@@ -528,6 +558,18 @@ class SlackSource(Source[SlackConfig]):
                     self.rate_limiter.on_rate_limited("users.info", wait_seconds)
                     time.sleep(wait_seconds)
                     continue
+
+                # Handle non-JSON response (transient server/network error)
+                if "Received a response in a non-JSON format" in str(e):
+                    consecutive_errors += 1
+                    if consecutive_errors <= 3:
+                        wait_seconds = 2**consecutive_errors
+                        logger.warning(
+                            f"Non-JSON response from Slack API in users.info (attempt {consecutive_errors}/3). Retrying in {wait_seconds}s..."
+                        )
+                        time.sleep(wait_seconds)
+                        continue
+
                 raise
             # Collect metrics
             API_CALLS.labels(source="slack", source_id=self.source_id, method="users.info", status="200").inc()
@@ -1345,16 +1387,16 @@ if __name__ == "__main__":
         sh.setFormatter(formatter)
         root_logger.addHandler(sh)
 
-    config = {
-        "channel_types": ["private_channel", "public_channel", "im", "mpim"],
-        "initial_lookback_days": 30,
-        "channel_window_minutes": 60,
-        "workspace_domain": "https://example.slack.com",
-        "user_cache_path": os.path.join("data", "slack_users_cache.json"),
-        "storage_path": os.path.join("data", "slack"),
-    }
+    slack_config = SlackConfig(
+        id="slack-main",
+        channel_types=["private_channel", "public_channel", "im", "mpim"],
+        initial_lookback_days=180,
+        channel_window_minutes=60,
+        workspace_domain="https://example.slack.com",
+        user_cache_path=os.path.join("data", "slack_users_cache.json"),
+    )
     slack_source = SlackSource(
-        config=SlackConfig(**config),
+        config=slack_config,
         secrets={"bot_token": os.getenv("SLACK_BOT_TOKEN")},
         storage_path=os.path.join("data", "slack"),
     )
@@ -1363,10 +1405,7 @@ if __name__ == "__main__":
         slack_checkpoint = SlackCheckpoint.load(checkpoint_path, slack_source.config)
     else:
         slack_checkpoint = SlackCheckpoint(config=slack_source.config)
-    channel_ids = ["D0915UT8EAD", "C09HSLGFCQL"]  # Benson  # Valerio y Vanina
-    docs, chunks = slack_source.collect_documents_and_chunks(
-        slack_checkpoint, use_cached_data=True, filters={"channel_ids": channel_ids}
-    )
+    docs, chunks = slack_source.collect_documents_and_chunks(slack_checkpoint, use_cached_data=True)
     # docs, chunks = slack_source.collect_cached_documents_and_chunks(
     #     date_from=datetime(2025, 11, 13, 0, 0, 0, tzinfo=timezone.utc),
     #     date_to=datetime(2025, 11, 17, 0, 0, 0, tzinfo=timezone.utc),
