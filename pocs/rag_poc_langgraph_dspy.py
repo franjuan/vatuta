@@ -230,7 +230,7 @@ def ingest_slack_cache(doc_manager: DocumentManager) -> None:
 
 def ingest_jira_cache(doc_manager: DocumentManager) -> None:
     """Ingest cached JIRA data into the document manager."""
-    from src.sources.jira import JiraSource
+    from src.sources.jira_source import JiraSource
 
     print("📥 Ingesting JIRA cache...")
 

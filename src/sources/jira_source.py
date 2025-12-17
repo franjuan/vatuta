@@ -131,6 +131,12 @@ class JiraSource(Source[JiraConfig]):
             basic_auth=(user, token),
         )
 
+        # Validate credentials immediately
+        try:
+            self.client.myself()
+        except Exception as e:
+            raise ValueError(f"Failed to authenticate with JIRA: {e}") from e
+
     def collect_documents_and_chunks(
         self,
         checkpoint: Checkpoint,
@@ -537,6 +543,9 @@ class JiraSource(Source[JiraConfig]):
             else:
                 str_val = str(val)
 
+            # Sanitize str_val to prevent line breaks in the output
+            str_val = str_val.replace("\r", " ").replace("\n", " ").strip()
+
             lines.append(f"{label}: {str_val}")
 
         return "\n".join(lines)
@@ -784,6 +793,10 @@ def main() -> None:
         "url": os.getenv("JIRA_INSTANCE_URL", ""),
         "projects": ["PROJ_1", "PROJ_2"],
         "storage_path": "./data/jira",
+        "include_comments": True,
+        "use_cached_data": True,
+        "taggable_fields": ["priority", "issuetype", "status", "assignee", "reporter", "labels"],
+        "initial_loopback_days": 30,
         "id": "jira-main",
     }
 

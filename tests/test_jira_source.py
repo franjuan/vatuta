@@ -5,9 +5,10 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
-from src.sources.jira import JiraCheckpoint, JiraConfig, JiraSource
+from src.sources.jira_source import JiraCheckpoint, JiraConfig, JiraSource
 
 
 class TestJiraSource(unittest.TestCase):
@@ -26,7 +27,7 @@ class TestJiraSource(unittest.TestCase):
         self.secrets = {"jira_user": "user", "jira_api_token": "token"}
 
         # Mock JIRA client
-        self.mock_jira_patcher = patch("src.sources.jira.JIRA")
+        self.mock_jira_patcher = patch("src.sources.jira_source.JIRA")
         self.mock_jira_cls = self.mock_jira_patcher.start()
         self.mock_jira = self.mock_jira_cls.return_value
 
@@ -178,7 +179,51 @@ class TestJiraSource(unittest.TestCase):
         expected_ts = now.timestamp()
         self.assertAlmostEqual(checkpoint.get_project_updated_ts("TEST"), expected_ts, places=1)
 
-    @patch("src.sources.jira.gzip.open")
+    def test_ticket_content_formatting_sanitization(self) -> None:
+        """Test that field values with newlines are sanitized into a single line."""
+        issue = {
+            "key": "TEST-2",
+            "fields": {
+                "summary": "Title\nWith\nNewlines",
+                "description": "Line 1\r\nLine 2",
+                "customfield_text": "Value with \r carriage return",
+            },
+        }
+        names = {"customfield_text": "Custom Text", "summary": "Summary", "description": "Description"}
+        schema: Any = {}
+
+        # Instantiate source
+        source = JiraSource(config=JiraConfig(**self.config), secrets=self.secrets, storage_path=self.temp_dir)
+
+        # Call the private method
+        content = source._format_ticket_content(issue, names, schema)
+
+        # Check output
+        lines = content.split("\n")
+
+        # Parse lines to map Label -> Value
+        data = {}
+        for line in lines:
+            if ": " in line:
+                key, val = line.split(": ", 1)
+                data[key] = val
+
+        self.assertIn("Summary", data)
+        self.assertIn("Description", data)
+        self.assertIn("Custom Text", data)
+
+        # Verify sanitization
+        # "Title\nWith\nNewlines" -> "Title With Newlines"
+        self.assertIn("Title With Newlines", data["Summary"])
+
+        # "Line 1\r\nLine 2" -> "Line 1  Line 2" (assuming distinct replacement)
+        # Note: replace("\r", " ").replace("\n", " ") converts \r\n to "  "
+        self.assertIn("Line 1  Line 2", data["Description"])
+
+        # "Value with \r carriage return" -> "Value with   carriage return"
+        self.assertIn("Value with   carriage return", data["Custom Text"])
+
+    @patch("src.sources.jira_source.gzip.open")
     def test_persistence(self, mock_gzip_open: MagicMock) -> None:
         # Enable caching
         self.config["use_cached_data"] = True
@@ -220,6 +265,15 @@ class TestJiraSource(unittest.TestCase):
         mock_file.write.assert_called()
         written_args = [call.args[0] for call in mock_file.write.mock_calls]
         self.assertTrue(any("TEST-1" in arg for arg in written_args))
+
+    def test_init_raises_on_auth_failure(self) -> None:
+        # Mock myself() to raise an exception
+        self.mock_jira.myself.side_effect = Exception("Auth failed")
+
+        with self.assertRaises(ValueError) as cm:
+            JiraSource.create(config=JiraConfig(**self.config), data_dir=self.temp_dir, secrets=self.secrets)
+
+        self.assertIn("Failed to authenticate with JIRA", str(cm.exception))
 
     def test_collect_cached_documents_and_chunks(self) -> None:
         # Create real cache files
