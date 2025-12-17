@@ -43,6 +43,12 @@ format-check:
     poetry run black --check src tests
     poetry run isort --check-only src tests
 
+# Run cyclomatic complexity check
+cc:
+    poetry run radon cc src -a -na
+    poetry run radon mi src
+
+
 # Audit dependencies for vulnerabilities
 audit:
     poetry run pip-audit --desc

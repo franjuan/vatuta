@@ -155,3 +155,7 @@ config/local.py
 Thumbs.db
 credentials.json
 token.json
+
+# Reports
+mypy_report/
+ruff-report.txt

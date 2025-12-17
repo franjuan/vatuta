@@ -122,3 +122,22 @@ repos:
     hooks:
       - id: yamllint
         args: ["-d", "{extends: default, rules: {line-length: disable, truthy: {check-keys: false}}}"]
+
+  # ------------------------------
+  # 9) Complexity & Duplication
+  # ------------------------------
+  - repo: https://github.com/rubik/xenon
+    rev: v0.9.3
+    hooks:
+      - id: xenon
+        args: ["--max-absolute=D", "--max-modules=B", "--max-average=B", "--exclude", "pocs/*"]
+        language_version: python3.12
+
+  - repo: local
+    hooks:
+      - id: jscpd
+        name: jscpd
+        entry: jscpd
+        language: node
+        additional_dependencies: ["jscpd@4.0.5"]
+        args: ["--min-tokens", "50", "--min-lines", "5", "--ignore", "**/*.json,**/*.lock,**/*.yaml,**/*.yml,**/tests/**,**/pocs/**"]
