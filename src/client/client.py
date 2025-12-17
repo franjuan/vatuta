@@ -18,7 +18,7 @@ from src.models.config import ConfigLoader, VatutaConfig
 from src.rag.document_manager import DocumentManager
 from src.rag.engine import DSPyRAGModule, RAGState, build_graph, configure_dspy_lm
 from src.sources.confluence import ConfluenceSource
-from src.sources.jira import JiraSource
+from src.sources.jira_source import JiraSource
 from src.sources.slack import SlackSource
 
 # Configure logging to stay quiet by default, will be adjusted by verbose flag

@@ -10,7 +10,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from src.sources.confluence import ConfluenceConfig
-from src.sources.jira import JiraConfig
+from src.sources.jira_source import JiraConfig
 from src.sources.slack import SlackConfig
 
 
