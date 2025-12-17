@@ -16,32 +16,47 @@ conversational context within comments.
    - Processes issues immediately into Documents and Chunks.
 
 2. **Document model**
-   - Each Jira Issue maps to one `DocumentUnit`.
-   - `uri` links to the issue browse URL.
-   - Metadata includes `key`, `project`, `status`, `priority`, `issuetype`, and `assignee`.
-   - System tags allow filtering by `status`, `priority`, `type`, `label`, and `component`.
+    - Each Jira Issue maps to one `DocumentUnit`.
+    - `uri` links to the issue browse URL.
+    - Metadata includes `key`, `project`, `status`, `priority`, `issuetype`, and `assignee`.
+    - System tags automatically capture `status`, `priority`, `type`.
+    - Configurable `taggeable_fields` allow specific custom fields to be promoted as `system_tags`.
+    - `label` and `component` tags are added if present.
 
-3. **Chunk model**
-   - **Chunk 0 (Description)**: A formatted Markdown representation of the issue, including a
-   metadata table (Key, Type, Status, etc.) and the full Description.
-   - **Chunk 1..N (Comments)**: Each comment is a separate chunk, tagged with `type:comment` and `author:<name>`.
+3. **Chunk model** (4 distinct chunk types)
+    - **Chunk 0 (Ticket Body)**: A formatted Key-Value representation of the ticket content.
+      - Includes ALL fields present in the issue.
+      - Field names are mapped from the Jira schema to be human-readable.
+      - Includes descriptions in parenthesis if available in schema.
+      - Includes null/empty fields as "None".
+      - Tags: `type:ticket` + metadata tags.
+    - **Relationship Chunk**:
+      - Lists parent, subtasks, and issue links (blocks, relates to, etc.).
+      - Tags: `type:relationship` + relationship tags (e.g., `rel:blocks:KEY`, `rel:parent:KEY`).
+    - **History Chunk(s)**:
+      - Captures changelog history (author, field changes, timestamps).
+      - Chunked by history entry count (configurable `history_chunk_size`, default 20 entries per chunk).
+      - Tags: `type:history`, `author:<name>`, `transition:selection:<value>`.
+    - **Comment Chunk(s)**:
+      - Each comment is a separate chunk.
+      - Tags: `type:comment`, `author:<name>`.
 
 4. **Incremental Collection**
-   - Uses `updated` timestamp via JQL parameters.
-   - Checkpoints track the max `updated` timestamp per **Project**.
+    - Uses `updated` timestamp via JQL parameters.
+    - Checkpoints track the max `updated` timestamp per **Project**.
 
 5. **Observability**
-   - Prometheus metrics:
-     - `jira_enhanced_search_issues_latency_seconds`, `jira_api_calls_total`
-     - `jira_collect_project_latency_seconds`, `jira_collect_project_items`
+    - Prometheus metrics:
+      - `jira_enhanced_search_issues_latency_seconds`, `jira_api_calls_total`
+      - `jira_collect_project_latency_seconds`, `jira_collect_project_items`
 
 ## Rationale
 
-- **Rich Metadata Embedding**: Including a metadata table in the primary chunk helps the LLM
-understand the state of the work item immediately.
-- **Comments as Chunks**: Discussions in Jira comments often contain critical decisions or
-debugging details. treating them as separate chunks allows specific retrieval of these insights.
-- **JQL Efficiency**: JQL is powerful for incremental fetching (`updated >= '...'`).
+- **Granular Retrieval**: Splitting ticket content, relationships, history, and comments allows retrieval of specific aspects
+(e.g., retrieving only history chunks when asking about "status changes" or "who worked on this").
+- **Rich Metadata**: System tags enable powerful filtering on custom fields, relationships, and history authors.
+- **Full Content Fidelity**: The ticket body chunk captures all fields, ensuring no custom data is lost,
+using readable schema names for clarity.
 
 ## Configuration
 
@@ -60,6 +75,9 @@ debugging details. treating them as separate chunks allows specific retrieval of
 - `initial_lookback_days` (int): Days, default 30.
 - `include_comments` (bool): Default `True`.
 - `use_cached_data` (bool): Default `False`.
+- `taggeable_fields` (List[str]): List of issue field keys (e.g., `customfield_10001`, `priority`) to convert into `system_tags`.
+Note: Standard fields like `status` are deduplicated.
+- `history_chunk_size` (int): Max number of history entries per history chunk. Default 20.
 
 ## Interface summary
 

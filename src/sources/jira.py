@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Dict, Final, List, Optional, Tuple
+from typing import Any, Dict, Final, List, Optional, Set, Tuple
 
 from jira import JIRA
 from pydantic import Field
@@ -41,6 +41,11 @@ class JiraConfig(BaseSourceConfig):
     include_comments: bool = Field(default=True, description="Whether to fetch and chunk comments")
     use_cached_data: bool = Field(default=False, description="Whether to persist/use cached data")
     projects: List[str] = Field(..., description="List of JIRA project keys to fetch")
+    taggeable_fields: List[str] = Field(
+        default_factory=list, description="List of issue fields to include as system tags"
+    )
+
+    history_chunk_size: int = Field(default=20, description="Max changelog items per history chunk")
 
 
 class JiraCheckpoint(Checkpoint[JiraConfig]):
@@ -356,12 +361,36 @@ class JiraSource(Source[JiraConfig]):
         project_obj = fields.get("project", {})
         project_key = project_obj.get("key", "Unknown") if isinstance(project_obj, dict) else "Unknown"
 
-        # 2. Build System Tags
+        # 2. Build Base System Tags (Ticket Level)
         system_tags = []
         system_tags.append(f"status:{status}")
         system_tags.append(f"priority:{priority}")
         system_tags.append(f"type:{issuetype}")
 
+        # Deduplication: standard fields that are already captured
+        standard_derived_tags = {"status", "priority", "issuetype", "labels", "components"}
+
+        # Add configured taggeable fields, carefully excluding duplicates if they are standard fields
+        # Note: 'status', 'priority' etc are field keys. 'labels' is 'labels'.
+
+        for field_key in self.config.taggeable_fields:
+            if field_key in standard_derived_tags:
+                continue
+
+            if field_key in fields:
+                val = fields[field_key]
+                # Handle dicts (like components, versions) or simple values
+                if isinstance(val, list):
+                    for v in val:
+                        v_str = v.get("name", str(v)) if isinstance(v, dict) else str(v)
+                        system_tags.append(f"{field_key}:{v_str}")
+                elif isinstance(val, dict):
+                    v_str = val.get("name", str(val))
+                    system_tags.append(f"{field_key}:{v_str}")
+                elif val is not None:
+                    system_tags.append(f"{field_key}:{val}")
+
+        # Always include labels and components if present as they are standard
         labels = fields.get("labels", [])
         if labels:
             for label in labels:
@@ -376,6 +405,17 @@ class JiraSource(Source[JiraConfig]):
 
         uri = issue.get("self", f"{self.config.url}/browse/{key}")
 
+        # Parent ID logic
+        parent_obj = fields.get("parent")
+        parent_id = None
+        if parent_obj and isinstance(parent_obj, dict):
+            parent_id = parent_obj.get("key")
+
+        # 3. Create Document Unit
+        # We use the key-value representation for the primary hash
+        ticket_content = self._format_ticket_content(issue, names, schema)
+        content_hash = DocumentUnit.compute_hash(ticket_content.encode("utf-8"))
+
         doc = DocumentUnit(
             document_id=f"jira|{self.source_id}|{key}",
             source="jira",
@@ -383,7 +423,9 @@ class JiraSource(Source[JiraConfig]):
             source_instance_id=self.source_id,
             uri=uri,
             title=f"[{key}] {summary}",
-            author_name=reporter,
+            author=reporter,
+            parent_id=parent_id,
+            language=None,
             source_created_at=self._parse_jira_time(created),
             source_updated_at=self._parse_jira_time(updated),
             system_tags=system_tags,
@@ -395,201 +437,223 @@ class JiraSource(Source[JiraConfig]):
                 "issuetype": issuetype,
                 "assignee": assignee,
             },
+            content_hash=content_hash,
         )
 
-        # 3. Create Chunks
         chunks: List[ChunkRecord] = []
+        chunk_idx = 0
 
-        # Chunk 0: Description + Properties in markdown format
-        primary_text = self._format_issue_for_embedding(issue)
+        # Chunk 1: Ticket Body (Key-Value)
+        chunk_tags = system_tags + ["type:ticket"]
+        chunks.append(self._make_chunk(doc=doc, chunk_index=chunk_idx, text=ticket_content, tags=chunk_tags))
+        chunk_idx += 1
 
-        chunks.append(self._make_chunk(doc=doc, chunk_index=0, text=primary_text, tags=["type:description"]))
+        # Chunk 2: Relationships
+        rel_text, rel_tags = self._format_relationships(issue)
+        if rel_text:
+            chunks.append(
+                self._make_chunk(
+                    doc=doc, chunk_index=chunk_idx, text=rel_text, tags=system_tags + ["type:relationship"] + rel_tags
+                )
+            )
+            chunk_idx += 1
 
-        # Chunk 1..N: Comments
+        # Chunk 3+: History (Changelog) - Now split into multiple chunks if needed
+        history_chunks_data = self._format_history(issue)
+        for hist_text, hist_tags in history_chunks_data:
+            chunks.append(
+                self._make_chunk(
+                    doc=doc, chunk_index=chunk_idx, text=hist_text, tags=system_tags + ["type:history"] + hist_tags
+                )
+            )
+            chunk_idx += 1
+
+        # Chunk N+: Comments
         if self.config.include_comments:
             comment_obj = fields.get("comment")
             if comment_obj and isinstance(comment_obj, dict):
                 comments = comment_obj.get("comments", [])
-                for i, comment in enumerate(comments):
-                    comment_text = self._format_comment_for_embedding(comment)
-                    c_author_obj = comment.get("author", {})
-                    c_author = (
-                        c_author_obj.get("displayName", "Unknown") if isinstance(c_author_obj, dict) else "Unknown"
-                    )
-
+                for comment in comments:
+                    comment_text, comment_tags = self._format_comment_for_embedding(comment)
                     chunks.append(
                         self._make_chunk(
-                            doc=doc, chunk_index=i + 1, text=comment_text, tags=["type:comment", f"author:{c_author}"]
+                            doc=doc,
+                            chunk_index=chunk_idx,
+                            text=comment_text,
+                            tags=system_tags + ["type:comment"] + comment_tags,
                         )
                     )
+                    chunk_idx += 1
 
         return doc, chunks
 
-    def _format_properties(self, issue: Dict[str, Any]) -> str:
-        """Format issue properties into a readable string."""
+    def _format_ticket_content(self, issue: Dict[str, Any], names: Dict[str, str], schema: Dict[str, Any]) -> str:
+        """Format ticket fields as Key: Value pairs.
+
+        Includes all fields, preserving duplicates if necessary (though dict keys are unique),
+        resolving names from schema/names, appending descriptions if available, and including empty values.
+        """
         fields = issue["fields"]
         lines = []
 
-        issuetype = (
-            fields.get("issuetype", {}).get("name", "Unknown")
-            if isinstance(fields.get("issuetype"), dict)
-            else str(fields.get("issuetype", "Unknown"))
-        )
-        status = (
-            fields.get("status", {}).get("name", "Unknown")
-            if isinstance(fields.get("status"), dict)
-            else str(fields.get("status", "Unknown"))
-        )
-        priority = (
-            fields.get("priority", {}).get("name", "Unknown")
-            if isinstance(fields.get("priority"), dict)
-            else str(fields.get("priority", "Unknown"))
-        )
+        # Always start with Key for context
+        lines.append(f"Key: {issue['key']}")
 
-        assignee_obj = fields.get("assignee")
-        assignee = assignee_obj.get("displayName", "Unassigned") if isinstance(assignee_obj, dict) else "Unassigned"
+        # Proceed with all other fields
+        # Note: fields dict keys are IDs (or keys) like 'summary', 'customfield_123', 'status'
 
-        reporter_obj = fields.get("reporter")
-        reporter = reporter_obj.get("displayName", "Unknown") if isinstance(reporter_obj, dict) else "Unknown"
+        for field_id, val in fields.items():
+            # Get human readable name
+            field_name = names.get(field_id, field_id)
 
-        lines.append(f"Type: {issuetype}")
-        lines.append(f"Status: {status}")
-        lines.append(f"Priority: {priority}")
-        lines.append(f"Assignee: {assignee}")
-        lines.append(f"Reporter: {reporter}")
+            # Check for description in schema
+            # schema is typically {field_id: {type: ..., system: ..., items: ...}}
+            # It usually doesn't have 'description'. But we'll check just in case or if user implies something else.
+            # If unavailable, we just use the name.
+            field_schema = schema.get(field_id, {})
+            # Some JIRA instances might inject description here, or it might be in 'custom' or 'system' logic.
+            # We'll assume if it's there it's under 'description'.
+            field_desc = field_schema.get("description", "")
 
-        labels = fields.get("labels", [])
-        if labels:
-            lines.append(f"Labels: {', '.join(labels)}")
+            label = field_name
+            if field_desc:
+                label = f"{field_name} ({field_desc})"
 
-        components = fields.get("components", [])
-        if components:
-            comp_names = [c.get("name", "") if isinstance(c, dict) else str(c) for c in components]
-            comp_names = [n for n in comp_names if n]
-            if comp_names:
-                lines.append(f"Components: {', '.join(comp_names)}")
+            # Format value
+            str_val = ""
+            if val is None:
+                str_val = "None"  # Or empty string? "None" is explicit for "null".
+            elif isinstance(val, dict):
+                str_val = val.get("name") or val.get("key") or val.get("displayName") or val.get("value") or str(val)
+            elif isinstance(val, list):
+                # List of dicts or strings
+                items = []
+                for v in val:
+                    if isinstance(v, dict):
+                        items.append(v.get("name") or v.get("value") or str(v))
+                    else:
+                        items.append(str(v))
+                str_val = ", ".join(items)
+            else:
+                str_val = str(val)
+
+            lines.append(f"{label}: {str_val}")
 
         return "\n".join(lines)
 
-    def _format_issue_for_embedding(self, issue: Dict[str, Any]) -> str:
-        """Format issue as comprehensive markdown for embedding."""
-        key = issue["key"]
+    def _format_relationships(self, issue: Dict[str, Any]) -> Tuple[str, List[str]]:
+        """Extract relationships and return text content and tags."""
         fields = issue["fields"]
         lines = []
+        tags = []
 
-        # Title
-        summary = fields.get("summary", "")
-        lines.append(f"# {key}: {summary}")
-        lines.append("")
+        # Parent
+        parent = fields.get("parent")
+        if parent:
+            key = parent.get("key")
+            lines.append(f"Parent: {key}")
+            tags.append(f"rel:parent:{key}")
 
-        # Metadata table
-        lines.append("## Metadata")
-        lines.append("")
-        lines.append("| Property | Value |")
-        lines.append("|----------|-------|")
-        lines.append(f"| **Key** | {key} |")
+        # Subtasks
+        subtasks = fields.get("subtasks", [])
+        for task in subtasks:
+            key = task.get("key")
+            lines.append(f"Subtask: {key}")
+            tags.append(f"rel:subtask:{key}")
 
-        issuetype = (
-            fields.get("issuetype", {}).get("name", "Unknown")
-            if isinstance(fields.get("issuetype"), dict)
-            else str(fields.get("issuetype", "Unknown"))
-        )
-        status = (
-            fields.get("status", {}).get("name", "Unknown")
-            if isinstance(fields.get("status"), dict)
-            else str(fields.get("status", "Unknown"))
-        )
-        priority = (
-            fields.get("priority", {}).get("name", "Unknown")
-            if isinstance(fields.get("priority"), dict)
-            else str(fields.get("priority", "Unknown"))
-        )
+        # Issue Links
+        issuelinks = fields.get("issuelinks", [])
+        for link in issuelinks:
+            # Outward
+            if "outwardIssue" in link:
+                key = link["outwardIssue"]["key"]
+                rel_type = link["type"]["outward"]
+                lines.append(f"{rel_type}: {key}")
+                tags.append(f"rel:{rel_type.replace(' ', '_').lower()}:{key}")
+            # Inward
+            if "inwardIssue" in link:
+                key = link["inwardIssue"]["key"]
+                rel_type = link["type"]["inward"]
+                lines.append(f"{rel_type}: {key}")
+                tags.append(f"rel:{rel_type.replace(' ', '_').lower()}:{key}")
 
-        lines.append(f"| **Type** | {issuetype} |")
-        lines.append(f"| **Status** | {status} |")
-        lines.append(f"| **Priority** | {priority} |")
+        return "\n".join(lines), tags
 
-        project_obj = fields.get("project", {})
-        project_key = project_obj.get("key", "Unknown") if isinstance(project_obj, dict) else "Unknown"
-        lines.append(f"| **Project** | {project_key} |")
+    def _format_history(self, issue: Dict[str, Any]) -> List[Tuple[str, List[str]]]:
+        """Format changelog history into chunks."""
+        changelog = issue.get("changelog", {})
+        if not changelog:
+            return []
 
-        assignee_obj = fields.get("assignee")
-        assignee = assignee_obj.get("displayName", "Unassigned") if isinstance(assignee_obj, dict) else "Unassigned"
-        lines.append(f"| **Assignee** | {assignee} |")
+        histories = changelog.get("histories", [])
+        if not histories:
+            return []
 
-        reporter_obj = fields.get("reporter")
-        reporter = reporter_obj.get("displayName", "Unknown") if isinstance(reporter_obj, dict) else "Unknown"
-        lines.append(f"| **Reporter** | {reporter} |")
+        chunks_data = []
 
-        created = fields.get("created", "")
-        updated = fields.get("updated", "")
-        lines.append(f"| **Created** | {created} |")
-        lines.append(f"| **Updated** | {updated} |")
+        # Current batch
+        batch_histories: List[str] = []
+        batch_tags: Set[str] = set()
 
-        # Labels
-        labels = fields.get("labels", [])
-        if labels:
-            lines.append(f"| **Labels** | {', '.join(labels)} |")
+        batch_size = self.config.history_chunk_size
 
-        # Components
-        components = fields.get("components", [])
-        if components:
-            comp_names = [c.get("name", "") if isinstance(c, dict) else str(c) for c in components]
-            comp_names = [n for n in comp_names if n]
-            if comp_names:
-                lines.append(f"| **Components** | {', '.join(comp_names)} |")
+        for history in histories:
+            author = history.get("author", {}).get("displayName", "Unknown")
+            created = history.get("created", "")
 
-        # Resolution
-        resolution_obj = fields.get("resolution")
-        if resolution_obj:
-            resolution_name = (
-                resolution_obj.get("name", str(resolution_obj))
-                if isinstance(resolution_obj, dict)
-                else str(resolution_obj)
-            )
-            lines.append(f"| **Resolution** | {resolution_name} |")
+            # This history entry's text lines
+            entry_lines = []
 
-        # Fix versions
-        fix_versions = fields.get("fixVersions", [])
-        if fix_versions:
-            version_names = [v.get("name", "") if isinstance(v, dict) else str(v) for v in fix_versions]
-            version_names = [n for n in version_names if n]
-            if version_names:
-                lines.append(f"| **Fix Versions** | {', '.join(version_names)} |")
+            # Tags for this entry
+            entry_tags = {f"author:{author}"}
 
-        # Affected versions
-        versions = fields.get("versions", [])
-        if versions:
-            version_names = [v.get("name", "") if isinstance(v, dict) else str(v) for v in versions]
-            version_names = [n for n in version_names if n]
-            if version_names:
-                lines.append(f"| **Affected Versions** | {', '.join(version_names)} |")
+            items = history.get("items", [])
+            if not items:
+                continue
 
-        lines.append("")
+            for item in items:
+                field = item.get("field", "")
+                from_str = item.get("fromString", "")
+                to_str = item.get("toString", "")
 
-        # Description
-        lines.append("## Description")
-        lines.append("")
-        description = fields.get("description", "*No description provided*")
-        if not description:
-            description = "*No description provided*"
-        lines.append(description)
-        return "\n".join(lines)
+                entry_lines.append(f"{created} - {author} changed {field} from '{from_str}' to '{to_str}'")
 
-    def _format_comment_for_embedding(self, comment: Dict[str, Any]) -> str:
-        """Format comment as markdown for embedding."""
+                if field.lower() == "status":
+                    entry_tags.add(f"transition:selection:{to_str}")
+
+            # Add entry to batch
+            # Join the items of this history entry with newlines
+            batch_histories.append("\n".join(entry_lines))
+            batch_tags.update(entry_tags)
+
+            # Chunking by HISTORY entry count
+            if len(batch_histories) >= batch_size:
+                chunks_data.append(("\n".join(batch_histories), list(batch_tags)))
+                batch_histories = []
+                batch_tags = set()
+
+        # Remaining
+        if batch_histories:
+            chunks_data.append(("\n".join(batch_histories), list(batch_tags)))
+
+        return chunks_data
+
+    def _format_comment_for_embedding(self, comment: Dict[str, Any]) -> Tuple[str, List[str]]:
+        """Format comment as markdown for embedding and return tags."""
         author_obj = comment.get("author", {})
         c_author = author_obj.get("displayName", "Unknown") if isinstance(author_obj, dict) else "Unknown"
         c_created = comment.get("created", "")
         c_body = comment.get("body", "")
 
         lines = []
-        lines.append(f"### Comment by {c_author}")
-        lines.append(f"*Posted on {c_created}*")
-        lines.append("")
+        lines.append(f"Author: {c_author}")
+        lines.append(f"Created: {c_created}")
+        lines.append("Content:")
         lines.append(c_body)
 
-        return "\n".join(lines)
+        tags = [f"author:{c_author}"]
+
+        return "\n".join(lines), tags
 
     def _make_chunk(
         self,
@@ -718,7 +782,7 @@ def main() -> None:
     # Example configuration from environment
     config = {
         "url": os.getenv("JIRA_INSTANCE_URL", ""),
-        "projects": ["AL", "UA"],
+        "projects": ["PROJ_1", "PROJ_2"],
         "storage_path": "./data/jira",
         "id": "jira-main",
     }
