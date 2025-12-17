@@ -221,7 +221,7 @@ class ConfluenceSource(Source[ConfluenceConfig]):
         params = {
             "cql": cql,
             "limit": limit,
-            "expand": "body.storage,version,history,metadata.labels,space",
+            "expand": "body.storage,version,history,metadata.labels,space,ancestors",
         }
 
         while True:
@@ -370,6 +370,19 @@ class ConfluenceSource(Source[ConfluenceConfig]):
             if label_name:
                 system_tags.append(f"label:{label_name}")
 
+        # Try to find parent_id from ancestors
+        ancestors = page.get("ancestors", [])
+        parent_id = None
+        if ancestors:
+            # The last ancestor is the direct parent
+            parent_id = ancestors[-1].get("id")
+
+        body_storage = page.get("body", {}).get("storage", {}).get("value", "")
+        # Compute hash BEFORE markdown conversion if we want source truth,
+        # but matching what Chunk does (if it did) is better.
+        # Using body_storage (HTML) is stable.
+        content_hash = DocumentUnit.compute_hash(body_storage.encode("utf-8")) if body_storage else None
+
         doc = DocumentUnit(
             document_id=f"confluence|{self.source_id}|{page_id}",
             source="confluence",
@@ -377,7 +390,9 @@ class ConfluenceSource(Source[ConfluenceConfig]):
             source_instance_id=self.source_id,
             uri=uri,
             title=title,
-            author_name=author_name,
+            author=author_name,
+            parent_id=parent_id,
+            language=None,  # Detection could be added here
             source_created_at=created_at,
             source_updated_at=updated_at,
             system_tags=system_tags,
@@ -386,11 +401,11 @@ class ConfluenceSource(Source[ConfluenceConfig]):
                 "space": space_key,
                 "title": title,
             },
+            content_hash=content_hash,
         )
 
         chunks: List[ChunkRecord] = []
 
-        body_storage = page.get("body", {}).get("storage", {}).get("value", "")
         markdown_text = self._html_to_markdown(body_storage)
 
         # Create a single chunk for the page content for now.

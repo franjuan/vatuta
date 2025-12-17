@@ -21,9 +21,10 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Dict, Final, List, Optional, Tuple, cast
+from typing import Any, Callable, Dict, Final, List, Optional, Tuple, cast
 
 from pydantic import Field
+from sentence_transformers.SentenceTransformer import SentenceTransformer
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from slack_sdk.http_retry.builtin_handlers import (
@@ -58,6 +59,12 @@ class SlackConfig(BaseSourceConfig):
         default_factory=lambda: ["public_channel", "private_channel", "im", "mpim"],
         description="List of channel types to fetch",
     )
+    chunk_time_interval_minutes: int = Field(default=240, description="Max minutes between messages in a chunk")
+    chunk_max_size_chars: int = Field(default=2000, description="Max characters per chunk")
+    chunk_max_count: int = Field(default=20, description="Max messages per chunk")
+    chunk_similarity_threshold: float = Field(default=0.15, description="Cosine similarity threshold for splitting")
+    chunk_embedding_model: str = Field(default="all-MiniLM-L6-v2", description="Model for semantic embeddings")
+    api_retries: int = Field(default=3, description="Number of retries for unexpected API errors")
 
 
 class SlackCheckpoint(Checkpoint[SlackConfig]):
@@ -136,6 +143,9 @@ class SlackSource(Source[SlackConfig]):
     - Add support to retrieve and update edited messages.
     """
 
+    SLACK_API_LIMIT: Final[int] = 200
+    """Max messages per API call to Slack"""
+
     @classmethod
     def create(cls, config: SlackConfig, data_dir: str, secrets: Optional[dict] = None) -> "SlackSource":
         """Create a SlackSource instance with the given configuration."""
@@ -155,18 +165,6 @@ class SlackSource(Source[SlackConfig]):
                 secrets["bot_token"] = token
 
         return cls(config=config, secrets=secrets, storage_path=storage_path)
-
-    def load_checkpoint(self) -> SlackCheckpoint:
-        """Load existing checkpoint or create a new one."""
-        from pathlib import Path
-
-        cp_path = Path(self.storage_path) / self.source_id / "checkpoint.json"
-        if cp_path.exists():
-            return SlackCheckpoint.load(cp_path, self.config)
-        return SlackCheckpoint(config=self.config)
-
-    SLACK_API_LIMIT: Final[int] = 200
-    """Max messages per API call to Slack"""
 
     def __init__(
         self,
@@ -249,7 +247,92 @@ class SlackSource(Source[SlackConfig]):
                 }
             )
 
-    # User cache helpers moved to utils.persistent_cache.PersistentCache
+        # Lazy loaded embedding model
+        self._embedding_model: SentenceTransformer | None = None
+
+    def _api_call(self, method: str, func: Callable, **kwargs: Any) -> Any:
+        """Execute a Slack API call with standard rate limiting, retries, and metrics.
+
+        Args:
+            method: The method name for metrics and rate limiting (e.g., "users.info").
+            func: The API client function to call.
+            **kwargs: Arguments to pass to the function.
+
+        Returns:
+            The API response.
+
+        Raises:
+            SlackApiError: If the API call fails with a 4xx error or after retrying 5xx errors.
+            Exception: If an unexpected error occurs after retries.
+        """
+        consecutive_errors = 0
+        while True:
+            self.rate_limiter.acquire(method)
+            call_start = perf_counter()
+            try:
+                resp = func(**kwargs)
+                consecutive_errors = 0
+
+                # Success metrics
+                status = str(getattr(resp, "status_code", 200))
+                API_CALLS.labels(source="slack", source_id=self.source_id, method=method, status=status).inc()
+                API_LATENCY.labels(source="slack", source_id=self.source_id, method=method, status=status).observe(
+                    perf_counter() - call_start
+                )
+                return resp
+
+            except SlackApiError as e:
+                # Rate limiting management
+                status = str(getattr(getattr(e, "response", None), "status_code", 429))
+                API_CALLS.labels(source="slack", source_id=self.source_id, method=method, status=status).inc()
+                API_LATENCY.labels(source="slack", source_id=self.source_id, method=method, status=status).observe(
+                    perf_counter() - call_start
+                )
+
+                if getattr(e, "response", None) is not None and getattr(e.response, "status_code", None) == 429:
+                    wait_seconds = int(e.response.headers.get("Retry-After", "1"))
+                    logger.info(f"429 on {method}, Retry-After={wait_seconds}s")
+                    self.rate_limiter.on_rate_limited(method, wait_seconds)
+                    time.sleep(wait_seconds)
+                    continue
+
+                # Check for non-recoverable client errors (4xx excluding 429)
+                status_int = int(status)
+                if 400 <= status_int < 500:
+                    logger.debug(f"Client error in {method}: {e}")
+                    raise
+
+                # Handle recoverable server/unknown errors (5xx)
+                consecutive_errors += 1
+                if consecutive_errors <= self.config.api_retries:
+                    wait_seconds = 2**consecutive_errors
+                    logger.warning(
+                        f"Server error {status} from Slack API in {method} (attempt {consecutive_errors}/{self.config.api_retries}). Retrying in {wait_seconds}s..."
+                    )
+                    time.sleep(wait_seconds)
+                    continue
+
+                raise
+            except Exception as e:
+                logger.error(f"Unexpected error in {method}: {e}")
+                consecutive_errors += 1
+                if consecutive_errors <= self.config.api_retries:
+                    wait_seconds = 2**consecutive_errors
+                    logger.warning(
+                        f"Retrying {method} after unexpected error (attempt {consecutive_errors}/{self.config.api_retries}) in {wait_seconds}s..."
+                    )
+                    time.sleep(wait_seconds)
+                    continue
+                raise
+
+    def load_checkpoint(self) -> SlackCheckpoint:
+        """Load existing checkpoint or create a new one."""
+        from pathlib import Path
+
+        cp_path = Path(self.storage_path) / self.source_id / "checkpoint.json"
+        if cp_path.exists():
+            return SlackCheckpoint.load(cp_path, self.config)
+        return SlackCheckpoint(config=self.config)
 
     def _list_conversations(self, channel_types: List[str]) -> List[dict]:
         """List Slack conversations using cursored pagination.
@@ -267,55 +350,23 @@ class SlackSource(Source[SlackConfig]):
         logger.debug(f"list_conversations: start types={types_str}")
         conversations: list[dict] = []
         cursor = None
-        consecutive_errors = 0
         while True:
-            # Proactive limiter
-            self.rate_limiter.acquire("conversations.list")
-            call_start = perf_counter()
+            # Call API using wrapper
             try:
-                resp = self.client.conversations_list(
+                resp = self._api_call(
+                    "conversations.list",
+                    self.client.conversations_list,
                     cursor=cursor,
                     limit=SlackSource.SLACK_API_LIMIT,
                     types=types_str,
                     exclude_archived=True,
                 )
-                consecutive_errors = 0
-            except SlackApiError as e:
-                # Rate limiting management
-                status = str(getattr(getattr(e, "response", None), "status_code", 429))
-                elapsed = perf_counter() - call_start
-                API_CALLS.labels(
-                    source="slack", source_id=self.source_id, method="conversations.list", status=status
-                ).inc()
-                API_LATENCY.labels(
-                    source="slack", source_id=self.source_id, method="conversations.list", status=status
-                ).observe(elapsed)
-                if getattr(e, "response", None) is not None and getattr(e.response, "status_code", None) == 429:
-                    wait_seconds = int(e.response.headers.get("Retry-After", "1"))
-                    logger.info(f"429 on conversations.list, Retry-After={wait_seconds}s")
-                    self.rate_limiter.on_rate_limited("conversations.list", wait_seconds)
-                    time.sleep(wait_seconds)
-                    continue
+            except Exception as e:
+                logger.error(
+                    f"Error listing conversations (conversation list process interrupted, not all channels collected): {e}"
+                )
+                break
 
-                # Handle non-JSON response (transient server/network error)
-                if "Received a response in a non-JSON format" in str(e):
-                    consecutive_errors += 1
-                    if consecutive_errors <= 3:
-                        wait_seconds = 2**consecutive_errors
-                        logger.warning(
-                            f"Non-JSON response from Slack API in conversations.list (attempt {consecutive_errors}/3). Retrying in {wait_seconds}s..."
-                        )
-                        time.sleep(wait_seconds)
-                        continue
-
-                raise
-            status = str(getattr(resp, "status_code", 200))
-            # Collect metrics
-            elapsed = perf_counter() - call_start
-            API_CALLS.labels(source="slack", source_id=self.source_id, method="conversations.list", status=status).inc()
-            API_LATENCY.labels(
-                source="slack", source_id=self.source_id, method="conversations.list", status=status
-            ).observe(elapsed)
             logger.debug(f"list_conversations: page channels={len(resp.get('channels', []))}")
             page_items = len(resp.get("channels", []))
             op_items += page_items
@@ -394,37 +445,14 @@ class SlackSource(Source[SlackConfig]):
                     pass  # Fallback to API
 
         # Fetch from API
-        self.rate_limiter.acquire("conversations.info")
-        call_start = perf_counter()
         try:
-            resp = self.client.conversations_info(channel=channel_id)
-        except SlackApiError as e:
-            status = str(getattr(getattr(e, "response", None), "status_code", 429))
-            API_CALLS.labels(source="slack", source_id=self.source_id, method="conversations.info", status=status).inc()
-            API_LATENCY.labels(
-                source="slack", source_id=self.source_id, method="conversations.info", status=status
-            ).observe(perf_counter() - call_start)
-            if getattr(e, "response", None) is not None and getattr(e.response, "status_code", None) == 429:
-                wait_seconds = int(e.response.headers.get("Retry-After", "1"))
-                logger.info(f"429 on conversations.info {channel_id}, Retry-After={wait_seconds}s")
-                self.rate_limiter.on_rate_limited("conversations.info", wait_seconds)
-                time.sleep(wait_seconds)
-                # Retry once recursively or loop? For simplicity, just retry once or fail.
-                # Given the structure, a simple retry loop would be better, but for now
-                # let's just raise to be consistent with other methods or implement a simple retry.
-                # The other methods use a while True loop. Let's do that for robustness.
-                return self._get_channel_metadata(channel_id, use_cache=False)
-            raise
-
-        status = str(getattr(resp, "status_code", 200))
-        API_CALLS.labels(source="slack", source_id=self.source_id, method="conversations.info", status=status).inc()
-        API_LATENCY.labels(
-            source="slack", source_id=self.source_id, method="conversations.info", status=status
-        ).observe(perf_counter() - call_start)
-
-        channel: dict[str, dict] = resp.get("channel", {})
-        self._persist_channel_metadata(channel_dir, channel)
-        return channel
+            resp = self._api_call("conversations.info", self.client.conversations_info, channel=channel_id)
+            channel: dict[str, dict] = resp.get("channel", {})
+            self._persist_channel_metadata(channel_dir, channel)
+            return channel
+        except Exception:
+            logger.warning(f"Using fallback metadata for channel {channel_id} due to persistent errors")
+            return {"id": channel_id, "name": channel_id}
 
     def _list_messages(
         self,
@@ -451,60 +479,21 @@ class SlackSource(Source[SlackConfig]):
         logger.debug(f"list_messages: start channel={channel_id}")
         messages: list[dict] = []
         cursor = None
-        consecutive_errors = 0
         while True:
             # Get latest timestamp from checkpoint or override if provided
             latest_ts = latest_ts_override if latest_ts_override is not None else checkpoint.get_latest_ts(channel_id)
             latest_ts_str = str(float(latest_ts)) if latest_ts is not None else None
-            # Proactive limiter
-            self.rate_limiter.acquire("conversations.history")
-            call_start = perf_counter()
-            try:
-                resp = self.client.conversations_history(
-                    cursor=cursor,
-                    channel=channel_id,
-                    limit=SlackSource.SLACK_API_LIMIT,
-                    oldest=latest_ts_str,
-                )
-                consecutive_errors = 0
-            except SlackApiError as e:
-                # Rate limiting management
-                status = str(getattr(getattr(e, "response", None), "status_code", 429))
-                elapsed = perf_counter() - call_start
-                API_CALLS.labels(
-                    source="slack", source_id=self.source_id, method="conversations.history", status=status
-                ).inc()
-                API_LATENCY.labels(
-                    source="slack", source_id=self.source_id, method="conversations.history", status=status
-                ).observe(elapsed)
-                if getattr(e, "response", None) is not None and getattr(e.response, "status_code", None) == 429:
-                    wait_seconds = int(e.response.headers.get("Retry-After", "1"))
-                    logger.info(f"429 on conversations.history, Retry-After={wait_seconds}s")
-                    self.rate_limiter.on_rate_limited("conversations.history", wait_seconds)
-                    time.sleep(wait_seconds)
-                    continue
 
-                # Handle non-JSON response (transient server/network error)
-                if "Received a response in a non-JSON format" in str(e):
-                    consecutive_errors += 1
-                    if consecutive_errors <= 3:
-                        wait_seconds = 2**consecutive_errors
-                        logger.warning(
-                            f"Non-JSON response from Slack API in conversations.history (attempt {consecutive_errors}/3). Retrying in {wait_seconds}s..."
-                        )
-                        time.sleep(wait_seconds)
-                        continue
+            # Call API using wrapper
+            resp = self._api_call(
+                "conversations.history",
+                self.client.conversations_history,
+                cursor=cursor,
+                channel=channel_id,
+                limit=SlackSource.SLACK_API_LIMIT,
+                oldest=latest_ts_str,
+            )
 
-                raise
-            status = str(getattr(resp, "status_code", 200))
-            # Collect metrics
-            elapsed = perf_counter() - call_start
-            API_CALLS.labels(
-                source="slack", source_id=self.source_id, method="conversations.history", status=status
-            ).inc()
-            API_LATENCY.labels(
-                source="slack", source_id=self.source_id, method="conversations.history", status=status
-            ).observe(elapsed)
             page_msgs: List[Dict[str, Any]] = resp.get("messages", [])
             messages.extend(page_msgs)
             page_items = len(page_msgs)
@@ -538,58 +527,23 @@ class SlackSource(Source[SlackConfig]):
             return cast(Dict[str, Any], entry)
         USER_CACHE_MISSES.inc()
         logger.debug(f"user cache MISS for {user_id}")
-        consecutive_errors = 0
-        while True:
-            self.rate_limiter.acquire("users.info")
-            call_start = perf_counter()
-            try:
-                resp = self.client.users_info(user=user_id)
-                consecutive_errors = 0
-            except SlackApiError as e:
-                # Rate limiting management
-                status = str(getattr(getattr(e, "response", None), "status_code", 429))
-                API_CALLS.labels(source="slack", source_id=self.source_id, method="users.info", status=status).inc()
-                API_LATENCY.labels(
-                    source="slack", source_id=self.source_id, method="users.info", status=status
-                ).observe(perf_counter() - call_start)
-                if getattr(e, "response", None) is not None and getattr(e.response, "status_code", None) == 429:
-                    wait_seconds = int(e.response.headers.get("Retry-After", "1"))
-                    logger.info(f"429 on users.info {user_id}, Retry-After={wait_seconds}s")
-                    self.rate_limiter.on_rate_limited("users.info", wait_seconds)
-                    time.sleep(wait_seconds)
-                    continue
 
-                # Handle non-JSON response (transient server/network error)
-                if "Received a response in a non-JSON format" in str(e):
-                    consecutive_errors += 1
-                    if consecutive_errors <= 3:
-                        wait_seconds = 2**consecutive_errors
-                        logger.warning(
-                            f"Non-JSON response from Slack API in users.info (attempt {consecutive_errors}/3). Retrying in {wait_seconds}s..."
-                        )
-                        time.sleep(wait_seconds)
-                        continue
+        resp = self._api_call("users.info", self.client.users_info, user=user_id)
 
-                raise
-            # Collect metrics
-            API_CALLS.labels(source="slack", source_id=self.source_id, method="users.info", status="200").inc()
-            API_LATENCY.labels(source="slack", source_id=self.source_id, method="users.info", status="200").observe(
-                perf_counter() - call_start
-            )
-            user = resp.get("user", {}) if isinstance(resp, dict) else getattr(resp, "data", {}).get("user", {})
-            # Build compact user info
-            compact = {
-                "id": user.get("id"),
-                "team_id": user.get("team_id"),
-                "name": user.get("name"),
-                "real_name": user.get("real_name"),
-                "profile": user.get("profile", {}),
-                "is_bot": user.get("is_bot"),
-                "updated": user.get("updated"),
-                "cached_at": int(time.time()),
-            }
-            self._user_cache.set(user_id, compact)
-            return compact
+        user = resp.get("user", {}) if isinstance(resp, dict) else getattr(resp, "data", {}).get("user", {})
+        # Build compact user info
+        compact = {
+            "id": user.get("id"),
+            "team_id": user.get("team_id"),
+            "name": user.get("name"),
+            "real_name": user.get("real_name"),
+            "profile": user.get("profile", {}),
+            "is_bot": user.get("is_bot"),
+            "updated": user.get("updated"),
+            "cached_at": int(time.time()),
+        }
+        self._user_cache.set(user_id, compact)
+        return compact
 
     def _extract_threads(self, channel: dict, messages: List[dict]) -> dict:
         """Extract thread structures from a channel's messages.
@@ -740,7 +694,6 @@ class SlackSource(Source[SlackConfig]):
 
         tags: set[str] = set()
         url_re = re.compile(r"(https?://[^\s>]+)")
-        email_re = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}")
         for u in url_re.findall(text or ""):
             try:
                 p = urllib.parse.urlparse(u)
@@ -749,6 +702,7 @@ class SlackSource(Source[SlackConfig]):
                     tags.add(f"domain:{p.netloc.lower()}")
             except Exception:
                 pass
+        email_re = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}")
         for e in email_re.findall(text or ""):
             el = e.lower()
             tags.add(f"email:{el}")
@@ -813,8 +767,21 @@ class SlackSource(Source[SlackConfig]):
             content_hash=content_hash,
         )
 
-    def __build_chunks_for_messages(self, doc: DocumentUnit, msgs: List[dict]) -> List[ChunkRecord]:
-        """Build flat chunks for a list of Slack message dicts.
+    def _get_embedding_model(self) -> Any:
+        """Get the sentence transformer model, lazy loading it."""
+        from sentence_transformers import SentenceTransformer
+
+        if self._embedding_model is None:
+            self._embedding_model = SentenceTransformer(self.config.chunk_embedding_model)
+        return self._embedding_model
+
+    def _build_chunks_for_messages(self, doc: DocumentUnit, msgs: List[dict]) -> List[ChunkRecord]:
+        """Build flat chunks for a list of Slack message dicts with multi-strategy splitting.
+
+        Strategies:
+        1. Time: Split if gap > chunk_time_interval_minutes
+        2. Size: Split if chunk size > chunk_max_size_chars OR count > chunk_max_count
+        3. Semantic: Split if cosine similarity < chunk_similarity_threshold
 
         Args:
             doc: A DocumentUnit representing the document the chunks belong to.
@@ -823,11 +790,87 @@ class SlackSource(Source[SlackConfig]):
         Returns:
             A list of ChunkRecord objects.
         """
+        if not msgs:
+            return []
+
+        from sentence_transformers.util import cos_sim
+
+        # Sort messages by timestamp
+        sorted_msgs = sorted(msgs, key=lambda mm: float(mm.get("ts", 0.0)))
+
+        # Pre-calculate embeddings for all messages
+        # We use the text content for embedding
+        texts_for_embedding = [m.get("text", "") or " " for m in sorted_msgs]
+        model = self._get_embedding_model()
+        embeddings = model.encode(texts_for_embedding)
+
         chunks: List[ChunkRecord] = []
-        for idx, m in enumerate(sorted(msgs, key=lambda mm: float(mm.get("ts", 0.0)))):
+
+        current_chunk_msgs: List[dict] = []
+        current_chunk_size = 0
+        current_chunk_start_idx = 0
+
+        # Track previous message state for comparison
+        prev_msg_ts: Optional[float] = None
+        prev_msg_emb: Optional[Any] = None
+
+        for idx, (m, emb) in enumerate(zip(sorted_msgs, embeddings, strict=False)):
             text = self._format_message_for_chunk(m)
-            tags = self._extract_simple_tags(text)
-            chunks.append(self._make_chunk(doc, idx, text, tags))
+            msg_len = len(text)
+            ts = float(m.get("ts", 0.0))
+
+            should_split = False
+
+            # 1. Time-based splitting
+            if prev_msg_ts is not None:
+                delta_minutes = (ts - prev_msg_ts) / 60.0
+                if delta_minutes > self.config.chunk_time_interval_minutes:
+                    should_split = True
+
+            # 2. Size/Count-based splitting (check against accumulated chunk)
+            if not should_split and current_chunk_msgs:
+                # Would adding this message exceed limits?
+                if (current_chunk_size + msg_len > self.config.chunk_max_size_chars) or (
+                    len(current_chunk_msgs) + 1 > self.config.chunk_max_count
+                ):
+                    should_split = True
+
+            # 3. Semantic splitting
+            if not should_split and prev_msg_emb is not None:
+                # Calculate cosine similarity
+                similarity = cos_sim(emb, prev_msg_emb).item()
+                if similarity < self.config.chunk_similarity_threshold:
+                    should_split = True
+
+            if should_split and current_chunk_msgs:
+                # Flush current chunk
+                chunk_text = "\n".join([self._format_message_for_chunk(cm) for cm in current_chunk_msgs])
+                # Collect tags from all messages
+                all_tags = set()
+                for cm in current_chunk_msgs:
+                    all_tags.update(self._extract_simple_tags(cm.get("text", "")))
+
+                chunks.append(self._make_chunk(doc, current_chunk_start_idx, chunk_text, list(all_tags)))
+
+                # Reset accumulator
+                current_chunk_msgs = []
+                current_chunk_size = 0
+                current_chunk_start_idx = idx
+
+            # Add message to current accumulator
+            current_chunk_msgs.append(m)
+            current_chunk_size += msg_len
+            prev_msg_ts = ts
+            prev_msg_emb = emb
+
+        # Flush remaining messages
+        if current_chunk_msgs:
+            chunk_text = "\n".join([self._format_message_for_chunk(cm) for cm in current_chunk_msgs])
+            all_tags = set()
+            for cm in current_chunk_msgs:
+                all_tags.update(self._extract_simple_tags(cm.get("text", "")))
+            chunks.append(self._make_chunk(doc, current_chunk_start_idx, chunk_text, list(all_tags)))
+
         return chunks
 
     def __process_channel_messages(
@@ -1050,15 +1093,29 @@ class SlackSource(Source[SlackConfig]):
             if (domain and first_ts)
             else None
         )
+
+        # Author resolution from first message
+        author_name = None
+        if msgs:
+            user_id = msgs[0].get("user")
+            if user_id:
+                author_name = self._resolve_user_display(user_id)
+
+        # Parent ID logic
+        parent_id = None
+        if meta.get("is_thread"):
+            parent_id = channel.get("id")
+
         return DocumentUnit(
-            document_id=sha256(f"slack|{source_doc_id}".encode()).hexdigest(),
+            document_id=f"slack|{self.source_id}|{source_doc_id}",
             source="slack",
             source_instance_id=self.source_id,
             source_doc_id=source_doc_id,
             uri=uri,
             title=title,
-            author_id=None,
-            author_name=None,
+            author=author_name,
+            parent_id=parent_id,
+            language=None,
             source_created_at=created_dt,
             source_updated_at=updated_dt,
             system_tags=tags,
@@ -1093,7 +1150,7 @@ class SlackSource(Source[SlackConfig]):
             "message_count": len(msgs),
         }
         doc = self.__make_doc(channel, str(thread_ts), source_doc_id, msgs, ["slack", "thread"], meta)
-        chunks: List[ChunkRecord] = self.__build_chunks_for_messages(doc, msgs)
+        chunks: List[ChunkRecord] = self._build_chunks_for_messages(doc, msgs)
         return [(doc, chunks)]
 
     def __process_windowed_messages(
@@ -1145,7 +1202,7 @@ class SlackSource(Source[SlackConfig]):
                     ["slack", "channel"],
                     meta,
                 )
-                chunks: List[ChunkRecord] = self.__build_chunks_for_messages(doc, bucket_copy)
+                chunks: List[ChunkRecord] = self._build_chunks_for_messages(doc, bucket_copy)
                 results.append((doc, chunks))
                 bucket = []
                 win_start = ts_dt
@@ -1166,7 +1223,7 @@ class SlackSource(Source[SlackConfig]):
             }
             bucket_copy = list(bucket)
             doc = self.__make_doc(channel, source_doc_id, title, bucket_copy, ["slack", "channel"], meta)
-            chunks = self.__build_chunks_for_messages(doc, bucket_copy)
+            chunks = self._build_chunks_for_messages(doc, bucket_copy)
             results.append((doc, chunks))
         return results
 
@@ -1263,11 +1320,18 @@ class SlackSource(Source[SlackConfig]):
                         else:
                             api_earliest = max(api_earliest, cached_max_ts)
 
-                api_messages = self._list_messages(channel_id, checkpoint, latest_ts_override=api_earliest)
-                # The first messages in api_messages may be duplicates of the last messages in cached_messages
-                # so we need to remove them.
-                if len(cached_messages) > 0:
-                    api_messages = [msg for msg in api_messages if msg["ts"] > cached_messages[-1]["ts"]]
+                try:
+                    api_messages = self._list_messages(channel_id, checkpoint, latest_ts_override=api_earliest)
+                    # The first messages in api_messages may be duplicates of the last messages in cached_messages
+                    # so we need to remove them.
+                    if len(cached_messages) > 0:
+                        api_messages = [msg for msg in api_messages if msg["ts"] > cached_messages[-1]["ts"]]
+                except Exception as e:
+                    logger.error(
+                        f"Error listing messages for channel (messages list process interrupted, not all messages collected): {channel_id}: {e}"
+                    )
+                    api_messages = []
+
                 messages.extend(api_messages)
                 logger.info(
                     f"Channel {channel_id}: cache_messages={len(cached_messages)} "

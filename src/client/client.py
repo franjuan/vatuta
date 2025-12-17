@@ -109,6 +109,50 @@ def reset() -> None:
         console.print("[yellow]Operation cancelled.[/yellow]")
 
 
+@app.command()  # type: ignore[misc]
+def remove_documents(
+    source: Optional[SourceType] = typer.Option(None, help="Filter by source type"),
+    source_id: Optional[str] = typer.Option(None, help=get_ids_help()),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+) -> None:
+    """Remove documents from the Knowledge Base with optional filtering."""
+    dm = DocumentManager(storage_dir=state.data_dir)
+
+    # Resolving source string
+    s_val = source.value if source else None
+
+    # 1. Calculate what would be deleted
+    count = 0
+    sources_found = set()
+
+    for meta in dm.documents_metadata.values():
+        if s_val and meta.get("source") != s_val:
+            continue
+        if source_id and meta.get("source_instance_id") != source_id:
+            continue
+        count += 1
+        sources_found.add(f"{meta.get('source')}/{meta.get('source_instance_id')}")
+
+    if count == 0:
+        console.print("[yellow]No documents found matching the criteria.[/yellow]")
+        return
+
+    # 2. Confirm
+    console.print(f"[bold]Found {count} documents to remove.[/bold]")
+
+    if not force:
+        if not typer.confirm(f"Are you sure you want to delete these {count} documents?"):
+            console.print("[yellow]Operation cancelled.[/yellow]")
+            return
+
+    # 3. Delete
+    deleted = dm.delete_documents(source=s_val, source_instance_id=source_id)
+    if deleted > 0:
+        console.print(f"[green]Successfully deleted {deleted} documents.[/green]")
+    else:
+        console.print("[red]Failed to delete documents (or none found during execution).[/red]")
+
+
 def _get_enabled_sources(
     source_filter: Optional[str] = None, source_id_filter: Optional[str] = None
 ) -> List[tuple[str, str, Any]]:

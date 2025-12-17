@@ -3,6 +3,7 @@
 This module handles storing, retrieving, and managing documents in the knowledge base.
 """
 
+import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -81,6 +82,17 @@ class DocumentManager:
                 self.vectorstore.save_local(str(self.vectorstore_dir))
         except Exception as e:
             print(f"⚠️ Error saving vector store: {e}")
+
+    def _generate_doc_id(self, doc: Document) -> str:
+        """Generate a unique ID for a document based on content hash."""
+        # Use existing ID if available
+        if "id" in doc.metadata:
+            return str(doc.metadata["id"])
+
+        # Generate stable ID from content and source
+        source = doc.metadata.get("source", "unknown")
+        content_hash = hashlib.sha256(doc.page_content.encode("utf-8")).hexdigest()
+        return f"{source}_{content_hash}"
 
     def add_documents(self, documents: List[Document]) -> bool:
         """Add documents to the knowledge base.
@@ -165,31 +177,36 @@ class DocumentManager:
                 print("⚠️ No valid chunks to add after parent resolution")
                 return False
 
+            # Collect IDs from chunks
+            chunk_ids = [ch.chunk_id for ch in chunks]
+
             # Create or update vector store
+            print(f"🆕 Adding {len(lc_docs)} chunks to vector store...")
             if self.vectorstore is None:
-                print("🆕 Creating new vector store from chunks...")
-                self.vectorstore = FAISS.from_documents(lc_docs, self.embeddings)
+                self.vectorstore = FAISS.from_documents(lc_docs, self.embeddings, ids=chunk_ids)
             else:
-                print("🔄 Updating existing vector store with chunks...")
-                new_vectorstore = FAISS.from_documents(lc_docs, self.embeddings)
-                self.vectorstore.merge_from(new_vectorstore)
+                self.vectorstore.add_documents(lc_docs, ids=chunk_ids)
 
             # Update per-document metadata summary
             now_iso = datetime.now().isoformat()
+
+            # Use chunk_id as the key in metadata to match vectorstore IDs
             for ch in chunks:
                 parent = documents_by_id.get(ch.parent_document_id)
                 if parent is None:
                     continue
-                key = parent.document_id
-                # Keep a short, stable summary per source document
-                self.documents_metadata[key] = {
-                    "document_id": parent.document_id,
+
+                # store metadata keyed by chunk_id so we can delete it later
+                self.documents_metadata[ch.chunk_id] = {
+                    "document_id": parent.document_id,  # Link to parent
+                    "chunk_id": ch.chunk_id,
                     "source": parent.source,
                     "source_instance_id": parent.source_instance_id,
-                    "source_doc_id": parent.source_doc_id,
+                    "source_doc_id": parent.source_doc_id,  # e.g. thread_ts
                     "title": parent.title or "Untitled",
                     "uri": parent.uri,
                     "added_at": now_iso,
+                    "content_preview": ch.text[:100],
                 }
 
             self._save_metadata()
@@ -199,62 +216,60 @@ class DocumentManager:
             return True
         except Exception as e:
             print(f"❌ Error adding chunk records: {e}")
+            import traceback
+
+            traceback.print_exc()
             return False
 
-    def _generate_doc_id(self, doc: Document) -> str:
-        """Generate a unique ID for a document."""
-        if "issue_id" in doc.metadata:
-            return f"jira_{doc.metadata['issue_id']}"
-        elif "page_id" in doc.metadata:
-            return f"confluence_{doc.metadata['page_id']}"
-        elif "gitlab_issue_iid" in doc.metadata:
-            project = doc.metadata.get("gitlab_project_id", "proj")
-            return f"gitlab_issue_{project}_{doc.metadata['gitlab_issue_iid']}"
-        elif "gitlab_mr_iid" in doc.metadata:
-            project = doc.metadata.get("gitlab_project_id", "proj")
-            return f"gitlab_mr_{project}_{doc.metadata['gitlab_mr_iid']}"
-        else:
-            # Fallback to content hash
-            import hashlib
-
-            content_hash = hashlib.md5(doc.page_content.encode(), usedforsecurity=False).hexdigest()[:8]
-            return f"doc_{content_hash}"
-
-    def search_documents(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
-        """Search for documents using semantic similarity.
+    def delete_documents(self, source: Optional[str] = None, source_instance_id: Optional[str] = None) -> int:
+        """Delete documents matching criteria from metadata and vectorstore.
 
         Args:
-            query: Search query
-            k: Number of results to return
+            source: Filter by source type (e.g., 'slack')
+            source_instance_id: Filter by source instance ID (e.g., 'slack-main')
 
         Returns:
-            List of search results with document content and metadata
+            Number of documents deleted.
         """
-        if self.vectorstore is None:
-            print("⚠️ No documents in knowledge base")
-            return []
+        # Find ID keys in metadata to delete
+        ids_to_delete = []
+        for key, meta in self.documents_metadata.items():
+            if source and meta.get("source") != source:
+                continue
+            if source_instance_id and meta.get("source_instance_id") != source_instance_id:
+                continue
+            ids_to_delete.append(key)
+
+        if not ids_to_delete:
+            print("⚠️ No documents matched deletion criteria")
+            return 0
+
+        print(f"🗑️ Deleting {len(ids_to_delete)} records...")
 
         try:
-            # Perform similarity search
-            docs = self.vectorstore.similarity_search(query, k=k)
+            # 1. Delete from VectorStore
+            if self.vectorstore:
+                try:
+                    self.vectorstore.delete(ids_to_delete)
+                except Exception as e:
+                    print(f"⚠️ FAISS deletion error (possibly IDs not found): {e}")
 
-            results = []
-            for doc in docs:
-                doc_id = self._generate_doc_id(doc)
-                result = {
-                    "content": doc.page_content,
-                    "metadata": doc.metadata,
-                    "doc_id": doc_id,
-                    "stored_metadata": self.documents_metadata.get(doc_id, {}),
-                }
-                results.append(result)
+            # 2. Delete from Metadata
+            for key in ids_to_delete:
+                self.documents_metadata.pop(key, None)
 
-            print(f"🔍 Found {len(results)} relevant documents for query: '{query}'")
-            return results
+            self._save_metadata()
+            self._save_vectorstore()
+
+            print(f"✅ Deleted {len(ids_to_delete)} records")
+            return len(ids_to_delete)
 
         except Exception as e:
-            print(f"❌ Error searching documents: {e}")
-            return []
+            print(f"❌ Error during deletion: {e}")
+            import traceback
+
+            traceback.print_exc()
+            return 0
 
     def get_document_stats(self) -> Dict[str, Any]:
         """Get statistics about the documents in the knowledge base.
@@ -334,6 +349,23 @@ class DocumentManager:
 
         except Exception as e:
             print(f"❌ Error clearing documents: {e}")
+            return False
+
+    def delete_documents_by_ids(self, ids: List[str]) -> bool:
+        """Delete documents by their IDs."""
+        try:
+            # Delete from metadata
+            for i in ids:
+                self.documents_metadata.pop(i, None)
+            self._save_metadata()
+
+            # Delete from vectorstore
+            if self.vectorstore:
+                self.vectorstore.delete(ids)
+                self._save_vectorstore()
+            return True
+        except Exception as e:
+            print(f"❌ Error deleting from vectorstore: {e}")
             return False
 
 

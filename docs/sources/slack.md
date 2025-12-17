@@ -27,7 +27,10 @@ re-fetches and avoiding storing excessive PII or payload.
    - Messages are NOT stored in `DocumentUnit` metadata; only minimal attributes are kept.
 
 3. Chunk model
-   - Flat, single-level `ChunkRecord` per message (`level=0`, `parent_chunk_id=None`).
+   - Multi-strategy splitting via `_build_chunks_for_messages`:
+     1. **Time**: Split if gap > `chunk_time_interval_minutes` (default 240 mins).
+     2. **Size**: Split if `chunk_max_size_chars` (2000) or `chunk_max_count` (20 msgs) exceeded.
+     3. **Semantic**: Split if cosine similarity between consecutive messages < `chunk_similarity_threshold` (0.15).
    - Chunk text format (LLM-friendly):
      `[YYYY-MM-DD HH:MM UTC] Display Name: normalized text`
    - Mentions `<@U...>` are resolved to `@DisplayName` using a local users cache.
@@ -89,6 +92,12 @@ Required:
 - `user_cache_path` (string; JSON file path)
 - `user_cache_ttl_seconds` (int; TTL for user entries; default 7 days)
 - `initial_lookback_days` (int; days to look back when starting fresh; default 7)
+- `chunk_time_interval_minutes` (int; max minutes between messages in a chunk; default 240)
+- `chunk_max_size_chars` (int; max characters per chunk; default 2000)
+- `chunk_max_count` (int; max messages per chunk; default 20)
+- `chunk_similarity_threshold` (float; cosine similarity threshold for splitting; default 0.15)
+- `chunk_embedding_model` (str; model for semantic embeddings; default "all-MiniLM-L6-v2")
+- `api_retries` (int; retries for unexpected API errors; default 3)
 
 Optional tier overrides:
 
@@ -100,7 +109,7 @@ Optional tier overrides:
 
 - `collect_documents_and_chunks(checkpoint, update_checkpoint=True, use_cached_data=True, filters=None) -> (documents, chunks)`
   - Documents: threads or channel windows
-  - Chunks: one per message; flat, single-level
+  - Chunks: dynamically built based on time, size, and semantic similarity
 - `collect_cached_documents_and_chunks(filters=None, date_from=None, date_to=None)`
   - Replays only the locally cached JSONL files (no API calls, no checkpoint mutation).
   - Accepts optional channel filters and date bounds to regenerate documents/chunks from historical data.

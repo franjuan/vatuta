@@ -46,7 +46,19 @@ class TestJiraSource(unittest.TestCase):
         now = datetime.now(timezone.utc)
         updated_str = now.strftime("%Y-%m-%dT%H:%M:%S.%f%z")
 
-        # Setup mock issue as dict (json_result=True format)
+        # Setup mock issue
+        # To test history chunking/splitting, we need many HISTORY ENTRIES
+        histories = []
+        # We'll create 25 entries (default chunk size 20)
+        for i in range(25):
+            histories.append(
+                {
+                    "author": {"displayName": f"User{i}"},
+                    "created": f"2023-10-28T10:{i:02d}:00.000+0000",
+                    "items": [{"field": "status", "fromString": "Open", "toString": "In Progress"}],
+                }
+            )
+
         mock_issue = {
             "key": "TEST-1",
             "self": "https://jira.example.com/rest/api/2/issue/125142",
@@ -63,20 +75,44 @@ class TestJiraSource(unittest.TestCase):
                 "updated": updated_str,
                 "labels": ["bug", "urgent"],
                 "components": [{"name": "Backend"}],
-                "comment": {
-                    "comments": [
-                        {
-                            "body": "First comment",
-                            "author": {"displayName": "Alice"},
-                            "created": "2023-10-27T11:00:00.000+0000",
-                        }
-                    ]
-                },
+                # Test taggeable custom field
+                "customfield_10001": "MyCustomValue",
+                # Test standard field in taggeable keys to verify deduplication
+                # We'll put "priority" in taggeable_fields config below
+                "parent": {"key": "TEST-PARENT"},
+                "subtasks": [{"key": "TEST-SUB-1"}],
+                "issuelinks": [],
+                "comment": {"comments": []},
+                # Empty field to verify inclusion
+                "customfield_empty": None,
             },
+            "changelog": {"histories": histories},
         }
 
+        # Configure taggeable fields
+        # "priority" is standard, "customfield_10001" is custom.
+        self.config["taggeable_fields"] = ["customfield_10001", "priority"]
+        self.config["history_chunk_size"] = 20
+        # Use single project to avoid duplicate docs in test with same mock
+        self.config["projects"] = ["TEST"]
+
         # enhanced_search_issues with json_result=True returns a dict
-        self.mock_jira.enhanced_search_issues.return_value = {"issues": [mock_issue], "names": {}, "schema": {}}
+        self.mock_jira.enhanced_search_issues.return_value = {
+            "issues": [mock_issue],
+            "names": {
+                "summary": "Summary",
+                "description": "Description",
+                "status": "Status",
+                "assignee": "Assignee",
+                "customfield_10001": "Custom Label",
+                "customfield_empty": "Empty Field",
+                "priority": "Priority",
+            },
+            "schema": {
+                "customfield_10001": {"type": "string", "description": "My custom description"},
+                "customfield_empty": {"type": "string"},
+            },
+        }
 
         # Initialize source
         source = JiraSource.create(config=JiraConfig(**self.config), data_dir=self.temp_dir, secrets=self.secrets)
@@ -86,60 +122,61 @@ class TestJiraSource(unittest.TestCase):
         docs, chunks = source.collect_documents_and_chunks(checkpoint)
 
         # Verify JQL
-        # Should be called twice (once for TEST, once for DEV)
-        self.assertEqual(self.mock_jira.enhanced_search_issues.call_count, 2)
+        self.assertEqual(self.mock_jira.enhanced_search_issues.call_count, 1)
 
-        # Check first call (TEST)
-        call_args_1 = self.mock_jira.enhanced_search_issues.call_args_list[0]
-        # enhanced_search_issues uses keyword arguments
-        jql_arg_1 = (
-            call_args_1.kwargs.get("jql")
-            if call_args_1.kwargs
-            else call_args_1[1].get("jql") if len(call_args_1) > 1 else None
-        )
-        if jql_arg_1:
-            print(f"JQL 1 Used: {jql_arg_1}")
-            self.assertIn("project = 'TEST'", jql_arg_1)
-            self.assertIn("updated >=", jql_arg_1)
-
-        # Verify Document
-        # We mocked same issue for both calls, so we get 2 docs (duplicates in this mock scenario)
-        self.assertEqual(len(docs), 2)
+        # Verify Document (1 doc)
+        self.assertEqual(len(docs), 1)
         doc = docs[0]
         self.assertEqual(doc.document_id, "jira|test_jira|TEST-1")
-        self.assertEqual(doc.title, "[TEST-1] Test Issue")
-        self.assertEqual(doc.source_metadata["status"], "Open")
+
+        # Verify Tags
+        # 1. Standard tags exist
         self.assertIn("status:Open", doc.system_tags)
-        self.assertIn("label:urgent", doc.system_tags)
-        self.assertIn("component:Backend", doc.system_tags)
+        self.assertIn("priority:High", doc.system_tags)
+        # 2. Custom tag exists
+        self.assertIn("customfield_10001:MyCustomValue", doc.system_tags)
+        # 3. Priority should NOT be duplicated (count should be 1 for 'priority:High')
+        priority_tags = [t for t in doc.system_tags if t == "priority:High"]
+        self.assertEqual(len(priority_tags), 1, "Standard field 'priority' should not be duplicated in tags")
 
         # Verify Chunks
-        # 2 docs * 2 chunks each = 4 chunks
-        self.assertEqual(len(chunks), 4)
+        doc_chunks = [c for c in chunks if c.parent_document_id == doc.document_id]
 
-        # Primary chunk
-        primary = chunks[0]
-        self.assertEqual(primary.chunk_index, 0)
-        # Check for markdown format
-        self.assertIn("# TEST-1: Test Issue", primary.text)
-        self.assertIn("## Metadata", primary.text)
-        self.assertIn("| **Status** | Open |", primary.text)
-        self.assertIn("| **Labels** | bug, urgent |", primary.text)
-        self.assertIn("## Description", primary.text)
-        self.assertIn("type:description", primary.system_tags)
+        # 1. Ticket Body
+        body_chunk = next(c for c in doc_chunks if "type:ticket" in c.system_tags)
 
-        # Comment chunk
-        comment = chunks[1]
-        self.assertEqual(comment.chunk_index, 1)
-        self.assertIn("Comment by Alice", comment.text)
-        self.assertIn("type:comment", comment.system_tags)
+        # Verify content formatting
+        # - Key: Value
+        # - Custom Label (My custom description): MyCustomValue
+        # - Empty Field: None
+        self.assertIn("Key: TEST-1", body_chunk.text)
+        self.assertIn("Summary: Test Issue", body_chunk.text)
+        self.assertIn("Custom Label (My custom description): MyCustomValue", body_chunk.text)
+        self.assertIn("Empty Field: None", body_chunk.text)
+
+        # 2. History Chunks (split)
+        # We had 25 items, chunk size 20. Should be 2 chunks.
+        hist_chunks = [c for c in doc_chunks if "type:history" in c.system_tags]
+        self.assertEqual(len(hist_chunks), 2)
+
+        # Verify first chunk has 20 items (approx, based on text parsing logic it's line based)
+        # Each item is one line.
+        chunk1_lines = hist_chunks[0].text.strip().split("\n")
+        self.assertEqual(len(chunk1_lines), 20)
+
+        # Verify second chunk has 5 items
+        chunk2_lines = hist_chunks[1].text.strip().split("\n")
+        self.assertEqual(len(chunk2_lines), 5)
+
+        # Verify tags on hist chunks
+        # Chunk 1 should have User0
+        self.assertIn("author:User0", hist_chunks[0].system_tags)
+        # Chunk 2 should have User20
+        self.assertIn("author:User20", hist_chunks[1].system_tags)
 
         # Verify Checkpoint
-        # Should update to issue updated time for TEST project
         expected_ts = now.timestamp()
         self.assertAlmostEqual(checkpoint.get_project_updated_ts("TEST"), expected_ts, places=1)
-        # DEV project also got updated because we returned same mock issue
-        self.assertAlmostEqual(checkpoint.get_project_updated_ts("DEV"), expected_ts, places=1)
 
     @patch("src.sources.jira.gzip.open")
     def test_persistence(self, mock_gzip_open: MagicMock) -> None:

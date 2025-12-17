@@ -43,8 +43,13 @@ class DocumentUnit(BaseModel):
         description=("Canonical permalink/URL to open the item in the source system."),
     )
     title: Optional[str] = Field(default=None, description="Human-friendly title or subject when available.")
-    author_id: Optional[str] = Field(default=None, description="Author identifier in the source system.")
-    author_name: Optional[str] = Field(default=None, description="Display name of the author in the source system.")
+    author: Optional[str] = Field(
+        default=None, description="Display name or identifier of the author in the source system."
+    )
+    parent_id: Optional[str] = Field(
+        default=None, description="Reference to a parent DocumentUnit.document_id or source structure."
+    )
+    language: Optional[str] = Field(default=None, description="BCP-47 language code of the document.")
     source_created_at: Optional[datetime] = Field(
         default=None, description="Creation timestamp in the source system (UTC)."
     )
@@ -160,8 +165,9 @@ class ChunkRecord(BaseModel):
             "source_doc_id": doc.source_doc_id,
             "uri": doc.uri,
             "title": doc.title,
-            "author_id": doc.author_id,
-            "author_name": doc.author_name,
+            "author": doc.author,
+            "parent_id": doc.parent_id,
+            "doc_language": doc.language,
             "parent_document_id": self.parent_document_id,
             "parent_chunk_id": self.parent_chunk_id,
             "document_id": doc.document_id,
