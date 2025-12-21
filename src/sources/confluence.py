@@ -426,7 +426,14 @@ class ConfluenceSource(Source[ConfluenceConfig]):
         # Use markdownify with some custom options if needed,
         # but default is usually good enough for Confluence content.
         # We can strip tags that we don't want if needed.
-        return str(md(html, heading_style="ATX")).strip()
+        try:
+            return str(md(html, heading_style="ATX")).strip()
+        except RecursionError:
+            logger.warning("RecursionError during markdown conversion. Falling back to plain text extraction.")
+            # Fallback to plain text using BeautifulSoup
+            from bs4 import BeautifulSoup
+
+            return BeautifulSoup(html, "html.parser").get_text().strip()  # type: ignore[no-any-return]
 
     def _make_chunk(
         self,
@@ -524,10 +531,11 @@ def main() -> None:
     # Example configuration from environment
     config = {
         "url": os.getenv("JIRA_INSTANCE_URL", ""),
-        "spaces": ["SPACE"],  # Research & Development space
+        "spaces": os.getenv("CONFLUENCE_SPACES", "").split(",") if os.getenv("CONFLUENCE_SPACES") else [],
         "storage_path": "./data/confluence",
         "id": "confluence-main",
-        "initial_lookback_days": 30,
+        "use_cached_data": False,
+        "initial_lookback_days": None,
     }
 
     secrets = {"jira_user": os.getenv("JIRA_USER"), "jira_api_token": os.getenv("JIRA_API_TOKEN")}

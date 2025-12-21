@@ -791,12 +791,12 @@ def main() -> None:
     # Example configuration from environment
     config = {
         "url": os.getenv("JIRA_INSTANCE_URL", ""),
-        "projects": ["PROJ_1", "PROJ_2"],
+        "projects": os.getenv("JIRA_PROJECTS", "").split(",") if os.getenv("JIRA_PROJECTS") else [],
         "storage_path": "./data/jira",
         "include_comments": True,
-        "use_cached_data": True,
+        "use_cached_data": False,
         "taggable_fields": ["priority", "issuetype", "status", "assignee", "reporter", "labels"],
-        "initial_loopback_days": 30,
+        "initial_loopback_days": 365,
         "id": "jira-main",
     }
 

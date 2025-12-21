@@ -1456,7 +1456,7 @@ if __name__ == "__main__":
         channel_types=["private_channel", "public_channel", "im", "mpim"],
         initial_lookback_days=180,
         channel_window_minutes=60,
-        workspace_domain="https://example.slack.com",
+        workspace_domain=os.getenv("SLACK_WORKSPACE_DOMAIN", "https://slack.com"),
         user_cache_path=os.path.join("data", "slack_users_cache.json"),
     )
     slack_source = SlackSource(

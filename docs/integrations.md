@@ -16,7 +16,7 @@ Vatuta includes powerful JIRA integration capabilities for importing tickets int
 JIRA_USER=your_jira_email@company.com
 JIRA_API_TOKEN=your_jira_api_token_here
 JIRA_INSTANCE_URL=https://yourcompany.atlassian.net
-JIRA_CLOUD=True
+JIRA_PROJECTS=PROJ1,PROJ2
 ```
 
 1. Install required spaCy model:
@@ -48,7 +48,7 @@ Vatuta can import Confluence pages into the same searchable knowledge base.
 
 ```bash
 # Confluence Configuration
-CONFLUENCE_ROOT=your_confluence_root_page_id
+CONFLUENCE_SPACES=SPACE1,SPACE2
 ```
 
 Note: Confluence uses the same JIRA credentials (same Atlassian instance).
@@ -79,7 +79,7 @@ Vatuta can import Slack channels, messages and conversations into the searchable
 SLACK_BOT_TOKEN=xoxb-your_bot_token
 # Optional
 SLACK_CHANNEL_TYPES=public_channel,private_channel,im,mpim
-SLACK_OLDEST_TIMESTAMP= # e.g. 1712816400.000000 (epoch seconds as float str)
+SLACK_WORKSPACE_DOMAIN=https://your_workspace.slack.com
 ```
 
 1. Install dependencies (if not already):
