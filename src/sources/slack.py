@@ -767,10 +767,7 @@ class SlackSource(Source[SlackConfig]):
             content_hash=content_hash,
         )
 
-    def _get_embedding_model(self) -> Any:
-        """Get the sentence transformer model, lazy loading it."""
-        from sentence_transformers import SentenceTransformer
-
+    def _get_embedding_model(self) -> SentenceTransformer:
         if self._embedding_model is None:
             self._embedding_model = SentenceTransformer(self.config.chunk_embedding_model)
         return self._embedding_model

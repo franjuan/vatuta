@@ -159,3 +159,4 @@ token.json
 # Reports
 mypy_report/
 ruff-report.txt
+data*.zip

@@ -18,6 +18,8 @@ from typing import Any, Dict, Final, List, Optional, Set, Tuple
 
 from jira import JIRA
 from pydantic import Field
+from sentence_transformers.SentenceTransformer import SentenceTransformer
+from sentence_transformers.util import cos_sim
 
 # Import Prometheus metrics from centralized module
 from src.metrics.metrics import API_CALLS, API_LATENCY, OP_ITEMS, OP_LATENCY
@@ -46,6 +48,14 @@ class JiraConfig(BaseSourceConfig):
     )
 
     history_chunk_size: int = Field(default=20, description="Max changelog items per history chunk")
+
+    # Comment chunking configuration
+    chunk_max_size_chars: int = Field(default=2000, description="Max characters per comment chunk")
+    chunk_max_count: int = Field(default=10, description="Max comments per comment chunk")
+    chunk_similarity_threshold: float = Field(
+        default=0.15, description="Cosine similarity threshold for comment chunk splitting"
+    )
+    chunk_embedding_model: str = Field(default="all-MiniLM-L6-v2", description="Model for semantic embeddings")
 
 
 class JiraCheckpoint(Checkpoint[JiraConfig]):
@@ -130,6 +140,7 @@ class JiraSource(Source[JiraConfig]):
             server=self.config.url,
             basic_auth=(user, token),
         )
+        self._embedding_model: SentenceTransformer | None = None
 
         # Validate credentials immediately
         try:
@@ -479,17 +490,8 @@ class JiraSource(Source[JiraConfig]):
             comment_obj = fields.get("comment")
             if comment_obj and isinstance(comment_obj, dict):
                 comments = comment_obj.get("comments", [])
-                for comment in comments:
-                    comment_text, comment_tags = self._format_comment_for_embedding(comment)
-                    chunks.append(
-                        self._make_chunk(
-                            doc=doc,
-                            chunk_index=chunk_idx,
-                            text=comment_text,
-                            tags=system_tags + ["type:comment"] + comment_tags,
-                        )
-                    )
-                    chunk_idx += 1
+                comment_chunks = self._build_chunks_for_comments(doc, comments, system_tags, start_index=chunk_idx)
+                chunks.extend(comment_chunks)
 
         return doc, chunks
 
@@ -664,6 +666,81 @@ class JiraSource(Source[JiraConfig]):
 
         return "\n".join(lines), tags
 
+    def _get_embedding_model(self) -> SentenceTransformer:
+        if self._embedding_model is None:
+            self._embedding_model = SentenceTransformer(self.config.chunk_embedding_model)
+        return self._embedding_model
+
+    def _build_chunks_for_comments(
+        self, doc: DocumentUnit, comments: List[dict], base_tags: List[str], start_index: int = 0
+    ) -> List[ChunkRecord]:
+        if not comments:
+            return []
+
+        sorted_comments = sorted(comments, key=lambda c: str(c.get("created", "")))
+        texts_for_embedding = [c.get("body", "") or " " for c in sorted_comments]
+        model = self._get_embedding_model()
+        embeddings = model.encode(texts_for_embedding)
+
+        chunks: List[ChunkRecord] = []
+        current_chunk_comments: List[dict] = []
+        current_chunk_size = 0
+
+        # We need to track the "logical" index of the chunk being created
+        chunk_counter = start_index
+
+        prev_comment_emb: Optional[Any] = None
+
+        for _idx, (c, emb) in enumerate(zip(sorted_comments, embeddings, strict=False)):
+            text, _ = self._format_comment_for_embedding(c)
+            comment_len = len(text)
+
+            should_split = False
+
+            # 1. Size/Count-based splitting
+            if current_chunk_comments:
+                if (current_chunk_size + comment_len > self.config.chunk_max_size_chars) or (
+                    len(current_chunk_comments) + 1 > self.config.chunk_max_count
+                ):
+                    should_split = True
+
+            # 2. Semantic splitting
+            if not should_split and prev_comment_emb is not None:
+                similarity = cos_sim(emb, prev_comment_emb).item()
+                if similarity < self.config.chunk_similarity_threshold:
+                    should_split = True
+
+            if should_split and current_chunk_comments:
+                # Flush
+                chunk_text = "\n\n".join([self._format_comment_for_embedding(cm)[0] for cm in current_chunk_comments])
+                # Collect tags
+                all_tags = set(base_tags)
+                all_tags.add("type:comment")
+                for cm in current_chunk_comments:
+                    _, c_tags = self._format_comment_for_embedding(cm)
+                    all_tags.update(c_tags)
+
+                chunks.append(self._make_chunk(doc, chunk_counter, chunk_text, list(all_tags)))
+                chunk_counter += 1
+
+                current_chunk_comments = []
+                current_chunk_size = 0
+
+            current_chunk_comments.append(c)
+            current_chunk_size += comment_len
+            prev_comment_emb = emb
+
+        if current_chunk_comments:
+            chunk_text = "\n\n".join([self._format_comment_for_embedding(cm)[0] for cm in current_chunk_comments])
+            all_tags = set(base_tags)
+            all_tags.add("type:comment")
+            for cm in current_chunk_comments:
+                _, c_tags = self._format_comment_for_embedding(cm)
+                all_tags.update(c_tags)
+            chunks.append(self._make_chunk(doc, chunk_counter, chunk_text, list(all_tags)))
+
+        return chunks
+
     def _make_chunk(
         self,
         doc: DocumentUnit,
@@ -797,6 +874,9 @@ def main() -> None:
         "use_cached_data": False,
         "taggable_fields": ["priority", "issuetype", "status", "assignee", "reporter", "labels"],
         "initial_loopback_days": 365,
+        "chunk_max_size_chars": 2000,
+        "chunk_max_count": 10,
+        "chunk_similarity_threshold": 0.15,
         "id": "jira-main",
     }
 

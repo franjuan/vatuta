@@ -13,7 +13,28 @@ You are working on **Vatuta** (Virtual Assistant for Task Understanding, Trackin
 - **Poetry**: For dependency management
 - **Pydantic**: For data validation and settings
 - **pytest**: For testing
-- **Just**: For task automation (replaces Make)
+- Just: For task automation (replaces Make)
+
+## Agent Behavioral Rules
+
+### 1. Poetry Wrapper Rule
+
+**Crucial**: This is a Poetry-managed project.
+You **MUST** always invoke Python tools (pytest, mypy, ruff, black, python scripts, etc.) using `poetry run`.
+
+- **Incorrect**: `pytest tests/`
+- **Correct**: `poetry run pytest tests/`
+- **Incorrect**: `python src/script.py`
+- **Correct**: `poetry run python src/script.py`
+
+### 2. Documentation First Rule
+
+**Crucial**: Documentation is a first-class citizen in this project.
+
+- **Plans**: Your `implementation_plan.md` MUST include a section for documentation updates if you are modifying functionality.
+- **Execution**: You MUST update the relevant documentation in `docs/` (e.g., `docs/integrations.md`, component docs)
+*during* the execution phase, not as an afterthought.
+- **Verification**: If documentation was not updated when functionality changed, the task is incomplete.
 
 ## Development Environment
 

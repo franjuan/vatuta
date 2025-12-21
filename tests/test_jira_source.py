@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from src.models.documents import DocumentUnit
 from src.sources.jira_source import JiraCheckpoint, JiraConfig, JiraSource
 
 
@@ -386,6 +387,124 @@ class TestJiraSource(unittest.TestCase):
 
         docs, chunks = source.collect_cached_documents_and_chunks(filters={"project_ids": ["OTHER"]})
         self.assertEqual(len(docs), 0)
+
+    @patch("src.sources.jira_source.JiraSource._get_embedding_model")
+    def test_comment_chunking_strategies(self, mock_get_model: MagicMock) -> None:
+        # Configuration for test
+        self.config["chunk_max_count"] = 2
+        self.config["chunk_max_size_chars"] = 1000
+        self.config["chunk_similarity_threshold"] = 0.5  # High threshold to force split if low sim
+
+        # Mock embedding model
+        mock_model = MagicMock()
+        mock_get_model.return_value = mock_model
+
+        # We define simple orthogonal vectors for controlling similarity
+        vec_a = [1.0, 0.0]
+        vec_b = [0.0, 1.0]
+
+        # Test 1: Count/Size Limit
+        # We want high matching so no semantic split occurs.
+        # Use vec_a for all.
+        mock_model.encode.return_value = [vec_a, vec_a, vec_a, vec_a, vec_a]
+
+        # Create comments
+        # C1: len=5
+        # C2: len=5. Total len 10. Count 2. -> Fits in Chunk1 (limit 1000 chars, 2 count).
+        # C3: len=5. Count would be 3. -> SPLIT. Start Chunk2.
+        # C4: len=15. Total len 20. Count 2. -> Fits in Chunk2.
+        # C5: len=5. Count would be 3 -> SPLIT. Start Chunk3.
+
+        comments = [
+            {"author": {"displayName": "U1"}, "created": "2023-01-01T10:00", "body": "AAAAA"},  # 5 chars
+            {"author": {"displayName": "U2"}, "created": "2023-01-01T11:00", "body": "BBBBB"},  # 5 chars
+            {"author": {"displayName": "U3"}, "created": "2023-01-01T12:00", "body": "CCCCC"},  # 5 chars
+            {"author": {"displayName": "U4"}, "created": "2023-01-01T13:00", "body": "DDDDDDDDDDDDDDD"},  # 15 chars
+            {"author": {"displayName": "U5"}, "created": "2023-01-01T14:00", "body": "EEEEE"},  # 5 chars
+        ]
+
+        # Initialize source
+        source = JiraSource(config=JiraConfig(**self.config), secrets=self.secrets, storage_path=self.temp_dir)
+        doc = DocumentUnit(
+            document_id="doc1",
+            source="jira",
+            source_doc_id="key1",
+            source_instance_id="inst1",
+            uri="uri",
+            title="title",
+            author="auth",
+            parent_id=None,
+            language=None,
+            source_created_at=None,
+            source_updated_at=None,
+            system_tags=[],
+            source_metadata={},
+            content_hash="hash",
+        )
+        # Call _build_chunks_for_comments directly
+        chunks = source._build_chunks_for_comments(doc, comments, ["tag:base"])
+
+        # We expect 3 chunks based on count limit of 2.
+        # Chunk 1: C1, C2
+        # Chunk 2: C3, C4
+        # Chunk 3: C5
+
+        # Check lengths first
+        self.assertEqual(len(chunks), 3)
+        self.assertIn("AAAAA", chunks[0].text)
+        self.assertIn("BBBBB", chunks[0].text)
+        self.assertNotIn("CCCCC", chunks[0].text)
+
+        self.assertIn("CCCCC", chunks[1].text)
+        self.assertIn("DDDDDDDDDDDDDDD", chunks[1].text)
+
+        self.assertIn("EEEEE", chunks[2].text)
+
+        # Now test Size Limit
+        # We want to test size limit.
+        self.config["chunk_max_size_chars"] = 10000
+        self.config["chunk_max_count"] = 2
+        source = JiraSource(config=JiraConfig(**self.config), secrets=self.secrets, storage_path=self.temp_dir)
+        chunks = source._build_chunks_for_comments(doc, comments, ["tag:base"])
+        # Now Expect 3 chunks (2, 2, 1 items) because count limit is 2
+        self.assertEqual(len(chunks), 3)
+
+        # Test Semantic Splitting
+        self.config["chunk_max_count"] = 10
+        self.config["chunk_max_size_chars"] = 10000
+        self.config["chunk_similarity_threshold"] = 0.8  # Split if < 0.8
+
+        # C1, C2 -> High Sim (0.9) -> Join
+        # C2, C3 -> Low Sim (0.1) -> Split
+        # C3, C4 -> High Sim (0.9) -> Join
+        # C4, C5 -> High Sim (0.9) -> Join
+
+        # Embeddings:
+        # E1: vec_a
+        # E2: vec_a
+        # E3: vec_b
+        # E4: vec_b
+        # E5: vec_b
+
+        # Sim(E1, E2) = 1.0 > 0.8 (No split)
+        # Sim(E2, E3) = 0.0 < 0.8 (SPLIT!)
+        # Sim(E3, E4) = 1.0 > 0.8 (No split)
+        # Sim(E4, E5) = 1.0 > 0.8 (No split)
+
+        mock_model.encode.return_value = [vec_a, vec_a, vec_b, vec_b, vec_b]
+
+        # Initialize new source with updated config
+        source = JiraSource(config=JiraConfig(**self.config), secrets=self.secrets, storage_path=self.temp_dir)
+        chunks = source._build_chunks_for_comments(doc, comments, ["tag:base"])
+
+        # Expect: [C1, C2], [C3, C4, C5] -> 2 chunks.
+        self.assertEqual(len(chunks), 2)
+        self.assertIn("AAAAA", chunks[0].text)
+        self.assertIn("BBBBB", chunks[0].text)
+        self.assertNotIn("CCCCC", chunks[0].text)
+
+        self.assertIn("CCCCC", chunks[1].text)
+        self.assertIn("EEEEE", chunks[1].text)
 
 
 if __name__ == "__main__":
