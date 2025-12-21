@@ -38,8 +38,11 @@ conversational context within comments.
       - Chunked by history entry count (configurable `history_chunk_size`, default 20 entries per chunk).
       - Tags: `type:history`, `author:<name>`, `transition:selection:<value>`.
     - **Comment Chunk(s)**:
-      - Each comment is a separate chunk.
-      - Tags: `type:comment`, `author:<name>`.
+      - Each comment is a separate chunk by default, but can be grouped/split based on strategy.
+      - **Strategies**:
+        - **Size/Count**: Merges comments into a single chunk until `chunk_max_size_chars` or `chunk_max_count` is reached.
+        - **Semantic**: Splits chunks if the cosine similarity between consecutive comments drops below `chunk_similarity_threshold`.
+      - Tags: `type:comment`, `author:<name>`, `author_id:<accountId>`.
 
 4. **Incremental Collection**
     - Uses `updated` timestamp via JQL parameters.
@@ -78,6 +81,10 @@ using readable schema names for clarity.
 - `taggeable_fields` (List[str]): List of issue field keys (e.g., `customfield_10001`, `priority`) to convert into `system_tags`.
 Note: Standard fields like `status` are deduplicated.
 - `history_chunk_size` (int): Max number of history entries per history chunk. Default 20.
+- `chunk_max_size_chars` (int): Max characters per comment chunk. Default 2000.
+- `chunk_max_count` (int): Max comments per comment chunk. Default 10.
+- `chunk_similarity_threshold` (float): Cosine similarity threshold for splitting comment chunks. Default 0.15.
+- `chunk_embedding_model` (str): SentenceTransformer model for embeddings. Default "all-MiniLM-L6-v2".
 
 ## Interface summary
 
