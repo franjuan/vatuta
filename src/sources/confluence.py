@@ -10,6 +10,7 @@ import gzip
 import json
 import logging
 import os
+import re
 from dataclasses import field
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
@@ -40,6 +41,11 @@ class ConfluenceConfig(BaseSourceConfig):
     use_cached_data: bool = Field(default=False, description="Whether to persist/use cached data")
     initial_lookback_days: Optional[int] = Field(
         default=None, description="Initial lookback days for first run. If None, fetch all."
+    )
+    chunk_max_size_chars: int = Field(default=1000, description="Max characters per chunk")
+    chunk_similarity_threshold: float = Field(default=0.15, description="Cosine similarity threshold")
+    chunk_overlap: int = Field(
+        default=0, description="Overlap between chunks in characters (not used for header split)"
     )
 
 
@@ -408,15 +414,126 @@ class ConfluenceSource(Source[ConfluenceConfig]):
 
         markdown_text = self._html_to_markdown(body_storage)
 
-        # Create a single chunk for the page content for now.
-        # Let's prepend the title.
-        # TODO: split by headers if we want to get fancy.
+        # Structural and Semantic Chunking
+        chunk_data_list = self._chunk_text_by_headers_and_content(markdown_text, title)
 
-        full_text = f"# {title}\n\n{markdown_text}"
+        for chunk_i, (section_header, chunk_text) in enumerate(chunk_data_list):
+            # Contextualize with header information
+            # "Page: Title\nSection: Header\n\nContent..."
+            final_text = f"Page: {title}\nSection: {section_header}\n\n{chunk_text}"
 
-        chunks.append(self._make_chunk(doc=doc, chunk_index=0, text=full_text, tags=["type:content"]))
+            # Tags
+            chunk_tags = system_tags + ["type:content", f"section:{section_header}"]
+
+            chunks.append(self._make_chunk(doc=doc, chunk_index=chunk_i, text=final_text, tags=chunk_tags))
+
+        if not chunks:
+            # Fallback if no text extracted?
+            pass
 
         return doc, chunks
+
+    def _chunk_text_by_headers_and_content(self, text: str, doc_title: str) -> List[Tuple[str, str]]:
+        """Split text by headers and then by size constraints.
+
+        Returns:
+             List of (section_header, chunk_text) tuples.
+        """
+        if not text:
+            return []
+
+        chunks_out: List[Tuple[str, str]] = []
+
+        # 1. Split by Headers (ATX style)
+        # Capture the header line including hashes to know the level, though we just want the text
+        # Regex: Start of line, 1-6 hashes, space, title
+        parts = re.split(r"^(#{1,6} .+)$", text, flags=re.MULTILINE)
+
+        # parts[0] is content before first header (Introduction)
+        current_header = "Introduction"
+
+        # Handle preamble
+        if parts[0].strip():
+            self._subchunk_content(current_header, parts[0], chunks_out)
+
+        # Iterate pairs
+        for i in range(1, len(parts), 2):
+            header_line = parts[i].strip()  # e.g. "## My Header"
+            content = parts[i + 1] if i + 1 < len(parts) else ""
+
+            # Extract pure title from header line
+            header_title = header_line.lstrip("#").strip()
+
+            if (
+                content.strip() or header_title
+            ):  # If header exists, we might want it even if content is empty? No, only meaningful text.
+                # Actually content might be empty but next subchunking handles it
+                self._subchunk_content(header_title, content, chunks_out)
+
+        return chunks_out
+
+    def _subchunk_content(self, header: str, content: str, acc: List[Tuple[str, str]]) -> None:
+        """Split content into chunks respecting size limits and code blocks."""
+        content = content.strip()
+        if not content:
+            return
+
+        limit = self.config.chunk_max_size_chars
+
+        # If small enough, just add
+        if len(content) <= limit:
+            acc.append((header, content))
+            return
+
+        # Split by double newlines (paragraphs)
+        paragraphs = re.split(r"\n{2,}", content)
+
+        current_chunk_parts: List[str] = []
+        current_len = 0
+
+        in_code_block = False
+
+        for p in paragraphs:
+            # Check for code block toggles
+            # Count triplets of backticks
+            backtick_count = p.count("```")
+            # If odd, we flipped state
+            # (Simplification: assumes ``` is always a fence, not inline. Inline is usually single `)
+
+            p_len = len(p)
+
+            # Decision to flush
+            # We flush if adding this paragraph exceeds limit AND we have something to flush
+            # BUT we should NOT flush if we are inside a code block (try to keep code blocks together)
+            # UNLESS the code block itself is huge (handled later/implicit?)
+
+            if current_len + p_len > limit and current_chunk_parts:
+                # If we are inside a code block, we arguably SHOULD flush if it's getting too big?
+                # Or we try to keep it.
+                # Let's say we prefer NOT to break code blocks.
+                # But if we must (because it's huge), we must.
+
+                # Basic strategy: Flush if full, unless inside code block and not absurdly huge.
+                # Let's simple check: Flush if full.
+
+                # Optimization: If inside code block, try to extend a bit?
+                # Complexity tradeoff. Let's stick to size limit as soft rule, but maybe strict rule here.
+
+                # Valid split point: if NOT inside code block.
+                if not in_code_block:
+                    # Flush
+                    acc.append((header, "\n\n".join(current_chunk_parts)))
+                    current_chunk_parts = []
+                    current_len = 0
+
+            current_chunk_parts.append(p)
+            current_len += p_len
+
+            if backtick_count % 2 != 0:
+                in_code_block = not in_code_block
+
+        if current_chunk_parts:
+            acc.append((header, "\n\n".join(current_chunk_parts)))
 
     def _html_to_markdown(self, html: str) -> str:
         """Convert HTML to Markdown using markdownify."""

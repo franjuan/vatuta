@@ -1,6 +1,6 @@
 # ADR: Confluence Source – Design and Decisions
 
-Date: 2025-12-06
+Date: 2025-12-21
 Status: Accepted
 
 ## Context
@@ -21,9 +21,11 @@ internal HTML storage format.
    - Metadata includes `page_id`, `space`, and `title`.
 
 3. **Chunk model**
-   - **Content Chunk**: The main body of the page is converted from HTML to Markdown using `markdownify`.
-   - Chunk text includes the page title as an H1 header.
-   - Currently produces a single primary chunk for the body (future work may split by headers).
+   - **Content Chunk**: The main body of the page is converted from HTML to Markdown.
+   - **Structural Chunking**: Pages are split by headers (H1-H6) into distinct chunks.
+   - **Size-Aware Sub-Chunking**: Large sections (>1000 chars) are further split by paragraphs, while preserving code
+     blocks and list coherence.
+   - **Context**: Each chunk is enriched with `Page: [Title]\nSection: [Header]` context.
 
 4. **Incremental Collection**
    - Uses `lastModified` timestamp via CQL.
@@ -55,6 +57,9 @@ Tracking updates per space allows for granular incremental syncs.
 - `enabled` (bool): Default `True`.
 - `use_cached_data` (bool): Default `False`.
 - `initial_lookback_days` (int): Days to look back on the first run. If not specified (None), fetches **ALL** history.
+- `chunk_max_size_chars` (int): Max characters per chunk (default: 1000).
+- `chunk_similarity_threshold` (float): Cosine similarity threshold for splitting (default: 0.15).
+- `chunk_overlap` (int): Overlap between chunks in characters (default: 0).
 
 ## Interface summary
 
@@ -77,6 +82,6 @@ Tracking updates per space allows for granular incremental syncs.
 
 ## Open issues / future work
 
-- **Hierarchical Chunking**: Split long pages by headers (H1, H2) into multiple chunks.
+- **Hierarchical Chunking**: Implemented (split by headers).
 - **Comments**: Ingest page comments as separate chunks (similar to Jira).
 - **Attachments**: Index text from PDF/Word attachments.
