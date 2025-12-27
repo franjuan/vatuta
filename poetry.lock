@@ -2327,20 +2327,20 @@ xai = ["langchain-xai"]
 
 [[package]]
 name = "langchain-aws"
-version = "1.1.0"
+version = "1.1.1"
 description = "An integration package connecting AWS and LangChain"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "langchain_aws-1.1.0-py3-none-any.whl", hash = "sha256:8ec074615b42839e035354063717374c32c63f5028ef5221ba073fd5f3ef5e37"},
-    {file = "langchain_aws-1.1.0.tar.gz", hash = "sha256:1e2f8570328eae4907c3cf7e900dc68d8034ddc865d9dc96823c9f9d8cccb901"},
+    {file = "langchain_aws-1.1.1-py3-none-any.whl", hash = "sha256:a278de3d86349c605e0a8bd8e2eb1575bb13c2c1a6c858749fd7dcd7844a67e3"},
+    {file = "langchain_aws-1.1.1.tar.gz", hash = "sha256:7835213de92a6d79af3778ec37d622812519e632ad6be8226d8f1f4d95a24cba"},
 ]
 
 [package.dependencies]
-boto3 = ">=1.40.19"
-langchain-core = ">=1.1.0"
-numpy = {version = ">=2.3.2,<3", markers = "python_version >= \"3.12\""}
+boto3 = ">=1.42.5"
+langchain-core = ">=1.1.0,<1.2.5"
+numpy = {version = ">=2.2,<3", markers = "python_version >= \"3.12\""}
 pydantic = ">=2.10.6,<3"
 
 [package.extras]
@@ -7414,4 +7414,4 @@ cffi = ["cffi (>=1.17,<2.0)", "cffi (>=2.0.0b)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.14"
-content-hash = "bc755518fde54df0ee5ebf85d7062f929ca773780cb775faa1d4f3f356419e63"
+content-hash = "641b2dbcaad82420ecb6cb589adfac692cddd0ffb410359ea4fe097c7d130af9"

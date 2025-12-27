@@ -110,19 +110,27 @@ class DocumentManager:
         print(f"📝 Adding {len(documents)} documents to knowledge base...")
 
         try:
+            # Generate IDs for all documents
+            doc_ids = [self._generate_doc_id(doc) for doc in documents]
+
             # Create or update vector store
             if self.vectorstore is None:
                 print("🆕 Creating new vector store...")
-                self.vectorstore = FAISS.from_documents(documents, self.embeddings)
+                self.vectorstore = FAISS.from_documents(documents, self.embeddings, ids=doc_ids)
             else:
                 print("🔄 Updating existing vector store...")
-                # Add new documents to existing vector store
-                new_vectorstore = FAISS.from_documents(documents, self.embeddings)
-                self.vectorstore.merge_from(new_vectorstore)
+                # Remove existing documents with same IDs to avoid duplicates
+                try:
+                    self.vectorstore.delete(doc_ids)
+                except Exception:
+                    # Ignore errors if IDs not found
+                    pass
+
+                # Add new documents
+                self.vectorstore.add_documents(documents, ids=doc_ids)
 
             # Update metadata
-            for doc in documents:
-                doc_id = self._generate_doc_id(doc)
+            for doc, doc_id in zip(documents, doc_ids, strict=False):
                 self.documents_metadata[doc_id] = {
                     "source": doc.metadata.get("source", "unknown"),
                     "issue_id": doc.metadata.get("issue_id"),
@@ -185,6 +193,13 @@ class DocumentManager:
             if self.vectorstore is None:
                 self.vectorstore = FAISS.from_documents(lc_docs, self.embeddings, ids=chunk_ids)
             else:
+                # Remove existing chunks with same IDs to avoid duplicates/errors
+                try:
+                    self.vectorstore.delete(chunk_ids)
+                except Exception:
+                    # Ignore errors if IDs not found
+                    pass
+
                 self.vectorstore.add_documents(lc_docs, ids=chunk_ids)
 
             # Update per-document metadata summary
