@@ -23,7 +23,7 @@ class PersistentCache:
 
         Args:
             path: Path to the cache file.
-            ttl_seconds: Time-to-live for cache entries in seconds.
+            ttl_seconds: Time-to-live for cache entries in seconds. 0 means no TTL.
         """
         self._path = path
         self._ttl = int(ttl_seconds)
@@ -64,7 +64,7 @@ class PersistentCache:
             cached_at = int(entry.get("cached_at", 0))
         except Exception:
             return False
-        return cached_at + self._ttl > int(time.time())
+        return self._ttl == 0 or cached_at + self._ttl > int(time.time())
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get a value from the cache.
