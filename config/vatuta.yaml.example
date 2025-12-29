@@ -2,6 +2,9 @@ rag:
   model_id: "bedrock/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
   temperature: 0.2
 
+entities_manager:
+  storage_path: "data/entities.json"
+
 sources:
   slack:
     slack-main:
@@ -14,6 +17,8 @@ sources:
         - "mpim"
       initial_lookback_days: 30
       channel_window_minutes: 60
+      user_cache_path: "data/slack/slack-main/slack_users_cache.json"
+      user_cache_ttl_seconds: 7 * 24 * 60 * 60
 
   jira:
     jira-main:

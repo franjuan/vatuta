@@ -13,7 +13,8 @@ You are working on **Vatuta** (Virtual Assistant for Task Understanding, Trackin
 - **Poetry**: For dependency management
 - **Pydantic**: For data validation and settings
 - **pytest**: For testing
-- Just: For task automation (replaces Make)
+- **Just**: For task automation (replaces Make)
+- **Ruff**: Fast Python linter and formatter (replaces flake8)
 
 ## Agent Behavioral Rules
 
@@ -35,6 +36,7 @@ You **MUST** always invoke Python tools (pytest, mypy, ruff, black, python scrip
 - **Execution**: You MUST update the relevant documentation in `docs/` (e.g., `docs/integrations.md`, component docs)
 *during* the execution phase, not as an afterthought.
 - **Verification**: If documentation was not updated when functionality changed, the task is incomplete.
+- **Quality**: Documentation is checked by **pydocstyle** (Google convention) and **markdownlint**.
 
 ## Development Environment
 
@@ -83,7 +85,6 @@ just check
 ### Python Standards
 
 - Always use English for comments and documentation, even when my prompt is in Spanish
-
 - Use **type hints** for all function parameters and return values
 - Follow **PEP 8** style guidelines
 - Use **f-strings** for string formatting
@@ -225,9 +226,11 @@ just test           # Run tests
 just check          # Run all quality checks
 
 # Code Quality
-just format         # Format code with Black
-just lint           # Lint code with flake8 and mypy
-just pre-commit     # Run pre-commit hooks
+just format         # Format code with Black, Ruff, and isort
+just lint           # Lint with Ruff, Mypy, Pydocstyle, Detect-secrets
+just cc             # Run cyclomatic complexity checks (Radon)
+just audit          # Audit dependencies (pip-audit)
+just pre-commit     # Run all pre-commit hooks
 
 # Git Operations
 just git-init       # Initialize git repository
@@ -246,36 +249,42 @@ just packages       # Show installed packages
 2. **Add type hints** to all new functions
 3. **Write tests** for new functionality
 4. **Update documentation** if needed
-5. **Run quality checks** before committing
+5. **Run quality checks** before committing (`just check` or `just pre-commit`)
 6. **Consider security implications** of changes
 7. **Think about performance** impact
 8. **Maintain backward compatibility** when possible
 9. **Update documentation** at `docs/` when needed
 
-## Common Issues & Solutions
+## Code Quality & Pre-commit Hooks
 
-### Import Errors
+The project uses `pre-commit` to enforce strict code quality standards. The following tools are configured:
 
-- Check if the module is in the correct directory
-- Verify `__init__.py` files exist
-- Use relative imports when appropriate
+### 1. Hygiene & Formatting
 
-### Type Checking Errors
+- **Black**: Code formatting
+- **Isort**: Import sorting
+- **Ruff**: Fast linting (replaces flake8)
+- **Yamllint**: YAML validation
+- **Markdownlint-cli2**: Markdown style validation
+- **Trailing whitespace & End-of-file**: Standard hygiene
 
-- Add proper type hints
-- Use `Optional` for nullable values
-- Use `Union` for multiple types
-- Use `List[Type]` for lists
+### 2. Static Analysis & Type Checking
 
-### Testing Issues
+- **Mypy**: Static type checking (ignore-missing-imports enabled)
 
-- Mock external dependencies
-- Use fixtures for common test data
-- Test edge cases and error conditions
-- Ensure tests are isolated and repeatable
+### 3. Security
 
-Remember: This is a **modern Python project** with **comprehensive tooling**. Always follow
-**best practices** and maintain **high code quality**.
+- **Bandit**: Security analysis for Python
+- **Semgrep**: Static analysis for security and bugs
+- **Detect-secrets**: Secrets detection
+- **Pip-audit**: Dependency vulnerability auditing
+
+### 4. Code Quality & Maintenance
+
+- **Pydocstyle**: Docstring validation (Google convention)
+- **Codespell**: Spell checking
+- **Xenon**: Cyclomatic complexity assertions
+- **Jscpd**: Copy/paste detector (duplication check)
 
 ## Python Project Rules
 
@@ -317,31 +326,31 @@ Returns:
 
 - Every function added must include a unit test under `tests/`.
 
-### Cyclomatic complexity rules (Python)
+### Cyclomatic Complexity Rules (Xenon)
 
-When writing or modifying Python code, follow these cyclomatic complexity constraints:
+We use **Xenon** to strictly enforce cyclomatic complexity. The configuration is:
 
-- Prefer very simple functions:
-  - Target cyclomatic complexity **≤ 5** for most functions.
-- Soft limit per function:
-  - Functions with cyclomatic complexity **> 7** should be refactored if possible.
-- Hard limit per function:
-  - Functions with cyclomatic complexity **> 10** are **not allowed** in new or heavily modified code.
-  - If you detect such a function, propose a refactor:
-    - Extract smaller helper functions.
-    - Replace nested `if/elif` with early returns or mapping/dictionary dispatch.
-    - Consider polymorphism / strategy pattern instead of large `if` chains.
+- **Max Absolute (Per Function)**: Grade D (Complexity <= 30)
+- **Max Modules (Average per Module)**: Grade B (Complexity <= 10)
+- **Max Average (Total Average)**: Grade B (Complexity <= 10)
 
-Additional guidelines:
+If you exceed these limits, the build will fail.
 
-- Avoid deeply nested control flow:
-  - Prefer early returns (`guard clauses`) to reduce nesting.
-  - Avoid more than **3 nested levels** of `if/for/while/try` inside the same function.
-- For legacy functions that already exceed these limits:
-  - Do not make huge refactors unless explicitly requested.
-  - Instead, add comments or TODOs suggesting a future refactor and keep complexity from increasing.
+**Development Guidelines:**
 
-When suggesting changes, always:
+- **Target Complexity**: Keep functions simple (Complexity ≤ 5).
+- **Refactoring Threshold**: Consider refactoring if complexity > 7.
+- **Strict Limit**: Any function > 30 will be rejected by CI.
 
-- Explain briefly how the change reduces cyclomatic complexity.
-- Prefer readability over "clever" tricks that make the code harder to understand.
+If you encounter high complexity:
+
+- Extract helper functions.
+- Use dictionaries for dispatch instead of `if/elif` chains.
+- Use early returns to reduce nesting levels.
+
+### Code Duplication (Jscpd)
+
+We use **jscpd** to detect duplicated code.
+
+- **Threshold**: Min 50 tokens, Min 5 lines.
+- **Action**: Refactor duplicated code into shared helper functions or base classes.

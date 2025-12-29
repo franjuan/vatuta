@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from unittest.mock import MagicMock, patch
 
 from src.models.documents import DocumentUnit
@@ -16,15 +16,15 @@ class TestJiraSource(unittest.TestCase):
     def setUp(self) -> None:
         # Use tempfile for test isolation
         self.temp_dir = tempfile.mkdtemp(prefix="test_jira_")
-        self.config = {
-            "url": "https://jira.example.com",
-            "jql_query": "project = '{project}' AND updated >= '{updated_since}' order by updated ASC",
-            "initial_lookback_days": 7,
-            "include_comments": True,
-            "projects": ["TEST", "DEV"],
-            "id": "test_jira",
-            "storage_path": self.temp_dir,
-        }
+        self.jira_config = JiraConfig(
+            url="https://jira.example.com",
+            jql_query="project = '{project}' AND updated >= '{updated_since}' order by updated ASC",
+            initial_lookback_days=7,
+            include_comments=True,
+            projects=["TEST", "DEV"],
+            id="test_jira",
+        )
+        self.storage_path = self.temp_dir
         self.secrets = {"jira_user": "user", "jira_api_token": "token"}
 
         # Mock JIRA client
@@ -33,15 +33,14 @@ class TestJiraSource(unittest.TestCase):
         self.mock_jira = self.mock_jira_cls.return_value
 
         # Clean up storage path if exists
-        storage_path = str(self.config["storage_path"])
-        if Path(storage_path).exists():
-            shutil.rmtree(storage_path)
+        # Clean up storage path if exists
+        if Path(self.storage_path).exists():
+            shutil.rmtree(self.storage_path)
 
     def tearDown(self) -> None:
         self.mock_jira_patcher.stop()
-        storage_path = str(self.config["storage_path"])
-        if Path(storage_path).exists():
-            shutil.rmtree(storage_path)
+        if Path(self.storage_path).exists():
+            shutil.rmtree(self.storage_path)
 
     def test_collect_documents_and_chunks(self) -> None:
         # Use a recent date for updated so it's captured by the lookback window
@@ -93,10 +92,13 @@ class TestJiraSource(unittest.TestCase):
 
         # Configure taggeable fields
         # "priority" is standard, "customfield_10001" is custom.
-        self.config["taggeable_fields"] = ["customfield_10001", "priority"]
-        self.config["history_chunk_size"] = 20
+        # Configure taggeable fields
+        # "priority" is standard, "customfield_10001" is custom.
+        test_config = self.jira_config.model_copy(deep=True)
+        test_config.taggeable_fields = ["customfield_10001", "priority"]
+        test_config.history_chunk_size = 20
         # Use single project to avoid duplicate docs in test with same mock
-        self.config["projects"] = ["TEST"]
+        test_config.projects = ["TEST"]
 
         # enhanced_search_issues with json_result=True returns a dict
         self.mock_jira.enhanced_search_issues.return_value = {
@@ -117,7 +119,8 @@ class TestJiraSource(unittest.TestCase):
         }
 
         # Initialize source
-        source = JiraSource.create(config=JiraConfig(**self.config), data_dir=self.temp_dir, secrets=self.secrets)
+        # Initialize source
+        source = JiraSource.create(config=test_config, data_dir=self.temp_dir, secrets=self.secrets)
         checkpoint = JiraCheckpoint(config=source.config)
 
         # Run collection
@@ -194,7 +197,8 @@ class TestJiraSource(unittest.TestCase):
         schema: Any = {}
 
         # Instantiate source
-        source = JiraSource(config=JiraConfig(**self.config), secrets=self.secrets, storage_path=self.temp_dir)
+        # Instantiate source
+        source = JiraSource(config=self.jira_config, secrets=self.secrets, storage_path=self.temp_dir)
 
         # Call the private method
         content = source._format_ticket_content(issue, names, schema)
@@ -227,7 +231,7 @@ class TestJiraSource(unittest.TestCase):
     @patch("src.sources.jira_source.gzip.open")
     def test_persistence(self, mock_gzip_open: MagicMock) -> None:
         # Enable caching
-        self.config["use_cached_data"] = True
+        test_config = self.jira_config.model_copy(update={"use_cached_data": True})
 
         # Setup mock issue
         mock_issue = {
@@ -241,7 +245,7 @@ class TestJiraSource(unittest.TestCase):
         self.mock_jira.enhanced_search_issues.return_value = {"issues": [mock_issue], "names": {}, "schema": {}}
 
         # Initialize source
-        source = JiraSource.create(config=JiraConfig(**self.config), data_dir=self.temp_dir, secrets=self.secrets)
+        source = JiraSource.create(config=test_config, data_dir=self.temp_dir, secrets=self.secrets)
         checkpoint = JiraCheckpoint(config=source.config)
 
         # Mock file handle
@@ -271,15 +275,18 @@ class TestJiraSource(unittest.TestCase):
         # Mock myself() to raise an exception
         self.mock_jira.myself.side_effect = Exception("Auth failed")
 
+        source = JiraSource.create(config=self.jira_config, data_dir=self.temp_dir, secrets=self.secrets)
+        checkpoint = JiraCheckpoint(config=source.config)
+
         with self.assertRaises(ValueError) as cm:
-            JiraSource.create(config=JiraConfig(**self.config), data_dir=self.temp_dir, secrets=self.secrets)
+            source.collect_documents_and_chunks(checkpoint)
 
         self.assertIn("Failed to authenticate with JIRA", str(cm.exception))
 
     def test_collect_cached_documents_and_chunks(self) -> None:
         # Create real cache files
         # JiraSource.create uses data_dir/jira as storage_path, so files go in data_dir/jira/source_id/project
-        base_dir = Path(self.temp_dir) / "jira" / str(self.config["id"])
+        base_dir = Path(self.temp_dir) / "jira" / self.jira_config.id
         project_dir = base_dir / "TEST"
         project_dir.mkdir(parents=True, exist_ok=True)
         file_path = project_dir / "TEST.jsonl.gz"
@@ -359,9 +366,7 @@ class TestJiraSource(unittest.TestCase):
                 f.write(json.dumps(issue) + "\n")
 
         # Initialize source - use the same storage_path as configured in setUp
-        source = JiraSource.create(
-            config=JiraConfig(**self.config), data_dir=str(self.config["storage_path"]), secrets=self.secrets
-        )
+        source = JiraSource.create(config=self.jira_config, data_dir=self.temp_dir, secrets=self.secrets)
 
         # Test Date Filtering
         date_from = datetime(2023, 11, 10, tzinfo=timezone.utc)
@@ -391,9 +396,13 @@ class TestJiraSource(unittest.TestCase):
     @patch("src.sources.jira_source.JiraSource._get_embedding_model")
     def test_comment_chunking_strategies(self, mock_get_model: MagicMock) -> None:
         # Configuration for test
-        self.config["chunk_max_count"] = 2
-        self.config["chunk_max_size_chars"] = 1000
-        self.config["chunk_similarity_threshold"] = 0.5  # High threshold to force split if low sim
+        test_config = self.jira_config.model_copy(
+            update={
+                "chunk_max_count": 2,
+                "chunk_max_size_chars": 1000,
+                "chunk_similarity_threshold": 0.5,
+            }
+        )  # High threshold to force split if low sim
 
         # Mock embedding model
         mock_model = MagicMock()
@@ -424,7 +433,7 @@ class TestJiraSource(unittest.TestCase):
         ]
 
         # Initialize source
-        source = JiraSource(config=JiraConfig(**self.config), secrets=self.secrets, storage_path=self.temp_dir)
+        source = JiraSource(config=test_config, secrets=self.secrets, storage_path=self.temp_dir)
         doc = DocumentUnit(
             document_id="doc1",
             source="jira",
@@ -462,17 +471,25 @@ class TestJiraSource(unittest.TestCase):
 
         # Now test Size Limit
         # We want to test size limit.
-        self.config["chunk_max_size_chars"] = 10000
-        self.config["chunk_max_count"] = 2
-        source = JiraSource(config=JiraConfig(**self.config), secrets=self.secrets, storage_path=self.temp_dir)
+        test_config = self.jira_config.model_copy(
+            update={
+                "chunk_max_size_chars": 10000,
+                "chunk_max_count": 2,
+            }
+        )
+        source = JiraSource(config=test_config, secrets=self.secrets, storage_path=self.temp_dir)
         chunks = source._build_chunks_for_comments(doc, comments, ["tag:base"])
         # Now Expect 3 chunks (2, 2, 1 items) because count limit is 2
         self.assertEqual(len(chunks), 3)
 
         # Test Semantic Splitting
-        self.config["chunk_max_count"] = 10
-        self.config["chunk_max_size_chars"] = 10000
-        self.config["chunk_similarity_threshold"] = 0.8  # Split if < 0.8
+        test_config = self.jira_config.model_copy(
+            update={
+                "chunk_max_count": 10,
+                "chunk_max_size_chars": 10000,
+                "chunk_similarity_threshold": 0.8,
+            }
+        )  # Split if < 0.8
 
         # C1, C2 -> High Sim (0.9) -> Join
         # C2, C3 -> Low Sim (0.1) -> Split
@@ -494,7 +511,7 @@ class TestJiraSource(unittest.TestCase):
         mock_model.encode.return_value = [vec_a, vec_a, vec_b, vec_b, vec_b]
 
         # Initialize new source with updated config
-        source = JiraSource(config=JiraConfig(**self.config), secrets=self.secrets, storage_path=self.temp_dir)
+        source = JiraSource(config=test_config, secrets=self.secrets, storage_path=self.temp_dir)
         chunks = source._build_chunks_for_comments(doc, comments, ["tag:base"])
 
         # Expect: [C1, C2], [C3, C4, C5] -> 2 chunks.
@@ -505,6 +522,93 @@ class TestJiraSource(unittest.TestCase):
 
         self.assertIn("CCCCC", chunks[1].text)
         self.assertIn("EEEEE", chunks[1].text)
+
+    def test_entity_resolution_and_referencing(self) -> None:
+        """Test that Jira users and mentions are resolved to global entities."""
+        # 1. Setup Mock Entity Manager
+        mock_em = MagicMock()
+
+        # User 1: Reporter (AccountID: acc-reporter)
+        # User 2: Assignee (AccountID: acc-assignee)
+        # User 3: Comment Author (AccountID: acc-commenter)
+        # User 4: Mentioned in comment (AccountID: acc-mentioned)
+
+        entity_map = {
+            "acc-reporter": MagicMock(global_id="g-reporter"),
+            "acc-assignee": MagicMock(global_id="g-assignee"),
+            "acc-commenter": MagicMock(global_id="g-commenter"),
+            "acc-mentioned": MagicMock(global_id="g-mentioned"),
+        }
+
+        def side_effect_get_or_create(
+            source_type: str, source_id: str, source_user_id: str, user_data: Optional[dict] = None
+        ) -> MagicMock:
+            if source_user_id in entity_map:
+                return entity_map[source_user_id]
+            return MagicMock(global_id=f"g-{source_user_id}")
+
+        mock_em.get_or_create_user.side_effect = side_effect_get_or_create
+
+        def side_effect_get_by_source_id(source_type: str, source_id: str, source_user_id: str) -> MagicMock | None:
+            if source_user_id in entity_map:
+                return entity_map[source_user_id]
+            return None
+
+        mock_em.get_user_by_source_id.side_effect = side_effect_get_by_source_id
+
+        # 2. Setup Issue Data (and Single Project)
+        test_config = self.jira_config.model_copy(update={"projects": ["TEST"]})
+        mock_issue = {
+            "key": "TEST-ENT",
+            "id": "1000",
+            "self": "http://jira/1000",
+            "fields": {
+                "updated": "2023-10-27T10:00:00.000+0000",
+                "summary": "Entity Test",
+                "reporter": {"accountId": "acc-reporter", "displayName": "Reporter"},
+                "assignee": {"accountId": "acc-assignee", "displayName": "Assignee"},
+                "comment": {
+                    "comments": [
+                        {
+                            "author": {"accountId": "acc-commenter", "displayName": "Commenter"},
+                            "body": "Hey [~accountid:acc-mentioned], please check this.",
+                            "created": "2023-10-27T12:00:00.000+0000",
+                        }
+                    ]
+                },
+            },
+            "changelog": {"histories": []},  # Skip history for this test
+        }
+
+        # 3. Setup Source with EM
+        source = JiraSource(
+            config=test_config, secrets=self.secrets, storage_path=self.temp_dir, entity_manager=mock_em
+        )
+        checkpoint = JiraCheckpoint(config=source.config)
+
+        self.mock_jira.enhanced_search_issues.return_value = {"issues": [mock_issue], "names": {}, "schema": {}}
+
+        # 4. Run collection
+        docs, chunks = source.collect_documents_and_chunks(checkpoint)
+
+        # 5. Verify Tags
+        self.assertEqual(len(docs), 1)
+        doc = docs[0]
+
+        # Doc should have reporter and assignee tags
+        self.assertIn("user:g-reporter", doc.system_tags)
+        self.assertIn("user:g-assignee", doc.system_tags)
+
+        # Find comment chunk
+        # Chunk 0: Ticket Body
+        # Chunk 1: Comment
+        comment_chunk = next((c for c in chunks if "type:comment" in c.system_tags), None)
+        self.assertIsNotNone(comment_chunk)
+
+        # Comment chunk should have commenter tag and mentioned user tag
+        if comment_chunk is not None:
+            self.assertIn("user:g-commenter", comment_chunk.system_tags)
+            self.assertIn("user:g-mentioned", comment_chunk.system_tags)
 
 
 if __name__ == "__main__":

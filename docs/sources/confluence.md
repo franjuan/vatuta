@@ -13,6 +13,8 @@ internal HTML storage format.
 
 1. **Single-pass extraction**
    - `collect_documents_and_chunks` fetches pages via CQL (Confluence Query Language).
+   - **Deferred Validation**: Connection and credentials are validated only when `collect_documents_and_chunks`
+     is called, not on instantiation. This enables offline instantiation for cache-only workflows.
    - Pages are immediately converted to `DocumentUnit` and `ChunkRecord` objects.
 
 2. **Document model**

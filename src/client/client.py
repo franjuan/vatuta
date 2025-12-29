@@ -14,6 +14,7 @@ from rich.logging import RichHandler
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
+from src.entities.manager import EntityManager
 from src.models.config import ConfigLoader, VatutaConfig
 from src.rag.document_manager import DocumentManager
 from src.rag.engine import DSPyRAGModule, RAGState, build_graph, configure_dspy_lm
@@ -215,23 +216,27 @@ def load(
         console.print("[yellow]No enabled sources matches the filters.[/yellow]")
         return
 
+    # Instantiate Entity Manager
+    entities_path = state.config.entities_manager.storage_path or "data/entities.json"
+    entity_manager = EntityManager(storage_path=entities_path)
+
     for stype, sid, scfg in sources:
         console.print(f"[bold blue]Loading {stype} ({sid}) from cache...[/bold blue]")
 
         try:
             src: Any = None
             if stype == "slack":
-                src = SlackSource.create(config=scfg, data_dir=state.data_dir)
+                src = SlackSource.create(config=scfg, data_dir=state.data_dir, entity_manager=entity_manager)
                 docs, chunks = src.collect_cached_documents_and_chunks()
                 _ingest_docs(dm, docs, chunks, stype)
 
             elif stype == "jira":
-                src = JiraSource.create(config=scfg, data_dir=state.data_dir)
+                src = JiraSource.create(config=scfg, data_dir=state.data_dir, entity_manager=entity_manager)
                 docs, chunks = src.collect_cached_documents_and_chunks()
                 _ingest_docs(dm, docs, chunks, stype)
 
             elif stype == "confluence":
-                src = ConfluenceSource.create(config=scfg, data_dir=state.data_dir)
+                src = ConfluenceSource.create(config=scfg, data_dir=state.data_dir, entity_manager=entity_manager)
                 docs, chunks = src.collect_cached_documents_and_chunks()
                 _ingest_docs(dm, docs, chunks, stype)
 
@@ -262,13 +267,17 @@ def update(
 
     use_cached_data = not no_cache
 
+    # Instantiate Entity Manager
+    entities_path = state.config.entities_manager.storage_path or "data/entities.json"
+    entity_manager = EntityManager(storage_path=entities_path)
+
     for stype, sid, scfg in sources:
         console.print(f"[bold blue]Updating {stype} ({sid})...[/bold blue]")
 
         try:
             src: Any = None
             if stype == "slack":
-                src = SlackSource.create(config=scfg, data_dir=state.data_dir)
+                src = SlackSource.create(config=scfg, data_dir=state.data_dir, entity_manager=entity_manager)
                 checkpoint = src.load_checkpoint()
 
                 with Progress(
@@ -280,7 +289,7 @@ def update(
                 _ingest_docs(dm, docs, chunks, stype)
 
             elif stype == "jira":
-                src = JiraSource.create(config=scfg, data_dir=state.data_dir)
+                src = JiraSource.create(config=scfg, data_dir=state.data_dir, entity_manager=entity_manager)
                 checkpoint = src.load_checkpoint()
 
                 with Progress(
@@ -292,7 +301,7 @@ def update(
                 _ingest_docs(dm, docs, chunks, stype)
 
             elif stype == "confluence":
-                src = ConfluenceSource.create(config=scfg, data_dir=state.data_dir)
+                src = ConfluenceSource.create(config=scfg, data_dir=state.data_dir, entity_manager=entity_manager)
                 checkpoint = src.load_checkpoint()
 
                 with Progress(

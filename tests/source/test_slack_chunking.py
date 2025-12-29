@@ -157,6 +157,45 @@ class TestSlackChunking(unittest.TestCase):
             self.assertIn("Banana", chunks[0].text)
             self.assertIn("Car", chunks[1].text)
 
+            self.assertIn("Car", chunks[1].text)
+
+    def test_entity_tagging(self) -> None:
+        """Test that chunks get tagged with user entity IDs."""
+        # 1. Setup Mock Entity Manager
+        mock_em = MagicMock()
+        mock_entity = MagicMock()
+        mock_entity.global_id = "global-123"
+        mock_em.get_or_create_user.return_value = mock_entity
+        self.source.entity_manager = mock_em
+
+        msgs = [
+            {"ts": "1000", "text": "Hello <@U2>!", "user": "U1"},
+        ]
+
+        mock_model = MagicMock()
+        mock_model.encode.return_value = [[1.0]]
+        self.source._embedding_model = mock_model
+
+        # U1 is author -> global-123
+        # U2 is mentioned -> We need to mock U2 return as well if we want it tagged
+
+        def side_effect_get_user(uid: str) -> dict[str, str | None]:
+            if uid == "U1":
+                return {"id": "U1", "name": "Author", "global_entity_id": "g-author"}
+            if uid == "U2":
+                return {"id": "U2", "name": "Mentioned", "global_entity_id": "g-mentioned"}
+            return {"id": uid}
+
+        # Use patch.object to mock the method on the instance safe for mypy
+        with patch.object(self.source, "_get_user_info", side_effect=side_effect_get_user):
+            chunks = self.source._build_chunks_for_messages(self.doc, msgs)
+
+        self.assertEqual(len(chunks), 1)
+
+        # Verify user tags
+        self.assertIn("user:g-author", chunks[0].user_tags)
+        self.assertIn("user:g-mentioned", chunks[0].user_tags)
+
 
 if __name__ == "__main__":
     unittest.main()

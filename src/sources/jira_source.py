@@ -10,6 +10,7 @@ import gzip
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from pathlib import Path
@@ -20,6 +21,8 @@ from jira import JIRA
 from pydantic import Field
 from sentence_transformers.SentenceTransformer import SentenceTransformer
 from sentence_transformers.util import cos_sim
+
+from src.entities.manager import EntityManager
 
 # Import Prometheus metrics from centralized module
 from src.metrics.metrics import API_CALLS, API_LATENCY, OP_ITEMS, OP_LATENCY
@@ -96,7 +99,13 @@ class JiraSource(Source[JiraConfig]):
     """Max issues per API call to JIRA"""
 
     @classmethod
-    def create(cls, config: JiraConfig, data_dir: str, secrets: Optional[dict] = None) -> "JiraSource":
+    def create(
+        cls,
+        config: JiraConfig,
+        data_dir: str,
+        secrets: Optional[dict] = None,
+        entity_manager: Optional[EntityManager] = None,
+    ) -> "JiraSource":
         """Create a JiraSource instance with the given configuration."""
         storage_path = os.path.join(data_dir, "jira")
 
@@ -108,7 +117,7 @@ class JiraSource(Source[JiraConfig]):
         if "jira_api_token" not in secrets:
             secrets["jira_api_token"] = os.getenv("JIRA_API_TOKEN")
 
-        return cls(config=config, secrets=secrets, storage_path=storage_path)
+        return cls(config=config, secrets=secrets, storage_path=storage_path, entity_manager=entity_manager)
 
     def load_checkpoint(self) -> JiraCheckpoint:
         """Load existing checkpoint or create a new one."""
@@ -122,11 +131,17 @@ class JiraSource(Source[JiraConfig]):
             checkpoint = JiraCheckpoint(config=self.config)
         return checkpoint
 
-    def __init__(self, config: JiraConfig, secrets: dict, storage_path: str | None = None):
+    def __init__(
+        self,
+        config: JiraConfig,
+        secrets: dict,
+        storage_path: str | None = None,
+        entity_manager: Optional[EntityManager] = None,
+    ):
         """Initialize JIRA source with configuration and credentials."""
         if storage_path is None:
             raise ValueError("storage_path must be provided")
-        super().__init__(config, secrets, storage_path=storage_path)
+        super().__init__(config, secrets, storage_path=storage_path, entity_manager=entity_manager)
 
         # Config is already validated via type hint and generic
 
@@ -139,12 +154,71 @@ class JiraSource(Source[JiraConfig]):
         self.client = JIRA(
             server=self.config.url,
             basic_auth=(user, token),
+            validate=False,
+            get_server_info=False,
         )
         self._embedding_model: SentenceTransformer | None = None
 
-        # Validate credentials immediately
+        self._connection_validated = False
+
+    def _resolve_user_entity(self, user_obj: Any) -> Optional[str]:
+        """Resolve a JIRA user object to a global entity ID."""
+        if not self.entity_manager or not user_obj:
+            return None
+
+        # user_obj might be a dict or a JIRA Resource object
+        if hasattr(user_obj, "raw"):
+            user_data = user_obj.raw
+        elif isinstance(user_obj, dict):
+            user_data = user_obj
+        else:
+            return None
+
+        account_id = user_data.get("accountId") or user_data.get("key") or user_data.get("name")
+        if not account_id:
+            return None
+
+        # Prepare user metadata
+        name = user_data.get("displayName")
+        email = user_data.get("emailAddress")
+
+        # If email missing, try to fetch full profile if we have accountId (and it's not a key like 'admin')
+        # Note: JIRA cloud uses accountId. Server uses name/key.
+        if not email and "accountId" in user_data:
+            try:
+                # TODO: Try to fetch full user to get email if hidden in summary view
+                # Only if we suspect we can get it.
+                # This adds API calls. Let's be careful.
+                # For now, rely on what we have.
+                pass
+            except Exception:
+                pass
+
+        data = {
+            "name": name,
+            "display_name": name,
+            "email": email,
+            "active": user_data.get("active"),
+            "timeZone": user_data.get("timeZone"),
+        }
+
+        try:
+            entity = self.entity_manager.get_or_create_user(
+                source_type="jira", source_id=self.source_id, source_user_id=str(account_id), user_data=data
+            )
+            return entity.global_id
+        except Exception as e:
+            logger.warning(f"Failed to resolve entity for jira user {account_id}: {e}")
+            return None
+
+    def _ensure_connection(self) -> None:
+        """Validate connection to JIRA if not already validated."""
+        if self._connection_validated:
+            return
+
         try:
             self.client.myself()
+            self._connection_validated = True
         except Exception as e:
             raise ValueError(f"Failed to authenticate with JIRA: {e}") from e
 
@@ -156,6 +230,8 @@ class JiraSource(Source[JiraConfig]):
         filters: Optional[Dict[str, list[str]]] = None,
     ) -> Tuple[List[DocumentUnit], List[ChunkRecord]]:
         """Collect documents and chunks from JIRA projects."""
+        self._ensure_connection()
+
         if not isinstance(checkpoint, JiraCheckpoint):
             # If passed a generic checkpoint, try to wrap it or start fresh if empty
             checkpoint = JiraCheckpoint(config=self.config, state=checkpoint.state if checkpoint else {})
@@ -330,6 +406,116 @@ class JiraSource(Source[JiraConfig]):
         except Exception as e:
             logger.error(f"Failed to persist issues to {out_path}: {e}")
 
+    def _get_issue_fields_data(self, issue: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract and normalize common fields from a Jira issue.
+
+        Args:
+            issue (Dict[str, Any]): The Jira issue dictionary.
+
+        Returns:
+            Dict[str, Any]: A dictionary containing the extracted and normalized fields.
+        """
+        fields = issue["fields"]
+
+        def safe_get(obj: Any, key: str, default: str = "Unknown") -> str:
+            if isinstance(obj, dict):
+                return str(obj.get(key, default))
+            return str(obj) if obj else default
+
+        return {
+            "key": issue["key"],
+            "summary": fields.get("summary", ""),
+            "status": safe_get(fields.get("status"), "name", "Unknown"),
+            "priority": safe_get(fields.get("priority"), "name", "Unknown"),
+            "issuetype": safe_get(fields.get("issuetype"), "name", "Unknown"),
+            "assignee": safe_get(fields.get("assignee"), "displayName", "Unassigned"),
+            "reporter": safe_get(fields.get("reporter"), "displayName", "Unknown"),
+            "created": fields.get("created", ""),
+            "updated": fields.get("updated", ""),
+            "project_key": safe_get(fields.get("project"), "key", "Unknown"),
+            "assignee_obj": fields.get("assignee"),
+            "reporter_obj": fields.get("reporter"),
+            "parent_obj": fields.get("parent"),
+            "comment_obj": fields.get("comment"),
+            "labels": fields.get("labels", []),
+            "components": fields.get("components", []),
+            "uri": issue.get("self", f"{self.config.url}/browse/{issue['key']}"),
+        }
+
+    def _build_system_tags(self, fields_data: Dict[str, Any], raw_fields: Dict[str, Any]) -> List[str]:
+        """Build system tags including standard and configured fields.
+
+        Args:
+            fields_data (Dict[str, Any]): The fields data dictionary.
+            raw_fields (Dict[str, Any]): The raw fields dictionary.
+
+        Returns:
+            List[str]: A list of system tags.
+        """
+        system_tags = [
+            f"status:{fields_data['status']}",
+            f"priority:{fields_data['priority']}",
+            f"type:{fields_data['issuetype']}",
+        ]
+
+        # Standard derived tags to exclude from generic processing
+        standard_derived_tags = {"status", "priority", "issuetype", "labels", "components"}
+
+        for field_key in self.config.taggeable_fields:
+            if field_key in standard_derived_tags:
+                continue
+
+            if field_key in raw_fields:
+                val = raw_fields[field_key]
+                if isinstance(val, list):
+                    for v in val:
+                        v_str = v.get("name", str(v)) if isinstance(v, dict) else str(v)
+                        system_tags.append(f"{field_key}:{v_str}")
+                elif isinstance(val, dict):
+                    v_str = val.get("name", str(val))
+                    system_tags.append(f"{field_key}:{v_str}")
+                elif val is not None:
+                    system_tags.append(f"{field_key}:{val}")
+
+        # Labels
+        for label in fields_data["labels"]:
+            system_tags.append(f"label:{label}")
+
+        # Components
+        for comp in fields_data["components"]:
+            comp_name = comp.get("name", "") if isinstance(comp, dict) else str(comp)
+            if comp_name:
+                system_tags.append(f"component:{comp_name}")
+
+        return system_tags
+
+    def _resolve_mentions(self, text: str) -> List[str]:
+        """Extract user entities from mentions in text.
+
+        Args:
+            text (str): The text to extract mentions from.
+
+        Returns:
+            List[str]: A list of user entities.
+        """
+        if not self.entity_manager:
+            return []
+
+        mentions_re = re.compile(r"\[~(accountid:[a-zA-Z0-9:-]+|[^\]]+)\]")
+        mentions = mentions_re.findall(text)
+
+        user_tags = []
+        for m in mentions:
+            m_id = m.replace("accountid:", "")
+            if len(m_id) > 5:
+                try:
+                    ent = self.entity_manager.get_user_by_source_id("jira", self.source_id, m_id)
+                    if ent:
+                        user_tags.append(f"user:{ent.global_id}")
+                except Exception:
+                    pass
+        return user_tags
+
     def _process_issue(
         self, issue: Dict[str, Any], names: Dict[str, str], schema: Dict[str, Any]
     ) -> Tuple[DocumentUnit, List[ChunkRecord]]:
@@ -344,124 +530,63 @@ class JiraSource(Source[JiraConfig]):
             Tuple[DocumentUnit, List[ChunkRecord]]: The document unit and chunk records.
         """
         # 1. Extract Metadata
-        key = issue["key"]
+        data = self._get_issue_fields_data(issue)
         fields = issue["fields"]
 
-        summary = fields.get("summary", "")
-
-        # Extract field values with safe navigation
-        status = (
-            fields.get("status", {}).get("name", "Unknown")
-            if isinstance(fields.get("status"), dict)
-            else str(fields.get("status", "Unknown"))
-        )
-        priority = (
-            fields.get("priority", {}).get("name", "Unknown")
-            if isinstance(fields.get("priority"), dict)
-            else str(fields.get("priority", "Unknown"))
-        )
-        issuetype = (
-            fields.get("issuetype", {}).get("name", "Unknown")
-            if isinstance(fields.get("issuetype"), dict)
-            else str(fields.get("issuetype", "Unknown"))
-        )
-
-        assignee_obj = fields.get("assignee")
-        assignee = assignee_obj.get("displayName", "Unassigned") if isinstance(assignee_obj, dict) else "Unassigned"
-
-        reporter_obj = fields.get("reporter")
-        reporter = reporter_obj.get("displayName", "Unknown") if isinstance(reporter_obj, dict) else "Unknown"
-
-        created = fields.get("created", "")
-        updated = fields.get("updated", "")
-
-        project_obj = fields.get("project", {})
-        project_key = project_obj.get("key", "Unknown") if isinstance(project_obj, dict) else "Unknown"
-
-        # 2. Build Base System Tags (Ticket Level)
-        system_tags = []
-        system_tags.append(f"status:{status}")
-        system_tags.append(f"priority:{priority}")
-        system_tags.append(f"type:{issuetype}")
-
-        # Deduplication: standard fields that are already captured
-        standard_derived_tags = {"status", "priority", "issuetype", "labels", "components"}
-
-        # Add configured taggeable fields, carefully excluding duplicates if they are standard fields
-        # Note: 'status', 'priority' etc are field keys. 'labels' is 'labels'.
-
-        for field_key in self.config.taggeable_fields:
-            if field_key in standard_derived_tags:
-                continue
-
-            if field_key in fields:
-                val = fields[field_key]
-                # Handle dicts (like components, versions) or simple values
-                if isinstance(val, list):
-                    for v in val:
-                        v_str = v.get("name", str(v)) if isinstance(v, dict) else str(v)
-                        system_tags.append(f"{field_key}:{v_str}")
-                elif isinstance(val, dict):
-                    v_str = val.get("name", str(val))
-                    system_tags.append(f"{field_key}:{v_str}")
-                elif val is not None:
-                    system_tags.append(f"{field_key}:{val}")
-
-        # Always include labels and components if present as they are standard
-        labels = fields.get("labels", [])
-        if labels:
-            for label in labels:
-                system_tags.append(f"label:{label}")
-
-        components = fields.get("components", [])
-        if components:
-            for comp in components:
-                comp_name = comp.get("name", "") if isinstance(comp, dict) else str(comp)
-                if comp_name:
-                    system_tags.append(f"component:{comp_name}")
-
-        uri = issue.get("self", f"{self.config.url}/browse/{key}")
+        # 2. Build Base System Tags
+        system_tags = self._build_system_tags(data, fields)
 
         # Parent ID logic
-        parent_obj = fields.get("parent")
         parent_id = None
-        if parent_obj and isinstance(parent_obj, dict):
-            parent_id = parent_obj.get("key")
+        if data["parent_obj"] and isinstance(data["parent_obj"], dict):
+            parent_id = data["parent_obj"].get("key")
 
         # 3. Create Document Unit
-        # We use the key-value representation for the primary hash
         ticket_content = self._format_ticket_content(issue, names, schema)
         content_hash = DocumentUnit.compute_hash(ticket_content.encode("utf-8"))
 
         doc = DocumentUnit(
-            document_id=f"jira|{self.source_id}|{key}",
+            document_id=f"jira|{self.source_id}|{data['key']}",
             source="jira",
-            source_doc_id=key,
+            source_doc_id=data["key"],
             source_instance_id=self.source_id,
-            uri=uri,
-            title=f"[{key}] {summary}",
-            author=reporter,
+            uri=data["uri"],
+            title=f"[{data['key']}] {data['summary']}",
+            author=data["reporter"],
             parent_id=parent_id,
             language=None,
-            source_created_at=self._parse_jira_time(created),
-            source_updated_at=self._parse_jira_time(updated),
+            source_created_at=self._parse_jira_time(data["created"]),
+            source_updated_at=self._parse_jira_time(data["updated"]),
             system_tags=system_tags,
             source_metadata={
-                "key": key,
-                "project": project_key,
-                "status": status,
-                "priority": priority,
-                "issuetype": issuetype,
-                "assignee": assignee,
+                "key": data["key"],
+                "project": data["project_key"],
+                "status": data["status"],
+                "priority": data["priority"],
+                "issuetype": data["issuetype"],
+                "assignee": data["assignee"],
             },
             content_hash=content_hash,
         )
 
+        # Tag doc with Reporter and Assignee Entities
+        reporter_entity_id = self._resolve_user_entity(data["reporter_obj"])
+        if reporter_entity_id:
+            doc.system_tags.append(f"user:{reporter_entity_id}")
+
+        assignee_entity_id = self._resolve_user_entity(data["assignee_obj"])
+        if assignee_entity_id and assignee_entity_id != reporter_entity_id:
+            doc.system_tags.append(f"user:{assignee_entity_id}")
+
         chunks: List[ChunkRecord] = []
         chunk_idx = 0
 
-        # Chunk 1: Ticket Body (Key-Value)
+        # Chunk 1: Ticket Body
         chunk_tags = system_tags + ["type:ticket"]
+
+        # Resolve mentions
+        chunk_tags.extend(self._resolve_mentions(ticket_content))
+
         chunks.append(self._make_chunk(doc=doc, chunk_index=chunk_idx, text=ticket_content, tags=chunk_tags))
         chunk_idx += 1
 
@@ -475,7 +600,7 @@ class JiraSource(Source[JiraConfig]):
             )
             chunk_idx += 1
 
-        # Chunk 3+: History (Changelog) - Now split into multiple chunks if needed
+        # Chunk 3+: History
         history_chunks_data = self._format_history(issue)
         for hist_text, hist_tags in history_chunks_data:
             chunks.append(
@@ -486,12 +611,10 @@ class JiraSource(Source[JiraConfig]):
             chunk_idx += 1
 
         # Chunk N+: Comments
-        if self.config.include_comments:
-            comment_obj = fields.get("comment")
-            if comment_obj and isinstance(comment_obj, dict):
-                comments = comment_obj.get("comments", [])
-                comment_chunks = self._build_chunks_for_comments(doc, comments, system_tags, start_index=chunk_idx)
-                chunks.extend(comment_chunks)
+        if self.config.include_comments and data["comment_obj"] and isinstance(data["comment_obj"], dict):
+            comments = data["comment_obj"].get("comments", [])
+            comment_chunks = self._build_chunks_for_comments(doc, comments, system_tags, start_index=chunk_idx)
+            chunks.extend(comment_chunks)
 
         return doc, chunks
 
@@ -609,14 +732,20 @@ class JiraSource(Source[JiraConfig]):
         batch_size = self.config.history_chunk_size
 
         for history in histories:
-            author = history.get("author", {}).get("displayName", "Unknown")
+            author_obj = history.get("author", {})
+            author = author_obj.get("displayName", "Unknown") if isinstance(author_obj, dict) else "Unknown"
             created = history.get("created", "")
+
+            # Resolve author entity
+            author_entity_id = self._resolve_user_entity(author_obj)
 
             # This history entry's text lines
             entry_lines = []
 
             # Tags for this entry
             entry_tags = {f"author:{author}"}
+            if author_entity_id:
+                entry_tags.add(f"user:{author_entity_id}")
 
             items = history.get("items", [])
             if not items:
@@ -716,9 +845,31 @@ class JiraSource(Source[JiraConfig]):
                 # Collect tags
                 all_tags = set(base_tags)
                 all_tags.add("type:comment")
+
+                # Regex for mentions
+                mentions_re = re.compile(r"\[~(accountid:[a-zA-Z0-9:-]+|[^\]]+)\]")
+
                 for cm in current_chunk_comments:
                     _, c_tags = self._format_comment_for_embedding(cm)
                     all_tags.update(c_tags)
+
+                    # Author Entity
+                    author_obj = cm.get("author", {})
+                    author_ent_id = self._resolve_user_entity(author_obj)
+                    if author_ent_id:
+                        all_tags.add(f"user:{author_ent_id}")
+
+                    # Mentions
+                    mentions = mentions_re.findall(cm.get("body", ""))
+                    for m in mentions:
+                        m_id = m.replace("accountid:", "")
+                        if len(m_id) > 5 and self.entity_manager:
+                            try:
+                                ent = self.entity_manager.get_user_by_source_id("jira", self.source_id, m_id)
+                                if ent:
+                                    all_tags.add(f"user:{ent.global_id}")
+                            except Exception:
+                                pass
 
                 chunks.append(self._make_chunk(doc, chunk_counter, chunk_text, list(all_tags)))
                 chunk_counter += 1
@@ -734,9 +885,31 @@ class JiraSource(Source[JiraConfig]):
             chunk_text = "\n\n".join([self._format_comment_for_embedding(cm)[0] for cm in current_chunk_comments])
             all_tags = set(base_tags)
             all_tags.add("type:comment")
+
+            mentions_re = re.compile(r"\[~(accountid:[a-zA-Z0-9:-]+|[^\]]+)\]")
+
             for cm in current_chunk_comments:
                 _, c_tags = self._format_comment_for_embedding(cm)
                 all_tags.update(c_tags)
+
+                # Author Entity
+                author_obj = cm.get("author", {})
+                author_ent_id = self._resolve_user_entity(author_obj)
+                if author_ent_id:
+                    all_tags.add(f"user:{author_ent_id}")
+
+                # Mentions
+                mentions = mentions_re.findall(cm.get("body", ""))
+                for m in mentions:
+                    m_id = m.replace("accountid:", "")
+                    if len(m_id) > 5 and self.entity_manager:
+                        try:
+                            ent = self.entity_manager.get_user_by_source_id("jira", self.source_id, m_id)
+                            if ent:
+                                all_tags.add(f"user:{ent.global_id}")
+                        except Exception:
+                            pass
+
             chunks.append(self._make_chunk(doc, chunk_counter, chunk_text, list(all_tags)))
 
         return chunks
@@ -866,30 +1039,38 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
     # Example configuration from environment
-    config = {
-        "url": os.getenv("JIRA_INSTANCE_URL", ""),
-        "projects": os.getenv("JIRA_PROJECTS", "").split(",") if os.getenv("JIRA_PROJECTS") else [],
-        "storage_path": "./data/jira",
-        "include_comments": True,
-        "use_cached_data": False,
-        "taggable_fields": ["priority", "issuetype", "status", "assignee", "reporter", "labels"],
-        "initial_loopback_days": 365,
-        "chunk_max_size_chars": 2000,
-        "chunk_max_count": 10,
-        "chunk_similarity_threshold": 0.15,
-        "id": "jira-main",
-    }
+    jira_url = os.getenv("JIRA_INSTANCE_URL", "")
+    jira_projects = os.getenv("JIRA_PROJECTS", "").split(",") if os.getenv("JIRA_PROJECTS") else []
+    jira_user = os.getenv("JIRA_USER")
+    jira_api_token = os.getenv("JIRA_API_TOKEN")
 
-    secrets = {"jira_user": os.getenv("JIRA_USER"), "jira_api_token": os.getenv("JIRA_API_TOKEN")}
+    storage_path = "./data/jira"
+    source_id = "jira-main"
 
-    if not config["url"] or not config["projects"] or not secrets["jira_user"]:
+    if not jira_url or not jira_projects or not jira_user:
         print("Please set JIRA_INSTANCE_URL, JIRA_PROJECTS (comma-separated), JIRA_USER, and JIRA_API_TOKEN")
         return
 
-    source = JiraSource(JiraConfig(**config), secrets, storage_path=str(config["storage_path"]))
+    secrets = {"jira_user": jira_user, "jira_api_token": jira_api_token}
+
+    config = JiraConfig(
+        id=source_id,
+        url=jira_url,
+        projects=jira_projects,
+        initial_lookback_days=365,
+        include_comments=True,
+        use_cached_data=False,
+        taggeable_fields=["priority", "issuetype", "status", "assignee", "reporter", "labels"],
+        chunk_max_size_chars=2000,
+        chunk_max_count=10,
+        chunk_similarity_threshold=0.15,
+    )
+
+    entity_manager = EntityManager(storage_path="data/entities.json")
+    source = JiraSource(config, secrets, storage_path=storage_path, entity_manager=entity_manager)
 
     # Load checkpoint
-    checkpoint_dir = Path(str(config["storage_path"])) / str(config["id"])
+    checkpoint_dir = Path(storage_path) / source_id
     checkpoint_path = checkpoint_dir / "checkpoint.json"
     checkpoint_data = {}
     if checkpoint_path.exists():
