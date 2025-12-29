@@ -92,8 +92,6 @@ just check
 - Use **descriptive names** for variables and functions
 - Add **docstrings** for all public functions and classes
 
-### Import Organization
-
 ```python
 # Standard library imports
 import os
@@ -109,6 +107,101 @@ from pydantic import BaseModel
 from src.assistant import PersonalAssistant
 from src.utils import get_settings
 ```
+
+### Code Generation Formatting Rules
+
+When generating or modifying code, always ensure:
+
+1. **Import Ordering**: Use `isort` compatible ordering (standard library → third-party → local)
+2. **Trailing Whitespace**: Remove all trailing whitespace from lines
+3. **End of File**: Ensure files end with a single newline character
+4. **Line Endings**: Use Unix-style line endings (LF, not CRLF)
+5. **Mypy Compliance**: Write type-safe code that passes strict mypy checks
+
+These rules prevent linting errors and ensure consistency across the codebase.
+
+### Mypy Compliance Guidelines
+
+This project uses strict mypy configuration. Always follow these rules:
+
+1. **Type Hints Required**: Add type hints to all function parameters and return values
+
+   ```python
+   # Correct
+   def process_data(items: list[str], count: int) -> dict[str, Any]:
+       return {"items": items, "count": count}
+
+   # Incorrect - missing type hints
+   def process_data(items, count):
+       return {"items": items, "count": count}
+   ```
+
+2. **Avoid `Any` When Possible**: Use specific types instead of `Any`
+
+   ```python
+   # Preferred
+   def get_config() -> dict[str, str]:
+       return {"key": "value"}
+
+   # Avoid (unless truly necessary)
+   def get_config() -> dict[str, Any]:
+       return {"key": "value"}
+   ```
+
+3. **Use Pydantic Models Instead of Dicts**: When unpacking dictionaries, use Pydantic model instantiation
+
+   ```python
+   # Correct - Direct instantiation
+   config = JiraConfig(
+       url="https://jira.example.com",
+       projects=["TEST"],
+       id="jira-main"
+   )
+
+   # Incorrect - Dict unpacking (causes mypy errors)
+   config_dict = {"url": "https://jira.example.com", "projects": ["TEST"], "id": "jira-main"}
+   config = JiraConfig(**config_dict)
+   ```
+
+4. **Handle Optional Types Properly**: Check for None before accessing attributes
+
+   ```python
+   # Correct
+   def get_name(user: Optional[User]) -> str:
+       if user is None:
+           return "Unknown"
+       return user.name
+
+   # Incorrect - mypy error: Item "None" has no attribute "name"
+   def get_name(user: Optional[User]) -> str:
+       return user.name
+   ```
+
+5. **Type Collections Properly**: Use modern type hints (Python 3.12+)
+
+   ```python
+   # Correct (Python 3.12+)
+   from typing import Optional
+
+   def process(items: list[str]) -> dict[str, int]:
+       return {item: len(item) for item in items}
+
+   # Avoid (old style)
+   from typing import List, Dict
+
+   def process(items: List[str]) -> Dict[str, int]:
+       return {item: len(item) for item in items}
+   ```
+
+6. **Use `type: ignore` Comments Sparingly**: Only when absolutely necessary, with specific error codes
+
+   ```python
+   # Acceptable when needed
+   data: dict[str, Any] = {"items": []}  # type: ignore[var-annotated]
+
+   # Not acceptable - too broad
+   data = get_external_data()  # type: ignore
+   ```
 
 ### Error Handling Pattern
 
