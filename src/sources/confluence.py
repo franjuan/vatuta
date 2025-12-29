@@ -23,6 +23,8 @@ from atlassian import Confluence
 from markdownify import markdownify as md
 from pydantic import Field
 
+from src.entities.manager import EntityManager
+
 # Import Prometheus metrics from centralized module
 from src.metrics.metrics import API_CALLS, API_LATENCY, OP_ITEMS, OP_LATENCY
 from src.models.documents import ChunkRecord, DocumentUnit
@@ -87,7 +89,13 @@ class ConfluenceSource(Source[ConfluenceConfig]):
     """Max pages per API call to Confluence"""
 
     @classmethod
-    def create(cls, config: ConfluenceConfig, data_dir: str, secrets: Optional[dict] = None) -> "ConfluenceSource":
+    def create(
+        cls,
+        config: ConfluenceConfig,
+        data_dir: str,
+        secrets: Optional[dict] = None,
+        entity_manager: Optional[EntityManager] = None,
+    ) -> "ConfluenceSource":
         """Create a ConfluenceSource instance with the given configuration."""
         storage_path = os.path.join(data_dir, "confluence")
 
@@ -99,7 +107,7 @@ class ConfluenceSource(Source[ConfluenceConfig]):
         if "jira_api_token" not in secrets:
             secrets["jira_api_token"] = os.getenv("JIRA_API_TOKEN")
 
-        return cls(config=config, secrets=secrets, storage_path=storage_path)
+        return cls(config=config, secrets=secrets, storage_path=storage_path, entity_manager=entity_manager)
 
     def load_checkpoint(self) -> ConfluenceCheckpoint:
         """Load existing checkpoint or create a new one."""
@@ -112,11 +120,17 @@ class ConfluenceSource(Source[ConfluenceConfig]):
             confluence_checkpoint = ConfluenceCheckpoint(config=self.config)
         return confluence_checkpoint
 
-    def __init__(self, config: ConfluenceConfig, secrets: dict, storage_path: str | None = None):
+    def __init__(
+        self,
+        config: ConfluenceConfig,
+        secrets: dict,
+        storage_path: str | None = None,
+        entity_manager: Optional[EntityManager] = None,
+    ):
         """Initialize Confluence source with configuration and credentials."""
         if storage_path is None:
             raise ValueError("storage_path must be provided")
-        super().__init__(config, secrets, storage_path=storage_path)
+        super().__init__(config, secrets, storage_path=storage_path, entity_manager=entity_manager)
 
         # Config is already validated via type hint and generic
 
@@ -133,6 +147,62 @@ class ConfluenceSource(Source[ConfluenceConfig]):
             cloud=True,  # Assuming cloud based on JIRA_CLOUD in env.example, but can be adjusted
         )
 
+        self._connection_validated = False
+
+    def _resolve_user_entity(self, user_obj: Any) -> Optional[str]:
+        """Resolve a Confluence user object to a global entity ID."""
+        if not self.entity_manager or not user_obj:
+            return None
+
+        # user_obj usually dict from 'by' field
+        if not isinstance(user_obj, dict):
+            return None
+
+        user_data = user_obj
+        account_id = user_data.get("accountId")
+        # Could also be 'userKey' in older instances?
+        # Cloud uses accountId.
+
+        if not account_id:
+            return None
+
+        # Metadata
+        name = user_data.get("displayName")
+        email = user_data.get("email")  # Only if expanded and allowed
+
+        # TODO:If email missing, and we really need it, we might fetch user?
+        # For now, rely on accountId
+
+        data = {
+            "name": name,
+            "display_name": name,
+            "email": email,
+            "type": user_data.get("type"),
+        }
+
+        try:
+            entity = self.entity_manager.get_or_create_user(
+                source_type="confluence", source_id=self.source_id, source_user_id=str(account_id), user_data=data
+            )
+            return entity.global_id
+        except Exception as e:
+            logger.warning(f"Failed to resolve entity for confluence user {account_id}: {e}")
+            return None
+
+    def _ensure_connection(self) -> None:
+        """Validate connection to Confluence if not already validated."""
+        if self._connection_validated:
+            return
+
+        try:
+            # Atlassian Python API does not have a generic 'myself' for Confluence,
+            # but we can try to fetch current user or a lightweight resource.
+            # Using 'rest/api/user/current' is a standard way to check auth.
+            self.client.get("rest/api/user/current")
+            self._connection_validated = True
+        except Exception as e:
+            raise ValueError(f"Failed to authenticate with Confluence: {e}") from e
+
     def collect_documents_and_chunks(
         self,
         checkpoint: Checkpoint,
@@ -141,6 +211,8 @@ class ConfluenceSource(Source[ConfluenceConfig]):
         filters: Optional[Dict[str, list[str]]] = None,
     ) -> Tuple[List[DocumentUnit], List[ChunkRecord]]:
         """Collect documents and chunks from Confluence spaces."""
+        self._ensure_connection()
+
         logger.info(f"Starting document collection for source {self.source_id}")
         if not isinstance(checkpoint, ConfluenceCheckpoint):
             checkpoint = ConfluenceCheckpoint(config=self.config, state=checkpoint.state if checkpoint else {})
@@ -376,6 +448,11 @@ class ConfluenceSource(Source[ConfluenceConfig]):
             if label_name:
                 system_tags.append(f"label:{label_name}")
 
+        # Resolve Author Entity
+        author_entity_id = self._resolve_user_entity(author_info)
+        if author_entity_id:
+            system_tags.append(f"user:{author_entity_id}")
+
         # Try to find parent_id from ancestors
         ancestors = page.get("ancestors", [])
         parent_id = None
@@ -388,6 +465,23 @@ class ConfluenceSource(Source[ConfluenceConfig]):
         # but matching what Chunk does (if it did) is better.
         # Using body_storage (HTML) is stable.
         content_hash = DocumentUnit.compute_hash(body_storage.encode("utf-8")) if body_storage else None
+
+        # Scan storage format for user mentions (moved here where body_storage is defined)
+        # Format: <ri:user ri:accountId="ID" />
+        if body_storage:
+            import re
+
+            # Extract accountId from ri:user tags
+            mentions = re.findall(r'<ri:user\s+[^>]*ri:accountId="([^"]+)"', body_storage)
+
+            for m_id in mentions:
+                if len(m_id) > 5 and self.entity_manager:
+                    try:
+                        ent = self.entity_manager.get_user_by_source_id("confluence", self.source_id, m_id)
+                        if ent:
+                            system_tags.append(f"user:{ent.global_id}")
+                    except Exception:
+                        pass
 
         doc = DocumentUnit(
             document_id=f"confluence|{self.source_id}|{page_id}",
@@ -646,25 +740,32 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
     # Example configuration from environment
-    config = {
-        "url": os.getenv("JIRA_INSTANCE_URL", ""),
-        "spaces": os.getenv("CONFLUENCE_SPACES", "").split(",") if os.getenv("CONFLUENCE_SPACES") else [],
-        "storage_path": "./data/confluence",
-        "id": "confluence-main",
-        "use_cached_data": False,
-        "initial_lookback_days": None,
-    }
+    confluence_url = os.getenv("JIRA_INSTANCE_URL", "")
+    confluence_spaces = os.getenv("CONFLUENCE_SPACES", "").split(",") if os.getenv("CONFLUENCE_SPACES") else []
+    storage_path = "./data/confluence"
+    source_id = "confluence-main"
+    jira_user = os.getenv("JIRA_USER")
+    jira_api_token = os.getenv("JIRA_API_TOKEN")
 
-    secrets = {"jira_user": os.getenv("JIRA_USER"), "jira_api_token": os.getenv("JIRA_API_TOKEN")}
-
-    if not config["url"] or not secrets["jira_user"]:
+    if not confluence_url or not jira_user:
         print("Please set JIRA_INSTANCE_URL, JIRA_USER, and JIRA_API_TOKEN")
         return
 
-    source = ConfluenceSource(ConfluenceConfig(**config), secrets, storage_path=str(config["storage_path"]))
+    secrets = {"jira_user": jira_user, "jira_api_token": jira_api_token}
+
+    config = ConfluenceConfig(
+        id=source_id,
+        url=confluence_url,
+        spaces=confluence_spaces,
+        use_cached_data=False,
+        initial_lookback_days=None,
+    )
+
+    entity_manager = EntityManager(storage_path="data/entities.json")
+    source = ConfluenceSource(config, secrets, storage_path=storage_path, entity_manager=entity_manager)
 
     # Load checkpoint
-    checkpoint_dir = Path(str(config["storage_path"])) / str(config["id"])
+    checkpoint_dir = Path(storage_path) / source_id
     checkpoint_path = checkpoint_dir / "checkpoint.json"
 
     if checkpoint_path.exists():

@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Generic, List, Optional, Tuple, TypeVar
 
+from src.entities.manager import EntityManager
 from src.models.documents import ChunkRecord, DocumentUnit
 from src.models.source_config import BaseSourceConfig
 
@@ -25,6 +26,8 @@ class Source(Generic[TConfig]):
     Parameters:
         config: A Pydantic model configuration for the source.
         secrets: A dictionary of secrets for the source.
+        storage_path: Path to the directory where raw messages/checkpoints are stored.
+        entity_manager: Optional entity manager for linking entities.
     """
 
     def __init__(
@@ -32,10 +35,12 @@ class Source(Generic[TConfig]):
         config: TConfig,
         secrets: dict,
         storage_path: str,
+        entity_manager: Optional[EntityManager] = None,
     ):
         """Initialize the source with configuration and storage path."""
         self.config = config
         self.secrets = secrets
+        self.entity_manager = entity_manager
 
         # Identifier to disambiguate multiple instances of same source type
         # (e.g., Slack workspace/team id, Jira cloud id/tenant)

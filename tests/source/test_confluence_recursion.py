@@ -5,7 +5,7 @@ from src.sources.confluence import ConfluenceConfig, ConfluenceSource
 
 def test_confluence_recursion_fix() -> None:
     # Create configuration for source initialization
-    config = ConfluenceConfig(id="test-source", url="https://example.com", spaces=["TEST"], limit=1)
+    config = ConfluenceConfig(id="test-source", url="https://example.com", spaces=["TEST"])
 
     # Mock secrets
     secrets = {"jira_user": "user", "jira_api_token": "token"}
@@ -27,7 +27,7 @@ def test_confluence_recursion_fix() -> None:
 
 def test_confluence_normal_conversion() -> None:
     # Verify normal conversion still works
-    config = ConfluenceConfig(id="test-source", url="https://example.com", spaces=["TEST"], limit=1)
+    config = ConfluenceConfig(id="test-source", url="https://example.com", spaces=["TEST"])
     secrets = {"jira_user": "user", "jira_api_token": "token"}
     source = ConfluenceSource(config, secrets, storage_path=tempfile.gettempdir())
 

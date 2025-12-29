@@ -31,11 +31,18 @@ class SourcesConfig(BaseModel):
     confluence: Dict[str, ConfluenceConfig] = Field(default_factory=dict)
 
 
+class EntityManagerConfig(BaseModel):
+    """Configuration for entity manager."""
+
+    storage_path: str = Field(default="data/entities.json", description="Path to global entities storage file")
+
+
 class VatutaConfig(BaseModel):
     """Main configuration for Vatuta application."""
 
     rag: RagConfig = Field(default_factory=RagConfig)
     sources: SourcesConfig = Field(default_factory=SourcesConfig)
+    entities_manager: EntityManagerConfig = Field(default_factory=EntityManagerConfig)
 
 
 class ConfigLoader:

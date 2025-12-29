@@ -11,11 +11,12 @@ conversational context within comments.
 
 ## Decision
 
-1. **Single-pass extraction**
-   - Fetches issues using JQL (Jira Query Language) with pagination.
-   - Processes issues immediately into Documents and Chunks.
+- Fetches issues using JQL (Jira Query Language) with pagination.
+- **Deferred Validation**: Connection and credentials are validated only when `collect_documents_and_chunks` is called,
+  not on instantiation. This enables offline instantiation for cache-only workflows.
+- Processes issues immediately into Documents and Chunks.
 
-2. **Document model**
+1. **Document model**
     - Each Jira Issue maps to one `DocumentUnit`.
     - `uri` links to the issue browse URL.
     - Metadata includes `key`, `project`, `status`, `priority`, `issuetype`, and `assignee`.
@@ -23,7 +24,7 @@ conversational context within comments.
     - Configurable `taggeable_fields` allow specific custom fields to be promoted as `system_tags`.
     - `label` and `component` tags are added if present.
 
-3. **Chunk model** (4 distinct chunk types)
+2. **Chunk model** (4 distinct chunk types)
     - **Chunk 0 (Ticket Body)**: A formatted Key-Value representation of the ticket content.
       - Includes ALL fields present in the issue.
       - Field names are mapped from the Jira schema to be human-readable.
@@ -44,11 +45,11 @@ conversational context within comments.
         - **Semantic**: Splits chunks if the cosine similarity between consecutive comments drops below `chunk_similarity_threshold`.
       - Tags: `type:comment`, `author:<name>`, `author_id:<accountId>`.
 
-4. **Incremental Collection**
+3. **Incremental Collection**
     - Uses `updated` timestamp via JQL parameters.
     - Checkpoints track the max `updated` timestamp per **Project**.
 
-5. **Observability**
+4. **Observability**
     - Prometheus metrics:
       - `jira_enhanced_search_issues_latency_seconds`, `jira_api_calls_total`
       - `jira_collect_project_latency_seconds`, `jira_collect_project_items`

@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Callable, Dict, Final, List, Optional, Tuple, cast
+from typing import Any, Callable, Dict, Final, List, Optional, Set, Tuple, cast
 
 from pydantic import Field
 from sentence_transformers.SentenceTransformer import SentenceTransformer
@@ -32,6 +32,8 @@ from slack_sdk.http_retry.builtin_handlers import (
     RateLimitErrorRetryHandler,
     ServerErrorRetryHandler,
 )
+
+from src.entities.manager import EntityManager
 
 # Import Prometheus metrics from centralized module
 from src.metrics.metrics import API_CALLS, API_LATENCY, OP_ITEMS, OP_LATENCY, USER_CACHE_HITS, USER_CACHE_MISSES
@@ -147,14 +149,20 @@ class SlackSource(Source[SlackConfig]):
     """Max messages per API call to Slack"""
 
     @classmethod
-    def create(cls, config: SlackConfig, data_dir: str, secrets: Optional[dict] = None) -> "SlackSource":
+    def create(
+        cls,
+        config: SlackConfig,
+        data_dir: str,
+        secrets: Optional[dict] = None,
+        entity_manager: Optional[EntityManager] = None,
+    ) -> "SlackSource":
         """Create a SlackSource instance with the given configuration."""
         # Pass storage_path explicitly to constructor
         storage_path = os.path.join(data_dir, "slack")
 
         # Ensure user cache path is set relative to data_dir if not explicit
         if not config.user_cache_path:
-            config.user_cache_path = os.path.join(data_dir, "slack_users_cache.json")
+            config.user_cache_path = os.path.join(storage_path, config.id, "slack_users_cache.json")
 
         # Secrets handling
         if secrets is None:
@@ -164,7 +172,7 @@ class SlackSource(Source[SlackConfig]):
             if token:
                 secrets["bot_token"] = token
 
-        return cls(config=config, secrets=secrets, storage_path=storage_path)
+        return cls(config=config, secrets=secrets, storage_path=storage_path, entity_manager=entity_manager)
 
     def __init__(
         self,
@@ -173,11 +181,12 @@ class SlackSource(Source[SlackConfig]):
         storage_path: str | None = None,
         cache: Optional[PersistentCache] = None,
         rate_limiter: Optional[AdaptiveRateLimiter] = None,
+        entity_manager: Optional[EntityManager] = None,
     ):
         """Initialize Slack source with configuration, credentials, and rate limiting."""
         if storage_path is None:
             raise ValueError("storage_path must be provided")
-        super().__init__(config, secrets, storage_path=storage_path)
+        super().__init__(config, secrets, storage_path=storage_path, entity_manager=entity_manager)
         if not self.secrets["bot_token"]:
             raise ValueError("Slack bot token is not set")
 
@@ -186,10 +195,10 @@ class SlackSource(Source[SlackConfig]):
 
         # Ensure defaults for paths if not provided
         if not self.config.user_cache_path:
-            # Default to data/slack_users_cache.json if not specified
+            # Default to data/slack/slack-main/slack_users_cache.json if not specified
             # But here we don't know "data" dir location easily unless passed.
             # We rely on caller to set it or we default to relative.
-            self.config.user_cache_path = "data/slack_users_cache.json"
+            self.config.user_cache_path = os.path.join(storage_path, config.id, "slack_users_cache.json")
 
         # User cache config (JSON persistent cache)
         if cache:
@@ -521,28 +530,62 @@ class SlackSource(Source[SlackConfig]):
             dict: Compact user info object.
         """
         entry = None if force_refresh else self._user_cache.get(user_id)
+        compact = None
+        fetched_from_api = False
+
         if entry and isinstance(entry, dict):
             USER_CACHE_HITS.inc()
             logger.debug(f"user cache HIT for {user_id}")
-            return cast(Dict[str, Any], entry)
-        USER_CACHE_MISSES.inc()
-        logger.debug(f"user cache MISS for {user_id}")
+            compact = cast(Dict[str, Any], entry)
+        else:
+            USER_CACHE_MISSES.inc()
+            logger.debug(f"user cache MISS for {user_id}")
 
-        resp = self._api_call("users.info", self.client.users_info, user=user_id)
+            resp = self._api_call("users.info", self.client.users_info, user=user_id)
 
-        user = resp.get("user", {}) if isinstance(resp, dict) else getattr(resp, "data", {}).get("user", {})
-        # Build compact user info
-        compact = {
-            "id": user.get("id"),
-            "team_id": user.get("team_id"),
-            "name": user.get("name"),
-            "real_name": user.get("real_name"),
-            "profile": user.get("profile", {}),
-            "is_bot": user.get("is_bot"),
-            "updated": user.get("updated"),
-            "cached_at": int(time.time()),
-        }
-        self._user_cache.set(user_id, compact)
+            user = resp.get("user", {}) if isinstance(resp, dict) else getattr(resp, "data", {}).get("user", {})
+            # Build compact user info
+            compact = {
+                "id": user.get("id"),
+                "team_id": user.get("team_id"),
+                "name": user.get("name"),
+                "real_name": user.get("real_name"),
+                "profile": user.get("profile", {}),
+                "is_bot": user.get("is_bot"),
+                "updated": user.get("updated"),
+                "cached_at": int(time.time()),
+            }
+            fetched_from_api = True
+
+        # Register with EntityManager
+        updated_entity = False
+        if self.entity_manager and "global_entity_id" not in compact:
+            try:
+                profile = compact.get("profile", {})
+                if not isinstance(profile, dict):
+                    profile = {}
+
+                user_data = {
+                    "name": compact.get("name")
+                    or compact.get("real_name")
+                    or profile.get("real_name"),  # Fallback to real_name if name is missing
+                    "real_name": compact.get("real_name") or profile.get("real_name"),
+                    "email": profile.get("email"),
+                    "display_name": profile.get("display_name"),
+                    "title": profile.get("title"),
+                }
+                if self.entity_manager:
+                    entity = self.entity_manager.get_or_create_user(
+                        source_type="slack", source_id=self.source_id, source_user_id=user_id, user_data=user_data
+                    )
+                    compact["global_entity_id"] = entity.global_id
+                    updated_entity = True
+            except Exception as e:
+                logger.error(f"Failed to register user {user_id} with EntityManager: {e}")
+
+        if fetched_from_api or updated_entity:
+            self._user_cache.set(user_id, compact)
+
         return compact
 
     def _extract_threads(self, channel: dict, messages: List[dict]) -> dict:
@@ -731,6 +774,7 @@ class SlackSource(Source[SlackConfig]):
         chunk_index: int,
         text: str,
         tags: List[str],
+        user_tags: Optional[List[str]] = None,
     ) -> ChunkRecord:
         """Create a flat ChunkRecord for a given document and message text.
 
@@ -739,6 +783,7 @@ class SlackSource(Source[SlackConfig]):
             chunk_index: An integer representing the index of the chunk in the document.
             text: A string representing the text of the chunk.
             tags: A list of strings representing the tags of the chunk.
+            user_tags: A list of user-specific tags (e.g., user:<id>).
 
         Returns:
             A ChunkRecord representing the chunk.
@@ -761,7 +806,7 @@ class SlackSource(Source[SlackConfig]):
             end_char=None,
             embedding_model="sentence-transformers/all-MiniLM-L6-v2",
             system_tags=tags,
-            user_tags=[],
+            user_tags=user_tags or [],
             chunking_strategy="slack_message_line_v1",
             chunk_overlap=0,
             content_hash=content_hash,
@@ -771,6 +816,50 @@ class SlackSource(Source[SlackConfig]):
         if self._embedding_model is None:
             self._embedding_model = SentenceTransformer(self.config.chunk_embedding_model)
         return self._embedding_model
+
+    def _collect_chunk_tags(self, messages: List[dict]) -> Tuple[Set[str], Set[str]]:
+        """Collect tags for a batch of messages.
+
+        Args:
+            messages: A list of message dictionaries.
+
+        Returns:
+            A tuple containing a set of general tags and a set of user tags.
+        """
+        all_tags: Set[str] = set()
+        user_tags: Set[str] = set()
+        mention_re = re.compile(r"<@(U[A-Z0-9]+)>")
+
+        for cm in messages:
+            all_tags.update(self._extract_simple_tags(cm.get("text", "")))
+
+            # Author tagging
+            uid = cm.get("user")
+            if uid:
+                self._add_user_tag(uid, user_tags)
+
+            # Mention tagging
+            mentions = mention_re.findall(cm.get("text", ""))
+            for mentioned_uid in mentions:
+                self._add_user_tag(mentioned_uid, user_tags)
+
+        return all_tags, user_tags
+
+    def _add_user_tag(self, uid: str, user_tags: Set[str]) -> None:
+        """Helper to resolve user ID and add tag."""
+        try:
+            u_info = self._get_user_info(uid)
+            if "global_entity_id" in u_info:
+                user_tags.add(f"user:{u_info['global_entity_id']}")
+        except Exception:
+            pass
+
+    def _finalize_chunk(self, doc: DocumentUnit, start_idx: int, messages: List[dict]) -> ChunkRecord:
+        """Create a ChunkRecord from a batch of messages."""
+        chunk_text = "\n".join([self._format_message_for_chunk(cm) for cm in messages])
+        all_tags, user_tags = self._collect_chunk_tags(messages)
+
+        return self._make_chunk(doc, start_idx, chunk_text, list(all_tags), user_tags=list(user_tags))
 
     def _build_chunks_for_messages(self, doc: DocumentUnit, msgs: List[dict]) -> List[ChunkRecord]:
         """Build flat chunks for a list of Slack message dicts with multi-strategy splitting.
@@ -796,7 +885,6 @@ class SlackSource(Source[SlackConfig]):
         sorted_msgs = sorted(msgs, key=lambda mm: float(mm.get("ts", 0.0)))
 
         # Pre-calculate embeddings for all messages
-        # We use the text content for embedding
         texts_for_embedding = [m.get("text", "") or " " for m in sorted_msgs]
         model = self._get_embedding_model()
         embeddings = model.encode(texts_for_embedding)
@@ -807,7 +895,6 @@ class SlackSource(Source[SlackConfig]):
         current_chunk_size = 0
         current_chunk_start_idx = 0
 
-        # Track previous message state for comparison
         prev_msg_ts: Optional[float] = None
         prev_msg_emb: Optional[Any] = None
 
@@ -826,7 +913,6 @@ class SlackSource(Source[SlackConfig]):
 
             # 2. Size/Count-based splitting (check against accumulated chunk)
             if not should_split and current_chunk_msgs:
-                # Would adding this message exceed limits?
                 if (current_chunk_size + msg_len > self.config.chunk_max_size_chars) or (
                     len(current_chunk_msgs) + 1 > self.config.chunk_max_count
                 ):
@@ -834,39 +920,24 @@ class SlackSource(Source[SlackConfig]):
 
             # 3. Semantic splitting
             if not should_split and prev_msg_emb is not None:
-                # Calculate cosine similarity
                 similarity = cos_sim(emb, prev_msg_emb).item()
                 if similarity < self.config.chunk_similarity_threshold:
                     should_split = True
 
             if should_split and current_chunk_msgs:
-                # Flush current chunk
-                chunk_text = "\n".join([self._format_message_for_chunk(cm) for cm in current_chunk_msgs])
-                # Collect tags from all messages
-                all_tags = set()
-                for cm in current_chunk_msgs:
-                    all_tags.update(self._extract_simple_tags(cm.get("text", "")))
+                chunks.append(self._finalize_chunk(doc, current_chunk_start_idx, current_chunk_msgs))
 
-                chunks.append(self._make_chunk(doc, current_chunk_start_idx, chunk_text, list(all_tags)))
-
-                # Reset accumulator
                 current_chunk_msgs = []
                 current_chunk_size = 0
                 current_chunk_start_idx = idx
 
-            # Add message to current accumulator
             current_chunk_msgs.append(m)
             current_chunk_size += msg_len
             prev_msg_ts = ts
             prev_msg_emb = emb
 
-        # Flush remaining messages
         if current_chunk_msgs:
-            chunk_text = "\n".join([self._format_message_for_chunk(cm) for cm in current_chunk_msgs])
-            all_tags = set()
-            for cm in current_chunk_msgs:
-                all_tags.update(self._extract_simple_tags(cm.get("text", "")))
-            chunks.append(self._make_chunk(doc, current_chunk_start_idx, chunk_text, list(all_tags)))
+            chunks.append(self._finalize_chunk(doc, current_chunk_start_idx, current_chunk_msgs))
 
         return chunks
 
@@ -1454,12 +1525,15 @@ if __name__ == "__main__":
         initial_lookback_days=180,
         channel_window_minutes=60,
         workspace_domain=os.getenv("SLACK_WORKSPACE_DOMAIN", "https://slack.com"),
-        user_cache_path=os.path.join("data", "slack_users_cache.json"),
+        user_cache_path=os.path.join("data", "slack", "slack-main", "slack_users_cache.json"),
+        user_cache_ttl_seconds=0,
     )
+    entity_manager = EntityManager(storage_path="data/entities.json")
     slack_source = SlackSource(
         config=slack_config,
         secrets={"bot_token": os.getenv("SLACK_BOT_TOKEN")},
         storage_path=os.path.join("data", "slack"),
+        entity_manager=entity_manager,
     )
     checkpoint_path = Path("data") / "slack" / "slack-main" / "checkpoint.json"
     if checkpoint_path.exists():

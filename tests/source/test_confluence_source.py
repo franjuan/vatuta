@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 import tempfile
+from typing import Optional
 from unittest.mock import patch
 
 # Add src to path
@@ -10,15 +11,19 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from src.sources.confluence import ConfluenceCheckpoint, ConfluenceConfig, ConfluenceSource
 
 # Mock config and secrets
-config = {
-    "url": "https://example.atlassian.net/wiki",
-    "spaces": ["TEST"],
-    "storage_path": "./data/confluence_test",
-    "id": "confluence-test",
-    "initial_lookback_days": 1,
-    # Force limit to 1 for testing pagination
-    "limit": 1,
-}
+# Mock config and secrets
+confluence_config = ConfluenceConfig(
+    url="https://example.atlassian.net/wiki",
+    spaces=["TEST"],
+    id="confluence-test",
+    initial_lookback_days=1,
+)
+
+storage_path = "./data/confluence_test"
+
+# Force limit to 1 for testing pagination
+# We use this to patch the constant, not in the config object
+pagination_limit = 1
 
 secrets = {"jira_user": "test@example.com", "jira_api_token": "test-token"}
 
@@ -68,10 +73,10 @@ def test_confluence_source() -> None:
         mock_client.get.side_effect = [page1_response, page2_response, empty_response]
 
         # Use configuration with small chunk size to test splitting
-        test_config = config.copy()
-        test_config["chunk_max_size_chars"] = 50  # Very small to force splitting
+        test_config = confluence_config.model_copy(update={"chunk_max_size_chars": 50})
 
-        source = ConfluenceSource(ConfluenceConfig(**test_config), secrets, storage_path=str(config["storage_path"]))
+        source = ConfluenceSource(test_config, secrets, storage_path=storage_path)
+        source._connection_validated = True
         checkpoint = ConfluenceCheckpoint(config=source.config)
 
         docs, chunks = source.collect_documents_and_chunks(checkpoint)
@@ -174,7 +179,89 @@ def test_confluence_chunking_logic() -> None:
     print("Chunking logic test passed!")
 
 
+def test_confluence_entity_tagging() -> None:
+    print("Testing Confluence Entity Tagging...")
+    from unittest.mock import MagicMock
+
+    # 1. Setup Mock EM
+    mock_em = MagicMock()
+
+    # Author: account-author -> g-author
+    # Mentioned: account-mentioned -> g-mentioned
+
+    def side_effect_get_or_create(
+        source_type: str, source_id: str, source_user_id: str, user_data: Optional[dict] = None
+    ) -> MagicMock:
+        return MagicMock(global_id=f"g-{source_user_id}")
+
+    mock_em.get_or_create_user.side_effect = side_effect_get_or_create
+
+    def side_effect_get_by(source_type: str, source_id: str, source_user_id: str) -> MagicMock | None:
+        if source_user_id == "account-mentioned":
+            return MagicMock(global_id="g-mentioned")
+        return None
+
+    mock_em.get_user_by_source_id.side_effect = side_effect_get_by
+
+    # 2. Mock Client
+    with (
+        patch("src.sources.confluence.Confluence") as MockConfluence,
+        patch("src.sources.confluence.ConfluenceSource.CONFLUENCE_API_LIMIT", 1),
+    ):
+        mock_client = MockConfluence.return_value
+
+        # Mock Response
+        page_response = {
+            "results": [
+                {
+                    "id": "999",
+                    "title": "Entity Page",
+                    "version": {
+                        "when": "2023-10-26T14:30:00.000Z",
+                        "by": {"accountId": "account-author", "displayName": "Author User"},
+                    },
+                    "body": {
+                        "storage": {
+                            "value": '<p>Hello <ri:user ri:accountId="account-mentioned" />. This is content.</p>'
+                        }
+                    },
+                    "metadata": {"labels": {"results": []}},
+                    "_links": {"webui": "/spaces/TEST/pages/999"},
+                }
+            ]
+        }
+        empty_response: dict[str, list] = {"results": []}
+        mock_client.get.side_effect = [page_response, empty_response]
+
+        # 3. Run Source
+        source = ConfluenceSource(confluence_config, secrets, storage_path=storage_path, entity_manager=mock_em)
+        source._connection_validated = True
+        checkpoint = ConfluenceCheckpoint(config=source.config)
+
+        docs, chunks = source.collect_documents_and_chunks(checkpoint)
+
+        # 4. Verify Tags
+        assert len(docs) == 1
+        doc = docs[0]
+
+        # Author tag
+        # get_or_create returns global_id="g-{source_user_id}" -> g-account-author
+        # But wait, side_effect string format.
+        # "g-account-author" matches "account-author".
+
+        # Check system tags on doc (ConfluenceSource puts them on doc system_tags)
+        print(f"Doc tags: {doc.system_tags}")
+        assert "user:g-account-author" in doc.system_tags
+
+        # Mention tag
+        # get_user_by_source_id("account-mentioned") returns "g-mentioned"
+        assert "user:g-mentioned" in doc.system_tags
+
+        print("Entity tagging passed!")
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     test_confluence_source()
     test_confluence_chunking_logic()
+    test_confluence_entity_tagging()
