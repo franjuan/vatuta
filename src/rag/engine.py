@@ -1,12 +1,9 @@
-"""RAG engine using LangGraph and DSPy.
-
-Implements the retrieval-augmented generation system.
-"""
+"""Module for the RAG engine implementation."""
 
 from __future__ import annotations
 
 import os
-from typing import Any, List, TypedDict
+from typing import Any, List, TypedDict, Union
 
 import dspy
 from langchain_core.documents import Document
@@ -14,6 +11,7 @@ from langgraph.graph import END, StateGraph
 
 from src.models.config import RagConfig
 from src.rag.document_manager import DocumentManager
+from src.rag.qdrant_manager import QdrantDocumentManager
 
 
 class RAGState(TypedDict, total=False):
@@ -26,7 +24,7 @@ class RAGState(TypedDict, total=False):
     answer: str
 
 
-def ensure_retriever(document_manager: DocumentManager, k: int) -> Any:
+def ensure_retriever(document_manager: Union[DocumentManager, QdrantDocumentManager], k: int) -> Any:
     """Ensure vector store exists and return retriever."""
     if document_manager.vectorstore is None:
         raise ValueError("No vector store found. Import documents first (see doc_cli commands).")
@@ -78,7 +76,9 @@ def configure_dspy_lm(config: RagConfig) -> None:
     dspy.configure(lm=lm)
 
 
-def build_graph(document_manager: DocumentManager, k: int, rag_module: DSPyRAGModule) -> Any:
+def build_graph(
+    document_manager: Union[DocumentManager, QdrantDocumentManager], k: int, rag_module: DSPyRAGModule
+) -> Any:
     """Build LangGraph workflow for RAG execution."""
     graph = StateGraph(RAGState)
 

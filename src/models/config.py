@@ -37,10 +37,22 @@ class EntityManagerConfig(BaseModel):
     storage_path: str = Field(default="data/entities.json", description="Path to global entities storage file")
 
 
+class QdrantConfig(BaseModel):
+    """Configuration for Qdrant vector database."""
+
+    url: str = Field(default="http://localhost:6333", description="Qdrant server URL")
+    collection_name: str = Field(default="vatuta_documents", description="Collection name for documents")
+    embeddings_model: str = Field(
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        description="HuggingFace embeddings model",
+    )
+
+
 class VatutaConfig(BaseModel):
     """Main configuration for Vatuta application."""
 
     rag: RagConfig = Field(default_factory=RagConfig)
+    qdrant: QdrantConfig = Field(default_factory=QdrantConfig)
     sources: SourcesConfig = Field(default_factory=SourcesConfig)
     entities_manager: EntityManagerConfig = Field(default_factory=EntityManagerConfig)
 

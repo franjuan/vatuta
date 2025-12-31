@@ -19,16 +19,18 @@ from __future__ import annotations
 
 import argparse
 import os
-from typing import List
+from typing import List, Union
 
 import dspy
 from langchain_core.documents import Document
 
 from pocs.tools_example import kb_stats
+from src.models.config import ConfigLoader
 from src.rag.document_manager import DocumentManager
+from src.rag.qdrant_manager import QdrantDocumentManager
 
 
-def ensure_retriever(document_manager: DocumentManager, k: int):
+def ensure_retriever(document_manager: Union[DocumentManager, QdrantDocumentManager], k: int):
     """Return a retriever from the existing FAISS vector store.
 
     Raises ValueError if the store is not available.
@@ -156,7 +158,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    doc_manager = DocumentManager()
+    config = ConfigLoader.load("config/vatuta.yaml")
+    doc_manager = QdrantDocumentManager(config.qdrant)
 
     if args.show_kb_stats:
         print("📊 KB Stats:")

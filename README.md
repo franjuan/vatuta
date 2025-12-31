@@ -59,19 +59,6 @@ curl -sfL https://direnv.net/install.sh | bash
 choco install direnv
 ```
 
-1. Install dependencies:
-
-```bash
-poetry install
-```
-
-1. Configure environment variables:
-
-```bash
-cp env.example .env
-# Edit the .env file with your API keys
-```
-
 1. Allow direnv to load the environment (if using direnv):
 
 ```bash
@@ -181,7 +168,19 @@ just --list
 
 ### Quick Start
 
-1. Configure your credentials in `.env` (see `env.example`)
+1. Configure environment variables:
+
+   ```bash
+   cp env.example .env
+   # Edit the .env file with your API keys (Jira, Confluence, Slack, Qdrant)
+   ```
+
+1. Start Qdrant Vector Database:
+
+   ```bash
+   just qdrant-start
+   ```
+
 1. Configure sources in `config/vatuta.yaml` (see `config/vatuta.yaml.example`)
 1. Install dependencies: `just install`
 1. Query the assistant: `just assistant query="your question" k="20"`

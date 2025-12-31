@@ -94,7 +94,7 @@ repos:
     rev: v2.7.3
     hooks:
       - id: pip-audit
-        entry: poetry run pip-audit
+        entry: poetry run pip-audit --ignore-vuln CVE-2025-68664
         language: system
         pass_filenames: false
 

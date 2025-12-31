@@ -18,14 +18,16 @@ from __future__ import annotations
 
 import argparse
 import os
-from typing import List, TypedDict
+from typing import List, TypedDict, Union
 
 import dspy
 from langchain_core.documents import Document
 from langgraph.graph import END, StateGraph
 
 from pocs.tools_example import kb_stats
+from src.models.config import ConfigLoader
 from src.rag.document_manager import DocumentManager
+from src.rag.qdrant_manager import QdrantDocumentManager
 
 
 class RAGState(TypedDict, total=False):
@@ -36,7 +38,7 @@ class RAGState(TypedDict, total=False):
     answer: str
 
 
-def ensure_retriever(document_manager: DocumentManager, k: int):
+def ensure_retriever(document_manager: Union[DocumentManager, QdrantDocumentManager], k: int):
     if document_manager.vectorstore is None:
         raise ValueError("No vector store found. Import documents first (see doc_cli commands).")
     return document_manager.vectorstore.as_retriever(search_kwargs={"k": k})
@@ -81,7 +83,7 @@ def configure_dspy_lm(model_id: str, temperature: float = 0.2, max_tokens: int =
     dspy.configure(lm=lm)
 
 
-def build_graph(document_manager: DocumentManager, k: int, rag_module: DSPyRAGModule):
+def build_graph(document_manager: Union[DocumentManager, QdrantDocumentManager], k: int, rag_module: DSPyRAGModule):
     graph = StateGraph(RAGState)
 
     def retrieve_node(state: RAGState) -> RAGState:
@@ -138,7 +140,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    doc_manager = DocumentManager()
+    config = ConfigLoader.load("config/vatuta.yaml")
+    doc_manager = QdrantDocumentManager(config.qdrant)
 
     if args.ingest_slack:
         ingest_slack_cache(doc_manager)
@@ -183,7 +186,7 @@ def main() -> None:
             print(f"     {preview}")
 
 
-def ingest_slack_cache(doc_manager: DocumentManager) -> None:
+def ingest_slack_cache(doc_manager: Union[DocumentManager, QdrantDocumentManager]) -> None:
     """Ingest cached Slack data into the document manager."""
     from src.sources.slack import SlackSource
 
@@ -228,7 +231,7 @@ def ingest_slack_cache(doc_manager: DocumentManager) -> None:
         print(f"❌ Error ingesting Slack cache: {e}")
 
 
-def ingest_jira_cache(doc_manager: DocumentManager) -> None:
+def ingest_jira_cache(doc_manager: Union[DocumentManager, QdrantDocumentManager]) -> None:
     """Ingest cached JIRA data into the document manager."""
     from src.sources.jira_source import JiraSource
 
@@ -279,7 +282,7 @@ def ingest_jira_cache(doc_manager: DocumentManager) -> None:
         print(f"❌ Error ingesting JIRA cache: {e}")
 
 
-def ingest_confluence_cache(doc_manager: DocumentManager) -> None:
+def ingest_confluence_cache(doc_manager: Union[DocumentManager, QdrantDocumentManager]) -> None:
     """Ingest cached Confluence data into the document manager."""
     from src.sources.confluence import ConfluenceSource
 

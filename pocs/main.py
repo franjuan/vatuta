@@ -6,7 +6,8 @@ from pocs.bedrock_poc import main as bedrock_main
 from pocs.gitlab_importer import GitLabImporter
 from pocs.jira_importer import JIRAImporter
 from pocs.slack_importer import SlackImporter
-from src.rag.document_manager import DocumentManager
+from src.models.config import ConfigLoader
+from src.rag.qdrant_manager import QdrantDocumentManager
 
 
 def main():
@@ -17,7 +18,8 @@ def main():
     print("=" * 40)
 
     # Initialize document manager
-    doc_manager = DocumentManager()
+    config = ConfigLoader.load("config/vatuta.yaml")
+    doc_manager = QdrantDocumentManager(config.qdrant)
 
     # Show current document stats
     stats = doc_manager.get_document_stats()
@@ -79,11 +81,11 @@ def main():
 
     # Demo search functionality
     print("\n🔍 Testing search functionality...")
-    search_results = doc_manager.search_documents("epic requirements", k=3)
+    search_results = doc_manager.vectorstore.similarity_search_with_score("epic requirements", k=3)
     if search_results:
         print(f"Found {len(search_results)} relevant documents")
-        for i, result in enumerate(search_results, 1):
-            title = result["metadata"].get("summary", result["metadata"].get("title", "Untitled"))
+        for i, (doc, score) in enumerate(search_results, 1):
+            title = doc.metadata.get("summary", doc.metadata.get("title", "Untitled"))
             print(f"  {i}. {title}")
 
     # Ejecutar PoC de Bedrock

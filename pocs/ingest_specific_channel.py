@@ -15,7 +15,8 @@ sys.path.append(str(project_root))
 load_dotenv(project_root / ".env")
 
 from src.sources.slack import SlackSource, SlackConfig, SlackCheckpoint
-from src.rag.document_manager import DocumentManager
+from src.models.config import ConfigLoader
+from src.rag.qdrant_manager import QdrantDocumentManager
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -79,7 +80,8 @@ def main():
     # 3. Add to DocumentManager (VectorStore + Metadata)
     logger.info("Ingesting into DocumentManager...")
     # DocumentManager defaults to 'data' dir.
-    dm = DocumentManager(storage_dir="data")
+    config = ConfigLoader.load("config/vatuta.yaml")
+    dm = QdrantDocumentManager(config.qdrant)
     
     # Build doc map
     doc_map = {d.document_id: d for d in docs}

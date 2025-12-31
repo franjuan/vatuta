@@ -12,7 +12,9 @@ from typing import List, Dict, Any
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from src.rag.document_manager import DocumentManager
+from src.models.config import ConfigLoader
+from src.rag.qdrant_manager import QdrantDocumentManager, QdrantClient
+from qdrant_client.models import PointStruct, Filter, FieldCondition, MatchValue
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
@@ -20,13 +22,11 @@ from rich.markdown import Markdown
 console = Console()
 
 def main():
-    dm = DocumentManager()
+    config = ConfigLoader.load("config/vatuta.yaml")
+    dm = QdrantDocumentManager(config.qdrant)
     
     # 1. Filter for Slack chunks
-    slack_chunks = []
-    for chunk_id, meta in dm.documents_metadata.items():
-        if meta.get("source") == "slack":
-            slack_chunks.append((chunk_id, meta))
+    slack_chunks = dm.list_documents(source="slack", limit=1000)
             
     count = len(slack_chunks)
     console.print(f"[bold blue]Found {count} Slack chunks in Knowledge Base.[/bold blue]")
@@ -37,24 +37,32 @@ def main():
 
     # 2. Group by Parent Document (Thread/Channel)
     chunks_by_parent: Dict[str, List[Dict[str, Any]]] = {}
-    for chunk_id, meta in slack_chunks:
+    for meta in slack_chunks:
+        # qdrant_manager.list_documents returns dict with doc_id, source, etc.
+        # But list_documents doesn't return full metadata like 'document_id' (parent ID).
+        # We might need to fetch better data.
+        # Let's scroll properly.
+        pass
+    
+    # Re-fetch using low-level client for full payload
+    scroll_result, _ = dm.client.scroll(
+        collection_name=dm.collection_name,
+        scroll_filter=Filter(must=[FieldCondition(key="source", match=MatchValue(value="slack"))]),
+        limit=1000,
+        with_payload=True,
+    )
+    
+    for point in scroll_result:
+        meta = point.payload
+        chunk_id = str(point.id)
         parent_id = meta.get("document_id")
         if not parent_id:
             continue
             
         if parent_id not in chunks_by_parent:
             chunks_by_parent[parent_id] = []
-        
-        # We need the full content to show context. 
-        # Metadata only has preview. We need to fetch from VectorStore or assume we can't?
-        # DocumentManager.search_documents returns content.
-        # But we want specific chunks.
-        # DocumentManager doesn't expose "get_chunk_by_id".
-        # We can implement a temporary lookup or just rely on metadata preview if it was full?
-        # Metadata preview is chopped.
-        # We really want the full content.
-        # Let's use `vectorstore.docstore.search(chunk_id)` if available?
-        # FAISS docstore is usually DictDocStore.
+
+        meta["chunk_id"] = chunk_id # Ensure chunk_id is in meta
         chunks_by_parent[parent_id].append(meta)
 
     # SPECIAL REQUEST: Filter for specific ID
@@ -103,15 +111,8 @@ def main():
             if not chunk_id: 
                 chunk_id = target_meta.get("chunk_id")
 
-            # Try to retrieve content from VectorStore
-            content = "[Content not retrievable directly from FAISS without docstore access]"
-            if dm.vectorstore and hasattr(dm.vectorstore, "docstore"):
-                try:
-                    doc = dm.vectorstore.docstore.search(chunk_id)
-                    if doc:
-                        content = doc.page_content
-                except Exception:
-                    pass
+            # Try to retrieve content from payload or VectorStore
+            content = target_meta.get("page_content") or target_meta.get("content") or target_meta.get("content_preview") or "[Content not found in payload]"
             
             console.print(Panel(
                 Markdown(content),
