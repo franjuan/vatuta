@@ -644,7 +644,7 @@ class ConfluenceSource(Source[ConfluenceConfig]):
             # Fallback to plain text using BeautifulSoup
             from bs4 import BeautifulSoup
 
-            return BeautifulSoup(html, "html.parser").get_text().strip()  # type: ignore[no-any-return]
+            return BeautifulSoup(html, "html.parser").get_text().strip()
 
     def _make_chunk(
         self,

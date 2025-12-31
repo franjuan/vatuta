@@ -47,7 +47,16 @@ repos:
     hooks:
       - id: mypy
         language_version: python3.12
-        additional_dependencies: [pytest, pydantic]
+        additional_dependencies:
+          - pytest
+          - pydantic
+          - atlassian-python-api
+          - beautifulsoup4
+          - typer
+          - rich
+          - types-requests
+          - types-PyYAML
+          - types-setuptools
         args: [--ignore-missing-imports]
         exclude: ^pocs/
 

@@ -74,7 +74,7 @@ def get_ids_help() -> str:
     return "Filter by source ID (e.g. slack-main)"
 
 
-@app.callback()  # type: ignore[misc]
+@app.callback()
 def main(
     ctx: typer.Context,
     config: str = typer.Option("config/vatuta.yaml", "--config", help="Path to configuration file"),
@@ -99,7 +99,7 @@ def main(
     Path(data).mkdir(parents=True, exist_ok=True)
 
 
-@app.command()  # type: ignore[misc]
+@app.command()
 def reset() -> None:
     """Reset the Knowledge Base (Clear all documents)."""
     if typer.confirm("Are you sure you want to clear the entire Knowledge Base?", default=False):
@@ -110,7 +110,7 @@ def reset() -> None:
         console.print("[yellow]Operation cancelled.[/yellow]")
 
 
-@app.command()  # type: ignore[misc]
+@app.command()
 def remove_documents(
     source: Optional[SourceType] = typer.Option(None, help="Filter by source type"),
     source_id: Optional[str] = typer.Option(None, help=get_ids_help()),
@@ -192,7 +192,7 @@ def _ingest_docs(dm: QdrantDocumentManager, docs: list, chunks: list, source_nam
         console.print(f"[red]   Failed to ingest {source_name} data.[/red]")
 
 
-@app.command()  # type: ignore[misc]
+@app.command()
 def load(
     source: Optional[SourceType] = typer.Option(None, help="Filter by source type"),
     source_id: Optional[str] = typer.Option(None, help=get_ids_help()),
@@ -237,7 +237,7 @@ def load(
                 logging.exception("Load error")
 
 
-@app.command()  # type: ignore[misc]
+@app.command()
 def update(
     source: Optional[SourceType] = typer.Option(None, help="Filter by source type"),
     source_id: Optional[str] = typer.Option(None, help=get_ids_help()),
@@ -309,7 +309,7 @@ def update(
                 logging.exception("Update error")
 
 
-@app.command()  # type: ignore[misc]
+@app.command()
 def ask(
     question: str = typer.Argument(..., help="The question to ask"),
     k: int = typer.Option(4, "--k", help="Number of documents to retrieve"),
@@ -368,7 +368,7 @@ def ask(
             logging.exception("RAG Error")
 
 
-@app.command()  # type: ignore[misc]
+@app.command()
 def stats() -> None:
     """Show detailed knowledge base statistics."""
     dm = QdrantDocumentManager(state.config.qdrant)
