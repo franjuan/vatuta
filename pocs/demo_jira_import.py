@@ -7,7 +7,8 @@ This script demonstrates how to use the JIRA importer and document manager.
 import os
 
 from pocs.jira_importer import JIRAImporter
-from src.rag.document_manager import DocumentManager
+from src.models.config import ConfigLoader
+from src.rag.qdrant_manager import QdrantDocumentManager
 
 
 def demo_jira_import():
@@ -27,8 +28,9 @@ def demo_jira_import():
     try:
         # Initialize components
         print("🔧 Initializing components...")
+        config = ConfigLoader.load("config/vatuta.yaml")
         jira_importer = JIRAImporter()
-        doc_manager = DocumentManager()
+        doc_manager = QdrantDocumentManager(config.qdrant)
 
         # Show current stats
         stats = doc_manager.get_document_stats()
@@ -63,11 +65,12 @@ def demo_jira_import():
 
                 # Demo search
                 print("\n🔍 Testing search functionality...")
-                search_results = doc_manager.search_documents("epic requirements", k=3)
+                print("\n🔍 Testing search functionality...")
+                search_results = doc_manager.vectorstore.similarity_search_with_score("epic requirements", k=3)
                 if search_results:
                     print(f"Found {len(search_results)} relevant documents:")
-                    for i, result in enumerate(search_results, 1):
-                        title = result["metadata"].get("summary", result["metadata"].get("title", "Untitled"))
+                    for i, (doc, score) in enumerate(search_results, 1):
+                        title = doc.metadata.get("summary", doc.metadata.get("title", "Untitled"))
                         print(f"  {i}. {title}")
 
                 # Show recent documents

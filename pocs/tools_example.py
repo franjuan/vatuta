@@ -18,11 +18,13 @@ from typing import List
 from langchain_core.documents import Document
 from langchain_core.tools import tool
 
-from src.rag.document_manager import DocumentManager
+from src.models.config import ConfigLoader
+from src.rag.qdrant_manager import QdrantDocumentManager
 
 
-def _ensure_doc_manager() -> DocumentManager:
-    return DocumentManager()
+def _ensure_doc_manager() -> QdrantDocumentManager:
+    config = ConfigLoader.load("config/vatuta.yaml")
+    return QdrantDocumentManager(config.qdrant)
 
 
 def _ensure_retriever(k: int):

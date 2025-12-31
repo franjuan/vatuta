@@ -5,6 +5,11 @@ rag:
 entities_manager:
   storage_path: "data/entities.json"
 
+qdrant:
+  url: "http://localhost:6333"
+  collection_name: "vatuta_documents"
+  embeddings_model: "sentence-transformers/all-MiniLM-L6-v2"
+
 sources:
   slack:
     slack-main:

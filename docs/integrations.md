@@ -1,7 +1,13 @@
 # Integrations
 
 Vatuta supports multiple data source integrations for importing content into a searchable
-knowledge base. This document covers setup and usage for each integration.
+knowledge base powered by **Qdrant**.
+
+> [!IMPORTANT]
+> All integrations require the Qdrant vector database to be running.
+> See [Qdrant Setup Guide](../qdrant_setup.md) for installation and startup instructions.
+
+This document covers setup and usage for each integration.
 
 ## JIRA Integration
 

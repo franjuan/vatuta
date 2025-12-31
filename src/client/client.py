@@ -16,8 +16,8 @@ from rich.table import Table
 
 from src.entities.manager import EntityManager
 from src.models.config import ConfigLoader, VatutaConfig
-from src.rag.document_manager import DocumentManager
 from src.rag.engine import DSPyRAGModule, RAGState, build_graph, configure_dspy_lm
+from src.rag.qdrant_manager import QdrantDocumentManager
 from src.sources.confluence import ConfluenceSource
 from src.sources.jira_source import JiraSource
 from src.sources.slack import SlackSource
@@ -103,7 +103,7 @@ def main(
 def reset() -> None:
     """Reset the Knowledge Base (Clear all documents)."""
     if typer.confirm("Are you sure you want to clear the entire Knowledge Base?", default=False):
-        dm = DocumentManager(storage_dir=state.data_dir)
+        dm = QdrantDocumentManager(state.config.qdrant)
         dm.clear_all_documents()
         console.print("[green]Knowledge Base cleared successfully.[/green]")
     else:
@@ -117,41 +117,32 @@ def remove_documents(
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ) -> None:
     """Remove documents from the Knowledge Base with optional filtering."""
-    dm = DocumentManager(storage_dir=state.data_dir)
+    dm = QdrantDocumentManager(state.config.qdrant)
 
     # Resolving source string
     s_val = source.value if source else None
 
-    # 1. Calculate what would be deleted
-    count = 0
-    sources_found = set()
+    # Determine filter description
+    criteria = []
+    if s_val:
+        criteria.append(f"source='{s_val}'")
+    if source_id:
+        criteria.append(f"source_id='{source_id}'")
 
-    for meta in dm.documents_metadata.values():
-        if s_val and meta.get("source") != s_val:
-            continue
-        if source_id and meta.get("source_instance_id") != source_id:
-            continue
-        count += 1
-        sources_found.add(f"{meta.get('source')}/{meta.get('source_instance_id')}")
+    criteria_str = " AND ".join(criteria) if criteria else "ALL documents"
 
-    if count == 0:
-        console.print("[yellow]No documents found matching the criteria.[/yellow]")
-        return
-
-    # 2. Confirm
-    console.print(f"[bold]Found {count} documents to remove.[/bold]")
-
+    # Confirm
     if not force:
-        if not typer.confirm(f"Are you sure you want to delete these {count} documents?"):
+        if not typer.confirm(f"Are you sure you want to delete {criteria_str}?"):
             console.print("[yellow]Operation cancelled.[/yellow]")
             return
 
-    # 3. Delete
+    # Delete
     deleted = dm.delete_documents(source=s_val, source_instance_id=source_id)
     if deleted > 0:
-        console.print(f"[green]Successfully deleted {deleted} documents.[/green]")
+        console.print(f"[green]Successfully deleted {deleted} documents matching {criteria_str}.[/green]")
     else:
-        console.print("[red]Failed to delete documents (or none found during execution).[/red]")
+        console.print(f"[yellow]No documents found matching {criteria_str} (or error occurred).[/yellow]")
 
 
 def _get_enabled_sources(
@@ -183,7 +174,7 @@ def _get_enabled_sources(
     return sources
 
 
-def _ingest_docs(dm: DocumentManager, docs: list, chunks: list, source_name: str) -> None:
+def _ingest_docs(dm: QdrantDocumentManager, docs: list, chunks: list, source_name: str) -> None:
     if not docs:
         console.print(f"[yellow]No documents found for {source_name}.[/yellow]")
         return
@@ -207,7 +198,7 @@ def load(
     source_id: Optional[str] = typer.Option(None, help=get_ids_help()),
 ) -> None:
     """Load data from local cache into the Knowledge Base."""
-    dm = DocumentManager(storage_dir=state.data_dir)
+    dm = QdrantDocumentManager(state.config.qdrant)
     # Convert enum to string if present
     s_val = source.value if source else None
     sources = _get_enabled_sources(s_val, source_id)
@@ -256,7 +247,7 @@ def update(
 
     Defaults to using cached data if available (incremental), use --no-cache to force fresh fetch.
     """
-    dm = DocumentManager(storage_dir=state.data_dir)
+    dm = QdrantDocumentManager(state.config.qdrant)
     # Convert enum to string if present
     s_val = source.value if source else None
     sources = _get_enabled_sources(s_val, source_id)
@@ -326,16 +317,16 @@ def ask(
     show_stats: bool = typer.Option(False, "--show-stats", help="Display KB stats before answering"),
 ) -> None:
     """Ask a question to the RAG system."""
-    dm = DocumentManager(storage_dir=state.data_dir)
+    dm = QdrantDocumentManager(state.config.qdrant)
 
     if show_stats:
         stats = dm.get_document_stats()
         table = Table(title="Knowledge Base Stats")
         table.add_column("Property", style="cyan")
         table.add_column("Value", style="magenta")
-        table.add_row("Total Documents", str(stats.get("total_documents", 0)))
+        table.add_row("Total Chunks", str(stats.get("total_documents", 0)))
 
-        src_table = Table(title="Documents by Source", show_header=False)
+        src_table = Table(title="Chunks by Source", show_header=False)
         for s, count in stats.get("sources", {}).items():
             src_table.add_row(s, str(count))
 
@@ -375,6 +366,60 @@ def ask(
         console.print(f"[red]Error answering question: {e}[/red]")
         if state.verbose:
             logging.exception("RAG Error")
+
+
+@app.command()  # type: ignore[misc]
+def stats() -> None:
+    """Show detailed knowledge base statistics."""
+    dm = QdrantDocumentManager(state.config.qdrant)
+
+    with Progress(SpinnerColumn(), TextColumn("[bold blue]Analyzing Knowledge Base..."), transient=True) as progress:
+        progress.add_task("analyze", total=None)
+        stats = dm.get_detailed_stats()
+
+    # General Stats Table
+    table = Table(title="Knowledge Base Overview")
+    table.add_column("Property", style="cyan")
+    table.add_column("Value", style="magenta")
+    table.add_row("Total Chunks (Vectors)", str(stats.get("total_documents", 0)))
+    table.add_row("Storage URL", stats.get("storage_directory", "Unknown"))
+    console.print(table)
+    console.print("\n")
+
+    # Detailed Source Stats Table
+    src_table = Table(title="Statistics by Source", show_lines=True)
+    src_table.add_column("Source", style="bold green")
+    src_table.add_column("Documents", justify="right")
+    src_table.add_column("Chunks", justify="right")
+    src_table.add_column("Avg Chunks/Doc", justify="right")
+    src_table.add_column("Avg Chunk Size", justify="right")
+    src_table.add_column("Avg Doc Size", justify="right")
+    src_table.add_column("Total Size", justify="right")
+
+    sources_data = stats.get("sources", {})
+    if not sources_data:
+        console.print("[yellow]No data found in Knowledge Base.[/yellow]")
+        return
+
+    def format_size(size_bytes: float) -> str:
+        for unit in ["B", "KB", "MB", "GB", "TB"]:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.1f} PB"
+
+    for source, data in sources_data.items():
+        src_table.add_row(
+            source,
+            str(data["documents_count"]),
+            str(data["chunks_count"]),
+            f"{data['mean_chunks_per_document']:.1f}",
+            f"{data['mean_chunk_size']:.0f} chars",
+            f"{data['mean_document_size']:.0f} chars",
+            format_size(data["total_size"]),
+        )
+
+    console.print(src_table)
 
 
 if __name__ == "__main__":

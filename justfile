@@ -241,3 +241,38 @@ direnv-reload:
 # Install spaCy model (required for text splitting)
 install-spacy:
     poetry run python -m spacy download en_core_web_sm
+
+# Qdrant Development Commands
+
+# Start Qdrant Docker container
+qdrant-start:
+    @echo "🚀 Starting Qdrant..."
+    docker pull qdrant/qdrant:latest
+    docker run -d --name vatuta-qdrant -p 6333:6333 -p 6334:6334 -e QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY} -v {{justfile_directory()}}/data/qdrant:/qdrant/storage:z qdrant/qdrant:latest
+    @echo "✅ Qdrant started at http://localhost:6333"
+    @echo "📊 Dashboard: http://localhost:6333/dashboard"
+
+# Stop Qdrant Docker container
+qdrant-stop:
+    @echo "🛑 Stopping Qdrant..."
+    -docker stop vatuta-qdrant
+    -docker rm vatuta-qdrant
+    @echo "✅ Qdrant stopped"
+
+# Check Qdrant status
+qdrant-status:
+    @echo "📊 Qdrant Status:"
+    @docker ps -a --filter "name=vatuta-qdrant" --format "table {{'{{'}}.Names{{'}}'}}\t{{'{{'}}.Status{{'}}'}}\t{{'{{'}}.Ports{{'}}'}}"
+
+# View Qdrant logs
+qdrant-logs:
+    @echo "📋 Qdrant Logs:"
+    docker logs vatuta-qdrant
+
+# Restart Qdrant
+qdrant-restart: qdrant-stop qdrant-start
+
+# Open Qdrant dashboard in browser
+qdrant-dashboard:
+    @echo "🌐 Opening Qdrant dashboard..."
+    xdg-open http://localhost:6333/dashboard || open http://localhost:6333/dashboard || echo "Open http://localhost:6333/dashboard in your browser"

@@ -13,7 +13,8 @@ from pocs.jira_importer import JIRAImporter
 from pocs.rag_poc import main as rag_main
 from pocs.slack_importer import SlackImporter
 from pocs.tools_example import main as tools_main
-from src.rag.document_manager import DocumentManager
+from src.models.config import ConfigLoader
+from src.rag.qdrant_manager import QdrantDocumentManager
 
 
 def import_jira_tickets(args):
@@ -23,7 +24,8 @@ def import_jira_tickets(args):
         docs = importer.import_jira_tickets(args.jql, args.max_results)
 
         if docs:
-            doc_manager = DocumentManager()
+            config = ConfigLoader.load("config/vatuta.yaml")
+            doc_manager = QdrantDocumentManager(config.qdrant)
             success = doc_manager.add_documents(docs)
             if success:
                 print(f"✅ Successfully imported {len(docs)} JIRA tickets")
@@ -43,7 +45,8 @@ def import_confluence_pages(args):
         docs = importer.import_confluence_pages(args.space_key, args.limit)
 
         if docs:
-            doc_manager = DocumentManager()
+            config = ConfigLoader.load("config/vatuta.yaml")
+            doc_manager = QdrantDocumentManager(config.qdrant)
             success = doc_manager.add_documents(docs)
             if success:
                 print(f"✅ Successfully imported {len(docs)} Confluence pages")
@@ -59,12 +62,22 @@ def import_confluence_pages(args):
 def search_documents(args):
     """Search documents in the knowledge base."""
     try:
-        doc_manager = DocumentManager()
-        results = doc_manager.search_documents(args.query, args.k)
+        config = ConfigLoader.load("config/vatuta.yaml")
+        doc_manager = QdrantDocumentManager(config.qdrant)
+        results = doc_manager.vectorstore.similarity_search_with_score(args.query, k=args.k)
 
-        if results:
-            print(f"🔍 Found {len(results)} relevant documents:")
-            for i, result in enumerate(results, 1):
+        # Format results to match previous interface
+        formatted_results = []
+        for doc, score in results:
+            formatted_results.append({
+                "metadata": doc.metadata,
+                "content": doc.page_content,
+                "score": score
+            })
+
+        if formatted_results:
+            print(f"🔍 Found {len(formatted_results)} relevant documents:")
+            for i, result in enumerate(formatted_results, 1):
                 title = result["metadata"].get("summary", result["metadata"].get("title", "Untitled"))
                 source = result["metadata"].get("source", "unknown")
                 print(f"  {i}. {title} ({source})")
@@ -80,7 +93,8 @@ def search_documents(args):
 def list_documents(args):
     """List documents in the knowledge base."""
     try:
-        doc_manager = DocumentManager()
+        config = ConfigLoader.load("config/vatuta.yaml")
+        doc_manager = QdrantDocumentManager(config.qdrant)
         docs = doc_manager.list_documents(args.source, args.limit)
 
         if docs:
@@ -100,7 +114,8 @@ def import_slack(args):
         importer = SlackImporter()
         docs = importer.import_slack(args.filter, args.limit)
         if docs:
-            doc_manager = DocumentManager()
+            config = ConfigLoader.load("config/vatuta.yaml")
+            doc_manager = QdrantDocumentManager(config.qdrant)
             success = doc_manager.add_documents(docs)
             if success:
                 print(f"✅ Successfully imported {len(docs)} Slack messages")
@@ -124,7 +139,8 @@ def import_gitlab(args):
             limit_per_project=args.limit,
         )
         if docs:
-            doc_manager = DocumentManager()
+            config = ConfigLoader.load("config/vatuta.yaml")
+            doc_manager = QdrantDocumentManager(config.qdrant)
             success = doc_manager.add_documents(docs)
             if success:
                 print(f"✅ Successfully imported {len(docs)} GitLab documents")
@@ -139,7 +155,8 @@ def import_gitlab(args):
 def show_stats(args):
     """Show knowledge base statistics."""
     try:
-        doc_manager = DocumentManager()
+        config = ConfigLoader.load("config/vatuta.yaml")
+        doc_manager = QdrantDocumentManager(config.qdrant)
         stats = doc_manager.get_document_stats()
 
         print("📊 Knowledge Base Statistics:")
@@ -159,7 +176,8 @@ def show_stats(args):
 def clear_documents(args):
     """Clear all documents from the knowledge base."""
     try:
-        doc_manager = DocumentManager()
+        config = ConfigLoader.load("config/vatuta.yaml")
+        doc_manager = QdrantDocumentManager(config.qdrant)
         success = doc_manager.clear_all_documents()
 
         if success:

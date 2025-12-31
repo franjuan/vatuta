@@ -22,7 +22,7 @@ Dependencies:
 
 import argparse
 import os
-from typing import List
+from typing import List, Union
 
 import boto3
 from langchain_aws import ChatBedrock
@@ -33,7 +33,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableBranch, RunnableLambda, RunnablePassthrough
 
 from pocs.tools_example import kb_stats
+from src.models.config import ConfigLoader
 from src.rag.document_manager import DocumentManager
+from src.rag.qdrant_manager import QdrantDocumentManager
 
 
 def build_bedrock_chat_model(
@@ -60,7 +62,7 @@ def build_bedrock_chat_model(
     )
 
 
-def ensure_retriever(document_manager: DocumentManager, k: int):
+def ensure_retriever(document_manager: Union[DocumentManager, QdrantDocumentManager], k: int):
     """Return a retriever from the existing FAISS vector store.
 
     Raises ValueError if the store is not available.
@@ -195,8 +197,11 @@ def main():
     )
     args = parser.parse_args()
 
-    # Load existing FAISS vector store via DocumentManager
-    doc_manager = DocumentManager()
+    # Load configuration
+    config = ConfigLoader.load("config/vatuta.yaml")
+
+    # Load existing Qdrant vector store via QdrantDocumentManager
+    doc_manager = QdrantDocumentManager(config.qdrant)
 
     if args.show_kb_stats:
         print("📊 KB Stats:")
