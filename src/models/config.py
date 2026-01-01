@@ -14,13 +14,19 @@ from src.sources.jira_source import JiraConfig
 from src.sources.slack import SlackConfig
 
 
-class RagConfig(BaseModel):
-    """Configuration for RAG (Retrieval-Augmented Generation) system."""
+class LLMConfig(BaseModel):
+    """Configuration for a specific LLM backend."""
 
-    model_id: str = "bedrock/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+    model_id: str
     temperature: float = 0.2
     max_tokens: int = 800
     top_k: int = 4
+
+
+class RagConfig(BaseModel):
+    """Configuration for RAG (Retrieval-Augmented Generation) system."""
+
+    llm_backend: Dict[str, LLMConfig] = Field(default_factory=dict)
 
 
 class SourcesConfig(BaseModel):

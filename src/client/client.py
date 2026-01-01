@@ -8,6 +8,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
 
+import click
 import typer
 from rich.console import Console
 from rich.logging import RichHandler
@@ -315,6 +316,12 @@ def ask(
     k: int = typer.Option(4, "--k", help="Number of documents to retrieve"),
     show_sources: bool = typer.Option(False, "--show-sources", help="Display retrieved sources using rich tables"),
     show_stats: bool = typer.Option(False, "--show-stats", help="Display KB stats before answering"),
+    llm: Optional[str] = typer.Option(
+        None,
+        "--llm",
+        help="Specific LLM backend to use",
+        click_type=click.Choice(["bedrock", "gemini"], case_sensitive=False),
+    ),
 ) -> None:
     """Ask a question to the RAG system."""
     dm = QdrantDocumentManager(state.config.qdrant)
@@ -334,7 +341,7 @@ def ask(
         console.print(src_table)
 
     try:
-        configure_dspy_lm(state.config.rag)
+        configure_dspy_lm(state.config.rag, backend_name=llm)
         rag_module = DSPyRAGModule()
         graph = build_graph(dm, k, rag_module)
 
