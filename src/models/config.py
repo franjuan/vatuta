@@ -26,7 +26,11 @@ class LLMConfig(BaseModel):
 class RagConfig(BaseModel):
     """Configuration for RAG (Retrieval-Augmented Generation) system."""
 
-    llm_backend: Dict[str, LLMConfig] = Field(default_factory=dict)
+    llm_backends: Dict[str, LLMConfig] = Field(default_factory=dict)
+
+    # Specific backend selection (key from llm_backend dict)
+    router_backend: str = Field(..., description="Backend ID for the routing agent (cheaper/faster)")
+    generator_backend: str = Field(..., description="Backend ID for the generator (higher quality)")
 
 
 class SourcesConfig(BaseModel):
@@ -57,9 +61,9 @@ class QdrantConfig(BaseModel):
 class VatutaConfig(BaseModel):
     """Main configuration for Vatuta application."""
 
-    rag: RagConfig = Field(default_factory=RagConfig)
+    rag: RagConfig
     qdrant: QdrantConfig = Field(default_factory=QdrantConfig)
-    sources: SourcesConfig = Field(default_factory=SourcesConfig)
+    sources: SourcesConfig
     entities_manager: EntityManagerConfig = Field(default_factory=EntityManagerConfig)
 
 
@@ -75,10 +79,13 @@ class ConfigLoader:
 
         Returns:
             VatutaConfig: Loaded configuration object.
+
+        Raises:
+            FileNotFoundError: If the configuration file does not exist.
         """
         p = Path(path)
         if not p.exists():
-            return VatutaConfig()
+            raise FileNotFoundError(f"Configuration file not found at: {path}")
 
         with open(p, "r") as f:
             raw_data = yaml.safe_load(f) or {}

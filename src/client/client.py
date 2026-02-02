@@ -6,18 +6,17 @@ Provides command-line interface for managing knowledge base and querying the RAG
 import logging
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 
-import click
 import typer
 from rich.console import Console
 from rich.logging import RichHandler
+from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from src.entities.manager import EntityManager
 from src.models.config import ConfigLoader, VatutaConfig
-from src.rag.engine import DSPyRAGModule, RAGState, build_graph, configure_dspy_lm
 from src.rag.qdrant_manager import QdrantDocumentManager
 from src.sources.confluence import ConfluenceSource
 from src.sources.jira_source import JiraSource
@@ -35,14 +34,11 @@ console = Console()
 class State:
     """Application state container."""
 
-    def __init__(self) -> None:
+    def __init__(self, config: VatutaConfig, data_dir: str = "data", verbose: bool = False) -> None:
         """Initialize application state."""
-        self.config: VatutaConfig = VatutaConfig()
-        self.data_dir: str = "data"
-        self.verbose: bool = False
-
-
-state = State()
+        self.config = config
+        self.data_dir = data_dir
+        self.verbose = verbose
 
 
 class SourceType(str, Enum):
@@ -83,9 +79,6 @@ def main(
     verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging (DEBUG level)"),
 ) -> None:
     """Vatuta - Virtual Assistant for Task Understanding, Tracking & Automation."""
-    state.data_dir = data
-    state.verbose = verbose
-
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
         logging.getLogger("src").setLevel(logging.DEBUG)
@@ -94,15 +87,19 @@ def main(
         logging.getLogger("src").setLevel(logging.INFO)
 
     # Load config
-    state.config = ConfigLoader.load(config)
+    cfg = ConfigLoader.load(config)
 
     # Ensure data directory exists
     Path(data).mkdir(parents=True, exist_ok=True)
 
+    # Initialize state in context
+    ctx.obj = State(config=cfg, data_dir=data, verbose=verbose)
+
 
 @app.command()
-def reset() -> None:
+def reset(ctx: typer.Context) -> None:
     """Reset the Knowledge Base (Clear all documents)."""
+    state: State = ctx.obj
     if typer.confirm("Are you sure you want to clear the entire Knowledge Base?", default=False):
         dm = QdrantDocumentManager(state.config.qdrant)
         dm.clear_all_documents()
@@ -113,11 +110,13 @@ def reset() -> None:
 
 @app.command()
 def remove_documents(
+    ctx: typer.Context,
     source: Optional[SourceType] = typer.Option(None, help="Filter by source type"),
     source_id: Optional[str] = typer.Option(None, help=get_ids_help()),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ) -> None:
     """Remove documents from the Knowledge Base with optional filtering."""
+    state: State = ctx.obj
     dm = QdrantDocumentManager(state.config.qdrant)
 
     # Resolving source string
@@ -147,7 +146,7 @@ def remove_documents(
 
 
 def _get_enabled_sources(
-    source_filter: Optional[str] = None, source_id_filter: Optional[str] = None
+    state: State, source_filter: Optional[str] = None, source_id_filter: Optional[str] = None
 ) -> List[tuple[str, str, Any]]:
     """Return list of enabled sources matching filters."""
     sources: List[tuple[str, str, Any]] = []
@@ -195,14 +194,16 @@ def _ingest_docs(dm: QdrantDocumentManager, docs: list, chunks: list, source_nam
 
 @app.command()
 def load(
+    ctx: typer.Context,
     source: Optional[SourceType] = typer.Option(None, help="Filter by source type"),
     source_id: Optional[str] = typer.Option(None, help=get_ids_help()),
 ) -> None:
     """Load data from local cache into the Knowledge Base."""
+    state: State = ctx.obj
     dm = QdrantDocumentManager(state.config.qdrant)
     # Convert enum to string if present
     s_val = source.value if source else None
-    sources = _get_enabled_sources(s_val, source_id)
+    sources = _get_enabled_sources(state, s_val, source_id)
 
     if not sources:
         console.print("[yellow]No enabled sources matches the filters.[/yellow]")
@@ -240,6 +241,7 @@ def load(
 
 @app.command()
 def update(
+    ctx: typer.Context,
     source: Optional[SourceType] = typer.Option(None, help="Filter by source type"),
     source_id: Optional[str] = typer.Option(None, help=get_ids_help()),
     no_cache: bool = typer.Option(False, "--no-cache", help="Force fresh fetch (ignore cache)"),
@@ -248,10 +250,11 @@ def update(
 
     Defaults to using cached data if available (incremental), use --no-cache to force fresh fetch.
     """
+    state: State = ctx.obj
     dm = QdrantDocumentManager(state.config.qdrant)
     # Convert enum to string if present
     s_val = source.value if source else None
-    sources = _get_enabled_sources(s_val, source_id)
+    sources = _get_enabled_sources(state, s_val, source_id)
 
     if not sources:
         console.print("[yellow]No enabled sources matches the filters.[/yellow]")
@@ -312,18 +315,15 @@ def update(
 
 @app.command()
 def ask(
+    ctx: typer.Context,
     question: str = typer.Argument(..., help="The question to ask"),
     k: int = typer.Option(4, "--k", help="Number of documents to retrieve"),
     show_sources: bool = typer.Option(False, "--show-sources", help="Display retrieved sources using rich tables"),
     show_stats: bool = typer.Option(False, "--show-stats", help="Display KB stats before answering"),
-    llm: Optional[str] = typer.Option(
-        None,
-        "--llm",
-        help="Specific LLM backend to use",
-        click_type=click.Choice(["bedrock", "gemini"], case_sensitive=False),
-    ),
+    show_cot: bool = typer.Option(False, "--show-cot", help="Display 'Chain of Thought' reasoning"),
 ) -> None:
     """Ask a question to the RAG system."""
+    state: State = ctx.obj
     dm = QdrantDocumentManager(state.config.qdrant)
 
     if show_stats:
@@ -341,30 +341,139 @@ def ask(
         console.print(src_table)
 
     try:
-        configure_dspy_lm(state.config.rag, backend_name=llm)
-        rag_module = DSPyRAGModule()
-        graph = build_graph(dm, k, rag_module)
+        # Initialize Entities Manager
+        entities_path = state.config.entities_manager.storage_path or "data/entities.json"
+        entity_manager = EntityManager(storage_path=entities_path)
+
+        # Initialize Sources
+        # We need all enabled sources to be available for the agent's tools
+        from src.sources.source import Source
+
+        active_sources: List[Source] = []
+        enabled_configs = _get_enabled_sources(state)
+
+        for stype, sid, scfg in enabled_configs:
+            try:
+                if stype == "slack":
+                    active_sources.append(
+                        SlackSource.create(config=scfg, data_dir=state.data_dir, entity_manager=entity_manager)
+                    )
+                elif stype == "jira":
+                    active_sources.append(
+                        JiraSource.create(config=scfg, data_dir=state.data_dir, entity_manager=entity_manager)
+                    )
+                elif stype == "confluence":
+                    active_sources.append(
+                        ConfluenceSource.create(config=scfg, data_dir=state.data_dir, entity_manager=entity_manager)
+                    )
+            except Exception as e:
+                console.print(f"[yellow]Warning: Failed to initialize source {sid}: {e}[/yellow]")
+
+        from src.rag.agent import RAGAgent
+
+        agent = RAGAgent(config=state.config, sources=active_sources, doc_manager=dm, retrieval_k=k)
 
         with Progress(SpinnerColumn(), TextColumn("[bold green]Thinking..."), transient=True) as progress:
             progress.add_task("think", total=None)
-            final_state: RAGState = cast(RAGState, graph.invoke({"question": question, "k": k}))
+            result = agent.run(question)
+
+        # Display Chain of Thought if requested
+        if show_cot:
+            if result.get("router_cot"):
+                router_cot_data = result["router_cot"]
+
+                # Build a renderable group for the router trace
+                from rich.console import Group
+                from rich.json import JSON
+                from rich.text import Text
+
+                trace_elements: List[Any] = []
+
+                # 1. Prompt
+                if router_cot_data.get("prompt"):
+                    trace_elements.append(Text("Input Prompt:", style="bold underline"))
+                    trace_elements.append(Text(str(router_cot_data["prompt"]), style="dim"))
+                    trace_elements.append(Text(""))  # spacer
+
+                # 2. Response
+                if router_cot_data.get("response"):
+                    trace_elements.append(Text("Model Response:", style="bold underline"))
+                    resp = router_cot_data["response"]
+                    if isinstance(resp, dict):
+                        trace_elements.append(JSON.from_data(resp))
+                    else:
+                        trace_elements.append(Text(str(resp), style="cyan"))
+                    trace_elements.append(Text(""))  # spacer
+
+                # 3. Messages/Trace
+                if router_cot_data.get("messages"):
+                    trace_elements.append(Text("Execution Trace:", style="bold underline"))
+                    msgs = router_cot_data["messages"]
+                    if isinstance(msgs, list):
+                        for m in msgs:
+                            trace_elements.append(JSON.from_data(m) if isinstance(m, dict) else Text(str(m)))
+                    else:
+                        trace_elements.append(Text(str(msgs)))
+
+                console.print(
+                    Panel(
+                        Group(*trace_elements),
+                        title="[bold blue]Router Chain of Thought[/bold blue]",
+                        border_style="blue",
+                    )
+                )
+
+            if result.get("generator_cot"):
+                console.print(
+                    Panel(
+                        result["generator_cot"],
+                        title="[bold green]Generator Chain of Thought[/bold green]",
+                        border_style="green",
+                    )
+                )
+            else:
+                # Inform user why it's missing (empty rationale)
+                console.print(
+                    Panel(
+                        "[dim italic]No reasoning trace generated by the model.[/dim italic]",
+                        title="[bold green]Generator Chain of Thought[/bold green]",
+                        border_style="green",
+                    )
+                )
 
         console.print(f"\n[bold]Question:[/bold] {question}")
-        console.print(f"\n[bold]Answer:[/bold]\n{final_state.get('answer', '')}")
+        console.print(Panel(result["answer"], title="[bold green]Answer[/bold green]", border_style="green"))
 
         if show_sources:
-            docs = final_state.get("docs", [])
+            dynamic_query = result.get("dynamic_query")
+            specific_docs = result.get("specific_docs", [])
+            vector_docs = result.get("vector_docs", [])
+
+            if dynamic_query:
+                console.print("\n[bold cyan]Dynamic Query Filters Applied:[/bold cyan]")
+                console.print(str(dynamic_query))
+
             table = Table(title="Retrieved Sources")
             table.add_column("#", style="dim")
+            table.add_column("Type", style="bold")
             table.add_column("Title", style="bold")
             table.add_column("Source", style="blue")
             table.add_column("Preview")
 
-            for i, d in enumerate(docs, start=1):
-                title = d.metadata.get("title") or d.metadata.get("summary") or "Untitled"
+            idx = 1
+            for d in specific_docs:
+                title = d.metadata.get("title") or d.metadata.get("source_doc_id") or "Untitled"
                 src = d.metadata.get("source", "unknown")
                 preview = d.page_content[:100].replace("\n", " ") + "..."
-                table.add_row(str(i), title, src, preview)
+                table.add_row(str(idx), "[green]Specific[/green]", title, src, preview)
+                idx += 1
+
+            for d in vector_docs:
+                title = d.metadata.get("title") or d.metadata.get("source_doc_id") or "Untitled"
+                src = d.metadata.get("source", "unknown")
+                preview = d.page_content[:100].replace("\n", " ") + "..."
+                table.add_row(str(idx), "[magenta]Semantic[/magenta]", title, src, preview)
+                idx += 1
 
             console.print("\n")
             console.print(table)
@@ -376,8 +485,9 @@ def ask(
 
 
 @app.command()
-def stats() -> None:
+def stats(ctx: typer.Context) -> None:
     """Show detailed knowledge base statistics."""
+    state: State = ctx.obj
     dm = QdrantDocumentManager(state.config.qdrant)
 
     with Progress(SpinnerColumn(), TextColumn("[bold blue]Analyzing Knowledge Base..."), transient=True) as progress:

@@ -505,6 +505,91 @@ class QdrantDocumentManager:
             print(f"❌ Error clearing documents: {e}")
             return False
 
+    def search(
+        self,
+        query: str,
+        k: int = 4,
+        filter: Optional[Any] = None,
+        score_threshold: Optional[float] = None,
+    ) -> List[Document]:
+        """Search for documents similar to the query with optional filtering.
+
+        Args:
+            query: The search query string.
+            k: Number of documents to return.
+            filter: Optional Qdrant filter (dict or Filter object).
+            score_threshold: Minimum similarity score.
+
+        Returns:
+            List of matching LangChain Documents.
+        """
+        try:
+            # We use similarity_search_with_score to apply threshold if needed
+            docs_and_scores = self.vectorstore.similarity_search_with_score(
+                query=query,
+                k=k,
+                filter=filter,
+            )
+
+            results: List[Document] = []
+            for doc, score in docs_and_scores:
+                if score_threshold is not None and score < score_threshold:
+                    continue
+                # Add score to metadata for transparency
+                doc.metadata["score"] = score
+                results.append(doc)
+
+            return results
+
+        except Exception as e:
+            print(f"❌ Error during search: {e}")
+            return []
+
+    def get_documents(self, filter: Any, limit: Optional[int] = None) -> List[Document]:
+        """Retrieve documents matching a specific filter (exact match, no vector search).
+
+        Args:
+            filter: Qdrant filter (dict or Filter object).
+            limit: Maximum number of documents to retrieve. If None, retrieves all (up to robust max).
+
+        Returns:
+            List of LangChain Documents.
+        """
+        try:
+            # Use scroll to get points matching the filter
+            # QdrantClient.scroll returns (points, next_page_offset)
+            # If limit is None, we want "all" matching. Qdrant requires a limit for scroll.
+            # We set a reasonably high limit (100) to cover most specific lookups.
+            # If strictly "all" is needed, one would need to loop over offset.
+            effective_limit = limit if limit is not None else 100
+
+            points, _ = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=filter,
+                limit=effective_limit,
+                with_payload=True,
+                with_vectors=False,
+            )
+
+            documents: List[Document] = []
+            for point in points:
+                if not point.payload:
+                    continue
+
+                # Reconstruct LangChain Document
+                content = point.payload.get("page_content", "")
+                metadata = point.payload.get("metadata", {})
+                if not isinstance(metadata, dict):
+                    metadata = point.payload
+
+                documents.append(Document(page_content=content, metadata=metadata))
+
+            return documents
+
+        except Exception as e:
+            print(f"❌ Error during direct retrieval: {e}")
+            return []
+
 
 def main() -> None:
     """Demonstrate document management functionality."""

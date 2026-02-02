@@ -6,7 +6,7 @@ LangChain's Document for integration with existing vector stores.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Any, Dict, List, Literal, Optional
 
@@ -122,12 +122,20 @@ class ChunkRecord(BaseModel):
     start_char: Optional[int] = Field(default=None, description="Start character offset within the source text.")
     end_char: Optional[int] = Field(default=None, description="End character offset within the source text.")
     retrieved_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Timestamp when this chunk was extracted (UTC).",
     )
     indexed_at: Optional[datetime] = Field(
         default=None,
         description="Timestamp when this chunk was embedded/indexed (UTC).",
+    )
+    source_created_at: Optional[datetime] = Field(
+        default=None,
+        description="Creation timestamp of the specific source item this chunk represents.",
+    )
+    source_updated_at: Optional[datetime] = Field(
+        default=None,
+        description="Last update timestamp of the specific source item this chunk represents.",
     )
     embedding_model: str = Field(
         default="sentence-transformers/all-MiniLM-L6-v2",
@@ -181,6 +189,8 @@ class ChunkRecord(BaseModel):
             "end_char": self.end_char,
             "retrieved_at": self.retrieved_at.isoformat(),
             "indexed_at": self.indexed_at.isoformat() if self.indexed_at else None,
+            "source_created_at": self.source_created_at.isoformat() if self.source_created_at else None,
+            "source_updated_at": self.source_updated_at.isoformat() if self.source_updated_at else None,
             "embedding_model": self.embedding_model,
             "embedding_version": self.embedding_version,
             "vector_dim": self.vector_dim,
@@ -213,8 +223,12 @@ class ChunkRecord(BaseModel):
             end_line=m.get("end_line"),
             start_char=m.get("start_char"),
             end_char=m.get("end_char"),
-            retrieved_at=(datetime.fromisoformat(m["retrieved_at"]) if m.get("retrieved_at") else datetime.utcnow()),
+            retrieved_at=(
+                datetime.fromisoformat(m["retrieved_at"]) if m.get("retrieved_at") else datetime.now(timezone.utc)
+            ),
             indexed_at=(datetime.fromisoformat(m["indexed_at"]) if m.get("indexed_at") else None),
+            source_created_at=(datetime.fromisoformat(m["source_created_at"]) if m.get("source_created_at") else None),
+            source_updated_at=(datetime.fromisoformat(m["source_updated_at"]) if m.get("source_updated_at") else None),
             embedding_model=str(m.get("embedding_model", "")),
             embedding_version=m.get("embedding_version"),
             vector_dim=m.get("vector_dim"),
