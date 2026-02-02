@@ -1,11 +1,14 @@
 rag:
-  llm_backend:
+  llm_backends:
     bedrock:
       model_id: "bedrock/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
       temperature: 0.2
     gemini:
       model_id: "gemini/gemini-3-flash-preview"
       temperature: 1.0
+
+  router_backend: "gemini"
+  generator_backend: "bedrock"
 
 entities_manager:
   storage_path: "data/entities.json"

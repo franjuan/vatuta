@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, List, Optional, TypedDict, Union
+from typing import Any, List, TypedDict, Union
 
 import dspy
 from langchain_core.documents import Document
@@ -55,38 +55,34 @@ class DSPyRAGModule(dspy.Module):
     def forward(self, question: str, context: str) -> dspy.Prediction:
         """Generate answer from question and context."""
         pred = self.generate(context=context, question=question)
-        return dspy.Prediction(answer=getattr(pred, "answer", ""))
+        return dspy.Prediction(answer=getattr(pred, "answer", ""), rationale=getattr(pred, "rationale", ""))
 
 
-def configure_dspy_lm(config: RagConfig, backend_name: Optional[str] = None) -> None:
-    """Configure DSPy language model based on backend selection.
+def build_dspy_lm(config: RagConfig, backend_name: str) -> dspy.LM:
+    """Build and return a DSPy language model instance.
 
     Args:
         config: RAG configuration object.
-        backend_name: Name of the backend to use. If None, uses the first configured backend.
+        backend_name: Name of the backend to use
+
+    Returns:
+        dspy.LM: Configured LM instance.
     """
-    if not config.llm_backend:
-        raise ValueError("No LLM backends configured in config.rag.llm_backend")
+    if not config.llm_backends:
+        raise ValueError("No LLM backends configured in config.rag.llm_backends")
 
     # Select backend
-    if backend_name:
-        if backend_name not in config.llm_backend:
-            # Should we error or default? Failing is safer if explicit request made.
-            # Check if user meant a type or an ID.
-            # For now, strict match.
-            available = ", ".join(config.llm_backend.keys())
-            raise ValueError(f"Backend '{backend_name}' not found. Available: {available}")
-        selection = backend_name
-    else:
-        # Default to first
-        selection = next(iter(config.llm_backend.keys()))
+    if backend_name not in config.llm_backends:
+        available = ", ".join(config.llm_backends.keys())
+        raise ValueError(f"Backend '{backend_name}' not found. Available: {available}")
+    selection = backend_name
 
-    print(f"Using LLM backend: {selection}")  # Simple print for CLI visibility, client.py will also log
+    print(f"Initializing LLM backend: {selection}")
 
-    llm_conf = config.llm_backend[selection]
+    llm_conf = config.llm_backends[selection]
 
     # Configure based on selection or model_id characteristics
-    # We can infer provider from backend name (e.g. 'gemini', 'bedrock') or model_id
+    # TODO: We can infer provider from backend name (e.g. 'gemini', 'bedrock') or model_id
 
     is_gemini = "gemini" == selection.lower()
     is_bedrock = "bedrock" == selection.lower()
@@ -97,13 +93,12 @@ def configure_dspy_lm(config: RagConfig, backend_name: Optional[str] = None) -> 
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY environment variable not set.")
 
-        lm = dspy.LM(
+        return dspy.LM(
             llm_conf.model_id,
             api_key=api_key,
             max_tokens=llm_conf.max_tokens,
             temperature=llm_conf.temperature,
         )
-        dspy.configure(lm=lm)
 
     elif is_bedrock:
         # Default / Bedrock Configuration
@@ -116,13 +111,10 @@ def configure_dspy_lm(config: RagConfig, backend_name: Optional[str] = None) -> 
         else:
             profile = os.getenv("AWS_PROFILE")
             if not profile:
-                # Making this optional if using default creds chain? Original code enforced it.
-                # Keeping original enforcement for safety.
                 raise RuntimeError("Set AWS_BEARER_TOKEN_BEDROCK (bearer) or AWS_PROFILE (profile).")
             os.environ["AWS_PROFILE"] = profile
 
-        lm = dspy.LM(model=llm_conf.model_id, temperature=llm_conf.temperature, max_tokens=llm_conf.max_tokens)
-        dspy.configure(lm=lm)
+        return dspy.LM(model=llm_conf.model_id, temperature=llm_conf.temperature, max_tokens=llm_conf.max_tokens)
 
     else:
         raise ValueError(
