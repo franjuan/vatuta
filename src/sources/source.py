@@ -56,6 +56,11 @@ class Source(Generic[TConfig]):
         self.storage_path = Path(storage_path).expanduser().resolve()
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
+    @property
+    def source_type(self) -> str:
+        """Return the type of this source (e.g., 'jira', 'confluence')."""
+        raise NotImplementedError
+
     def collect_documents_and_chunks(
         self,
         checkpoint: Checkpoint,

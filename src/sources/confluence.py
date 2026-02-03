@@ -149,6 +149,11 @@ class ConfluenceSource(Source[ConfluenceConfig]):
 
         self._connection_validated = False
 
+    @property
+    def source_type(self) -> str:
+        """Return the source type."""
+        return "confluence"
+
     def get_specific_query(self, document_ids: List[str]) -> Optional[Dict[str, Any]]:
         """Return a Qdrant filter query if any of the document IDs match resources in this source.
 

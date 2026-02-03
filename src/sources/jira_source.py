@@ -161,6 +161,11 @@ class JiraSource(Source[JiraConfig]):
 
         self._connection_validated = False
 
+    @property
+    def source_type(self) -> str:
+        """Return the source type."""
+        return "jira"
+
     def _resolve_user_entity(self, user_obj: Any) -> Optional[str]:
         """Resolve a JIRA user object to a global entity ID."""
         if not self.entity_manager or not user_obj:

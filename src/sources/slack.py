@@ -174,6 +174,11 @@ class SlackSource(Source[SlackConfig]):
 
         return cls(config=config, secrets=secrets, storage_path=storage_path, entity_manager=entity_manager)
 
+    @property
+    def source_type(self) -> str:
+        """Return the source type."""
+        return "slack"
+
     def __init__(
         self,
         config: SlackConfig,
@@ -826,6 +831,8 @@ class SlackSource(Source[SlackConfig]):
             chunking_strategy="slack_message_line_v1",
             chunk_overlap=0,
             content_hash=content_hash,
+            source_created_at=created,
+            source_updated_at=updated,
         )
 
     def _get_embedding_model(self) -> SentenceTransformer:
