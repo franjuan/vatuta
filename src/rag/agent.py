@@ -14,6 +14,7 @@ from src.models.config import VatutaConfig
 from src.rag.engine import DSPyRAGModule, build_dspy_lm
 from src.rag.qdrant_manager import QdrantDocumentManager
 from src.rag.tools import DateFilterTool, JiraTicketTool
+from src.rag.tools.source_filter import SourceFilterTool
 from src.sources.source import Source
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ class RouteSignature(dspy.Signature):
     You are a routing agent for a RAG system.
     - The current time is provided in the input. Use it to resolve relative dates.
     - If the user implies a time range (e.g., yesterday, last week), call date_filter with precise ISO start/end based on the current time.
+    - If the user wants to search in a specific source (e.g., "in Jira", "in Confluence documents"), call source_filter with the source_type or source_id from the available sources list.
     - If the user mentions Jira ticket keys (e.g., PROJ-123), call jira_ticket_lookup with all keys.
     - Stop calling tools when no further filters/docs are needed.
     """
@@ -95,9 +97,15 @@ class RAGAgent:
         # Calculate current time
         current_time = datetime.now(timezone.utc).isoformat()
 
-        # Prepend current time to question for the agent
+        # Build available sources text
+        sources_info = [f"- {s.source_type} (ID: {s.source_id})" for s in self.sources]
+        sources_text = "\n".join(sources_info)
+
+        # Prepend current time and sources to prompt
         original_question = state["question"]
-        question = f"Current Time: {current_time}\nQuestion: {original_question}"
+        question = (
+            f"Current Time: {current_time}\n" f"Available Sources:\n{sources_text}\n\n" f"Question: {original_question}"
+        )
 
         # --- Tools as functions capturing state ---
 
@@ -126,7 +134,29 @@ class RAGAgent:
                 return f"Retrieved {len(docs)} Jira tickets."
             return "No Jira tickets found."
 
-        tools = [date_filter, jira_ticket_lookup]
+        def source_filter(source_type: str | None = None, source_id: str | None = None) -> str:
+            """Apply filter to restrict search to specific source type or ID."""
+            f = SourceFilterTool().invoke({"source_type": source_type, "source_id": source_id})
+            if not f:
+                return "No source filter applied."
+
+            dynamic_query = state.get("dynamic_query", {})
+            if not dynamic_query:
+                state["dynamic_query"] = f
+            else:
+                dynamic_query.setdefault("must", [])
+                if "must" in f:
+                    dynamic_query["must"].extend(f["must"])
+                state["dynamic_query"] = dynamic_query
+
+            applied = []
+            if source_type:
+                applied.append(f"type='{source_type}'")
+            if source_id:
+                applied.append(f"id='{source_id}'")
+            return f"Applied source filter: {', '.join(applied)}"
+
+        tools = [date_filter, jira_ticket_lookup, source_filter]
 
         # Initialize ReAct agent with tools
         router_agent = dspy.ReAct(self.router_signature, tools=tools, max_iters=5)
@@ -227,11 +257,16 @@ class RAGAgent:
 
         # DSPy Generation with Generator LM
         generator_cot = ""
-        with dspy.context(lm=self.generator_lm):
-            pred = self.dspy_module(question=question, context=context_str)
-            generator_cot = getattr(pred, "rationale", "")
+        try:
+            with dspy.context(lm=self.generator_lm):
+                pred = self.dspy_module(question=question, context=context_str)
+                generator_cot = getattr(pred, "rationale", "")
 
-        answer = getattr(pred, "answer", str(pred))
+            answer = getattr(pred, "answer", str(pred))
+        except Exception as e:
+            logger.error(f"Generation failed: {e}", exc_info=True)
+            answer = f"I encountered an error generating the answer. Details: {e}"
+            generator_cot = f"Error: {e}"
 
         return {"answer": answer, "generator_cot": generator_cot}
 
