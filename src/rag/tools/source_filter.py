@@ -12,11 +12,11 @@ logger = logging.getLogger(__name__)
 class SourceFilterSchema(BaseModel):
     """Schema for source filtering parameters."""
 
-    source_type: Optional[str] = Field(
-        None, description="The type of source to filter by (e.g., 'jira', 'confluence')."
+    source_types: Optional[List[str]] = Field(
+        None, description="List of source types to filter by (e.g., ['jira', 'confluence'])."
     )
-    source_id: Optional[str] = Field(
-        None, description="The specific source ID to filter by (e.g., 'jira-main', 'confluence-docs')."
+    source_ids: Optional[List[str]] = Field(
+        None, description="List of specific source IDs to filter by (e.g., ['jira-main', 'confluence-docs'])."
     )
 
 
@@ -25,23 +25,23 @@ class SourceFilterTool(BaseTool):
 
     name: str = "source_filter"
     description: str = (
-        "Useful for narrowing down search results to a specific source type or instance. "
-        "Use this when the user asks to search specifically in 'Jira', 'Confluence', or a specific connected instance."
+        "Useful for narrowing down search results to specific source types or instances. "
+        "Use this when the user asks to search specifically in 'Jira', 'Confluence', or specific connected instances."
     )
     args_schema: Type[BaseModel] = SourceFilterSchema
     handle_tool_error: bool = True
 
-    def _run(self, source_type: Optional[str] = None, source_id: Optional[str] = None) -> Dict[str, Any]:
+    def _run(self, source_types: Optional[List[str]] = None, source_ids: Optional[List[str]] = None) -> Dict[str, Any]:
         """Convert source identifiers to Qdrant filter."""
-        if not source_type and not source_id:
+        if not source_types and not source_ids:
             return {}
 
         must_conditions: List[Dict[str, Any]] = []
 
-        if source_type:
-            must_conditions.append({"key": "metadata.source", "match": {"value": source_type.lower()}})
+        if source_types:
+            must_conditions.append({"key": "metadata.source", "match": {"any": [t.lower() for t in source_types]}})
 
-        if source_id:
-            must_conditions.append({"key": "metadata.source_instance_id", "match": {"value": source_id}})
+        if source_ids:
+            must_conditions.append({"key": "metadata.source_instance_id", "match": {"any": source_ids}})
 
-        return {"must": must_conditions}
+        return {"should": must_conditions}

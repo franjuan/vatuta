@@ -39,7 +39,7 @@ class RouteSignature(dspy.Signature):
     You are a routing agent for a RAG system.
     - The current time is provided in the input. Use it to resolve relative dates.
     - If the user implies a time range (e.g., yesterday, last week), call date_filter with precise ISO start/end based on the current time.
-    - If the user wants to search in a specific source (e.g., "in Jira", "in Confluence documents"), call source_filter with the source_type or source_id from the available sources list.
+    - If the user wants to search in specific sources (e.g., "in Jira", "in Confluence documents"), call source_filter with the source_types or source_ids from the available sources list. You can combine multiple sources.
     - If the user mentions Jira ticket keys (e.g., PROJ-123), call jira_ticket_lookup with all keys.
     - Stop calling tools when no further filters/docs are needed.
     """
@@ -134,9 +134,9 @@ class RAGAgent:
                 return f"Retrieved {len(docs)} Jira tickets."
             return "No Jira tickets found."
 
-        def source_filter(source_type: str | None = None, source_id: str | None = None) -> str:
-            """Apply filter to restrict search to specific source type or ID."""
-            f = SourceFilterTool().invoke({"source_type": source_type, "source_id": source_id})
+        def source_filter(source_types: List[str] | None = None, source_ids: List[str] | None = None) -> str:
+            """Apply filter to restrict search to specific source types or IDs."""
+            f = SourceFilterTool().invoke({"source_types": source_types, "source_ids": source_ids})
             if not f:
                 return "No source filter applied."
 
@@ -144,16 +144,21 @@ class RAGAgent:
             if not dynamic_query:
                 state["dynamic_query"] = f
             else:
-                dynamic_query.setdefault("must", [])
+                # TODO: In complex logics, we should use a more sophisticated approach to merge filters.
+                # For now, we assume that the filters are not conflicting.
                 if "must" in f:
+                    dynamic_query.setdefault("must", [])
                     dynamic_query["must"].extend(f["must"])
+                if "should" in f:
+                    dynamic_query.setdefault("should", [])
+                    dynamic_query["should"].extend(f["should"])
                 state["dynamic_query"] = dynamic_query
 
             applied = []
-            if source_type:
-                applied.append(f"type='{source_type}'")
-            if source_id:
-                applied.append(f"id='{source_id}'")
+            if source_types:
+                applied.append(f"types={source_types}")
+            if source_ids:
+                applied.append(f"ids={source_ids}")
             return f"Applied source filter: {', '.join(applied)}"
 
         tools = [date_filter, jira_ticket_lookup, source_filter]
@@ -189,10 +194,12 @@ class RAGAgent:
                         response_dict = str(raw_response)
 
                     # Structure the trace
-                    messages_list = []
+                    messages_list: List[Any] = []
                     for m in last_interaction.get("messages", []):
                         try:
-                            if hasattr(m, "dict"):
+                            if isinstance(m, dict):
+                                messages_list.append(m)
+                            elif hasattr(m, "dict"):
                                 messages_list.append(m.dict())
                             elif hasattr(m, "model_dump"):
                                 messages_list.append(m.model_dump())

@@ -384,7 +384,6 @@ def ask(
 
                 # Build a renderable group for the router trace
                 from rich.console import Group
-                from rich.json import JSON
                 from rich.text import Text
 
                 trace_elements: List[Any] = []
@@ -395,23 +394,26 @@ def ask(
                     trace_elements.append(Text(str(router_cot_data["prompt"]), style="dim"))
                     trace_elements.append(Text(""))  # spacer
 
-                # 2. Response
-                if router_cot_data.get("response"):
-                    trace_elements.append(Text("Model Response:", style="bold underline"))
-                    resp = router_cot_data["response"]
-                    if isinstance(resp, dict):
-                        trace_elements.append(JSON.from_data(resp))
-                    else:
-                        trace_elements.append(Text(str(resp), style="cyan"))
-                    trace_elements.append(Text(""))  # spacer
-
-                # 3. Messages/Trace
+                # 2. Messages/Trace
                 if router_cot_data.get("messages"):
                     trace_elements.append(Text("Execution Trace:", style="bold underline"))
+                    trace_elements.append(Text(""))
                     msgs = router_cot_data["messages"]
+
                     if isinstance(msgs, list):
-                        for m in msgs:
-                            trace_elements.append(JSON.from_data(m) if isinstance(m, dict) else Text(str(m)))
+                        for _, m in enumerate(msgs):
+                            if isinstance(m, dict):
+                                role = m.get("role", "unknown").upper()
+                                content = m.get("content", "")
+
+                                # Role header
+                                trace_elements.append(Text(f"[{role}]", style="bold magenta"))
+                                # Content with natural newlines
+                                trace_elements.append(Text(str(content)))
+                                trace_elements.append(Text(""))  # spacer between messages
+                            else:
+                                trace_elements.append(Text(str(m)))
+                                trace_elements.append(Text(""))
                     else:
                         trace_elements.append(Text(str(msgs)))
 
