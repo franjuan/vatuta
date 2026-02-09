@@ -52,6 +52,16 @@ Applies time-based filtering to the retrieval process.
 - **Application**: This filter is applied to the *semantic search* phase, ensuring that only documents modified/created
   within the specified timeframe are retrieved.
 
+### Source Filter (`source_filter`)
+
+Restricts the search to specific knowledge sources.
+
+- **Trigger**: Used when the user asks to search specifically in "Jira", "Confluence", or mentions precise source types/IDs.
+- **Function**:
+  - Translates natural language requests into a list of source types or source IDs.
+  - Returns a Qdrant filter structure using "OR" logic (matches *any* of the specified sources).
+- **Application**: Applied to the semantic search phase, filtering documents by their `source` (type) or `source_instance_id`.
+
 ## CLI Features
 
 ### Chain of Thought Display (`--show-cot`)
