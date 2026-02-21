@@ -31,6 +31,7 @@ class AgentState(TypedDict):
     answer: str
     router_cot: Dict[str, Any]  # Chain of Thought trace from Router
     generator_cot: str  # Chain of Thought rationale from Generator
+    routing_summary: str  # Summary of routing decisions
 
 
 class RouteSignature(dspy.Signature):
@@ -223,6 +224,7 @@ class RAGAgent:
             "messages": state.get("messages", []) + [AIMessage(content=summary)],
             "router_cot": router_cot,
             "dynamic_query": state.get("dynamic_query", {}),
+            "routing_summary": summary,
         }
 
     def retrieve(self, state: AgentState) -> Dict[str, Any]:
@@ -266,7 +268,11 @@ class RAGAgent:
         generator_cot = ""
         try:
             with dspy.context(lm=self.generator_lm):
-                pred = self.dspy_module(question=question, context=context_str)
+                pred = self.dspy_module(
+                    question=question,
+                    context=context_str,
+                    routing_summary=state.get("routing_summary", ""),
+                )
                 generator_cot = getattr(pred, "rationale", "")
 
             answer = getattr(pred, "answer", str(pred))
@@ -288,6 +294,7 @@ class RAGAgent:
             answer="",
             router_cot={},
             generator_cot="",
+            routing_summary="",
         )
 
         return self.graph.invoke(initial_state)

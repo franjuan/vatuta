@@ -1154,15 +1154,15 @@ test = ["pytest"]
 
 [[package]]
 name = "dspy"
-version = "3.1.2"
+version = "3.1.3"
 description = "DSPy"
 optional = false
 python-versions = "<3.15,>=3.10"
 groups = ["main"]
 markers = "python_version == \"3.12\" or python_version == \"3.13\""
 files = [
-    {file = "dspy-3.1.2-py3-none-any.whl", hash = "sha256:23b98bf5abeda260722c445d397d07ea27488c204b8c0ccd6d3e607c4b41bc6b"},
-    {file = "dspy-3.1.2.tar.gz", hash = "sha256:6dfd8a4bbf74b1b432ff466468994a590c43fce0d45c2c0094313c9314aa3bb6"},
+    {file = "dspy-3.1.3-py3-none-any.whl", hash = "sha256:26f983372ebb284324cc2162458f7bce509ef5ef7b48be4c9f490fa06ea73e37"},
+    {file = "dspy-3.1.3.tar.gz", hash = "sha256:e2fd9edc8678e0abcacd5d7b901f37b84a9f48a3c50718fc7fee95a492796019"},
 ]
 
 [package.dependencies]
@@ -1171,7 +1171,7 @@ asyncer = "0.0.8"
 cachetools = ">=5.5.0"
 cloudpickle = ">=3.0.0"
 diskcache = ">=5.6.0"
-gepa = {version = "0.0.24", extras = ["dspy"]}
+gepa = {version = "0.0.26", extras = ["dspy"]}
 json-repair = ">=0.54.2"
 litellm = ">=1.64.0"
 numpy = ">=1.26.0"
@@ -1538,21 +1538,21 @@ tqdm = ["tqdm"]
 
 [[package]]
 name = "gepa"
-version = "0.0.24"
+version = "0.0.26"
 description = "A framework for optimizing textual system components (AI prompts, code snippets, etc.) using LLM-based reflection and Pareto-efficient evolutionary search."
 optional = false
-python-versions = "<3.14,>=3.10"
+python-versions = "<3.15,>=3.10"
 groups = ["main"]
 markers = "python_version == \"3.12\" or python_version == \"3.13\""
 files = [
-    {file = "gepa-0.0.24-py3-none-any.whl", hash = "sha256:6d8b16699e7b24ed01435dea7bbbc89156a88cbb4b877b14d90e7455db2b0032"},
-    {file = "gepa-0.0.24.tar.gz", hash = "sha256:8035d1a0877661b6a63db457dc935b4878ee76acf7da1e488d7e6209bb32c054"},
+    {file = "gepa-0.0.26-py3-none-any.whl", hash = "sha256:331e40d8693a4192de2eb3b2b4df10d410ead49173f748d50c32a035cf746e63"},
+    {file = "gepa-0.0.26.tar.gz", hash = "sha256:0119ca8022e93b6236bc154a57bb910bdb117485dc067d77777933dd3e9e9ad8"},
 ]
 
 [package.extras]
 build = ["build", "packaging", "requests", "semver", "setuptools (>=77.0.1)", "twine", "wheel"]
 dev = ["build (>=1.0.3)", "gepa[build]", "gepa[test]", "pre-commit", "ruff (>=0.3.0)"]
-full = ["datasets (>=2.14.6)", "litellm (>=1.64.0)", "mlflow (>=3.0.0)", "tqdm (>=4.66.1)", "wandb"]
+full = ["datasets (>=2.14.6)", "datasets (>=4.5.0)", "litellm (>=1.64.0)", "litellm (>=1.81.0)", "mlflow (>=3.0.0)", "mlflow-skinny (>=3.8.1)", "pyarrow (>=22.0.0)", "pydantic (>=2.12.0)", "tiktoken (>=0.12.0)", "tqdm (>=4.66.1)", "wandb", "wandb (>=0.23.0)"]
 test = ["gepa[full]", "pyright", "pytest"]
 
 [[package]]
@@ -2563,21 +2563,21 @@ tenacity = ">=8.1.0,<8.4.0 || >8.4.0,<10.0.0"
 
 [[package]]
 name = "langchain-core"
-version = "1.2.5"
+version = "1.2.13"
 description = "Building applications with LLMs through composability"
 optional = false
 python-versions = "<4.0.0,>=3.10.0"
 groups = ["main"]
 markers = "python_version == \"3.12\" or python_version == \"3.13\""
 files = [
-    {file = "langchain_core-1.2.5-py3-none-any.whl", hash = "sha256:3255944ef4e21b2551facb319bfc426057a40247c0a05de5bd6f2fc021fbfa34"},
-    {file = "langchain_core-1.2.5.tar.gz", hash = "sha256:d674f6df42f07e846859b9d3afe547cad333d6bf9763e92c88eb4f8aaedcd3cc"},
+    {file = "langchain_core-1.2.13-py3-none-any.whl", hash = "sha256:b31823e28d3eff1e237096d0bd3bf80c6f9624eb471a9496dbfbd427779f8d82"},
+    {file = "langchain_core-1.2.13.tar.gz", hash = "sha256:d2773d0d0130a356378db9a858cfeef64c3d64bc03722f1d4d6c40eb46fdf01b"},
 ]
 
 [package.dependencies]
 jsonpatch = ">=1.33.0,<2.0.0"
 langsmith = ">=0.3.45,<1.0.0"
-packaging = ">=23.2.0,<26.0.0"
+packaging = ">=23.2.0"
 pydantic = ">=2.7.4,<3.0.0"
 pyyaml = ">=5.3.0,<7.0.0"
 tenacity = ">=8.1.0,<8.4.0 || >8.4.0,<10.0.0"

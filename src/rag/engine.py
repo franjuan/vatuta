@@ -40,6 +40,7 @@ class RAGAnswer(dspy.Signature):
     """Answer concisely using only the provided context; admit if unknown."""
 
     context: str = dspy.InputField(desc="Relevant context from retrieved documents")
+    routing_summary: str = dspy.InputField(desc="Summary of how documents were filtered")
     question: str = dspy.InputField()
     answer: str = dspy.OutputField(desc="Concise answer grounded in the context")
 
@@ -52,9 +53,9 @@ class DSPyRAGModule(dspy.Module):
         super().__init__()
         self.generate = dspy.ChainOfThought(RAGAnswer)
 
-    def forward(self, question: str, context: str) -> dspy.Prediction:
+    def forward(self, question: str, context: str, routing_summary: str = "") -> dspy.Prediction:
         """Generate answer from question and context."""
-        pred = self.generate(context=context, question=question)
+        pred = self.generate(context=context, question=question, routing_summary=routing_summary)
         return dspy.Prediction(answer=getattr(pred, "answer", ""), rationale=getattr(pred, "rationale", ""))
 
 
