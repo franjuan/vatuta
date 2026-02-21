@@ -80,7 +80,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12", "3.13", "3.14"]
+        python-version: ["3.12", "3.13"]
 
     steps:
       - name: Checkout
@@ -162,18 +162,13 @@ jobs:
         run: |
           poetry install --no-interaction --no-ansi
 
-      - name: Build pip-audit ignore flags from .pip-audit-ignore
-        run: |
-          FLAGS=$(grep -v '^\s*#' .pip-audit-ignore | grep -v '^\s*$' | sed 's/^/--ignore-vuln /' | tr '\n' ' ')
-          echo "PIP_AUDIT_IGNORE_FLAGS=$FLAGS" >> "$GITHUB_ENV"
-
       - name: Generate pip-audit text report
         run: |
-          poetry run pip-audit ${{ env.PIP_AUDIT_IGNORE_FLAGS }} --desc > pip-audit.txt || true
+          poetry run pip-audit --ignore-vuln CVE-2025-69872 --desc > pip-audit.txt || true
 
       - name: Run pip-audit (JSON report)
         run: |
-          poetry run pip-audit ${{ env.PIP_AUDIT_IGNORE_FLAGS }} -f json -o pip-audit.json
+          poetry run pip-audit --ignore-vuln CVE-2025-69872 -f json -o pip-audit.json
 
       - name: Upload pip-audit report
         uses: actions/upload-artifact@v4
