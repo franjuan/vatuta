@@ -443,6 +443,19 @@ def ask(
                     )
                 )
 
+        if show_cot or state.verbose:
+            # Routing Summary (added by Agent in 'messages')
+            routing_summary = result.get("routing_summary")
+
+            if routing_summary:
+                console.print(
+                    Panel(
+                        routing_summary,
+                        title="[bold blue]Routing Summary[/bold blue]",
+                        border_style="blue",
+                    )
+                )
+
         console.print(f"\n[bold]Question:[/bold] {question}")
         console.print(Panel(result["answer"], title="[bold green]Answer[/bold green]", border_style="green"))
 

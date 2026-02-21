@@ -5,7 +5,7 @@ repos:
   # 1) Generic hygiene hooks
   # ------------------------------
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+    rev: v5.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -19,13 +19,13 @@ repos:
   # 2) Format and style
   # ------------------------------
   - repo: https://github.com/psf/black
-    rev: 26.1.0
+    rev: 24.10.0
     hooks:
       - id: black
         language_version: python3.12
 
   - repo: https://github.com/pycqa/isort
-    rev: 8.0.0
+    rev: 5.13.2
     hooks:
       - id: isort
         language_version: python3.12
@@ -33,7 +33,7 @@ repos:
 
   # Ruff: fast linter replacing flake8 (+ many plugins)
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.2
+    rev: v0.8.2
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -43,7 +43,7 @@ repos:
   # 3) Static typing (mypy)
   # ------------------------------
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
+    rev: v1.13.0
     hooks:
       - id: mypy
         language_version: python3.12
@@ -64,14 +64,14 @@ repos:
   # 4) Code security
   # ------------------------------
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.9.3
+    rev: 1.8.0
     hooks:
       - id: bandit
         language_version: python3.12
         args: ["-q", "-ll"]
 
   - repo: https://github.com/returntocorp/semgrep
-    rev: v1.152.0
+    rev: v1.99.0
     hooks:
       - id: semgrep
         args: ["--config", "p/ci"]
@@ -100,11 +100,12 @@ repos:
           - ".secrets.baseline"
 
   - repo: https://github.com/pypa/pip-audit
-    rev: v2.10.0
+    rev: v2.7.3
     hooks:
       - id: pip-audit
-        name: pip-audit (ignored vulns from .pip-audit-ignore)
-        entry: bash -c 'grep -v "^\s*#" .pip-audit-ignore | grep -v "^\s*$" | xargs -I{} echo "--ignore-vuln {}" | xargs poetry run pip-audit'
+        entry: poetry run pip-audit
+        #args: ["--ignore-vuln", "CVE-2025-68664"]
+        args: ["--ignore-vuln", "CVE-2025-69872"]
         language: system
         pass_filenames: false
 
@@ -112,7 +113,7 @@ repos:
   # 7) Spell checking
   # ------------------------------
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.1
+    rev: v2.3.0
     hooks:
       - id: codespell
         additional_dependencies:
@@ -123,13 +124,12 @@ repos:
   # 8) Docs & Polishing
   # ------------------------------
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.21.0
+    rev: v0.15.0
     hooks:
       - id: markdownlint-cli2
-        language_version: "22.14.0"
 
   - repo: https://github.com/adrienverge/yamllint
-    rev: v1.38.0
+    rev: v1.35.1
     hooks:
       - id: yamllint
         args: ["-d", "{extends: default, rules: {line-length: disable, truthy: {check-keys: false}}}"]
