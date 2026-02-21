@@ -104,7 +104,7 @@ repos:
     hooks:
       - id: pip-audit
         entry: poetry run pip-audit
-        #args: ["--ignore-vuln", "CVE-2025-68664"]
+        #args: ["--ignore-vuln", "CVE-2025-68664"] To disable vulns
         args: ["--ignore-vuln", "CVE-2025-69872"]
         language: system
         pass_filenames: false
