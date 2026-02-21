@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, TypedDict
+from typing import Any, Dict, List, TypedDict, cast
 
 import dspy
 from langchain_core.documents import Document
@@ -13,8 +13,7 @@ from langgraph.graph.state import CompiledStateGraph
 from src.models.config import VatutaConfig
 from src.rag.engine import DSPyRAGModule, build_dspy_lm
 from src.rag.qdrant_manager import QdrantDocumentManager
-from src.rag.tools import DateFilterTool, JiraTicketTool
-from src.rag.tools.source_filter import SourceFilterTool
+from src.rag.tools import AgentTool, DateFilterTool, JiraTicketTool, SourceFilterTool
 from src.sources.source import Source
 
 logger = logging.getLogger(__name__)
@@ -76,7 +75,15 @@ class RAGAgent:
         # 3) Router Signature (ReAct initialized in route node to inject tools)
         self.router_signature = RouteSignature
 
-        # 4) Build Graph
+        # 4) Agent tools — each AgentTool encapsulates its own state-mutation logic.
+        #    To add a new tool: instantiate it here; no changes to route() are needed.
+        self._tools: List[AgentTool] = [
+            DateFilterTool(),
+            JiraTicketTool(sources=self.sources, manager=self.doc_manager),
+            SourceFilterTool(),
+        ]
+
+        # 5) Build Graph
         self.graph = self._build_graph()
 
     def _build_graph(self) -> CompiledStateGraph:
@@ -95,93 +102,35 @@ class RAGAgent:
 
     def route(self, state: AgentState) -> Dict[str, Any]:
         """Decide what to do: call tools using DSPy ReAct or finish."""
-        # Calculate current time
+        # Provide current time and available sources in the prompt so the LLM can
+        # resolve relative dates and restrict searches to known sources.
         current_time = datetime.now(timezone.utc).isoformat()
-
-        # Build available sources text
-        sources_info = [f"- {s.source_type} (ID: {s.source_id})" for s in self.sources]
-        sources_text = "\n".join(sources_info)
-
-        # Prepend current time and sources to prompt
-        original_question = state["question"]
+        sources_text = "\n".join(f"- {s.source_type} (ID: {s.source_id})" for s in self.sources)
         question = (
-            f"Current Time: {current_time}\n" f"Available Sources:\n{sources_text}\n\n" f"Question: {original_question}"
+            f"Current Time: {current_time}\n" f"Available Sources:\n{sources_text}\n\n" f"Question: {state['question']}"
         )
 
-        # --- Tools as functions capturing state ---
-
-        def date_filter(start_date: str, end_date: str) -> str:
-            """Apply date filter to search query (ISO format YYYY-MM-DD)."""
-            f = DateFilterTool().invoke({"start_date": start_date, "end_date": end_date})
-            if f:
-                dynamic_query = state.get("dynamic_query", {})
-                if not dynamic_query:
-                    state["dynamic_query"] = f
-                else:
-                    dynamic_query.setdefault("must", [])
-                    if "must" in f:
-                        dynamic_query["must"].extend(f["must"])
-                    state["dynamic_query"] = dynamic_query
-                return f"Applied date filter: {start_date} to {end_date}"
-            return "No date filter applied."
-
-        def jira_ticket_lookup(ticket_ids: List[str]) -> str:
-            """Lookup specific Jira tickets by ID (e.g. ['PROJ-123'])."""
-            tool = JiraTicketTool(sources=self.sources, manager=self.doc_manager)
-            docs = tool.invoke({"ticket_ids": ticket_ids})
-            if docs:
-                state.setdefault("specific_docs", [])
-                state["specific_docs"].extend(docs)
-                return f"Retrieved {len(docs)} Jira tickets."
-            return "No Jira tickets found."
-
-        def source_filter(source_types: List[str] | None = None, source_ids: List[str] | None = None) -> str:
-            """Apply filter to restrict search to specific source types or IDs."""
-            f = SourceFilterTool().invoke({"source_types": source_types, "source_ids": source_ids})
-            if not f:
-                return "No source filter applied."
-
-            dynamic_query = state.get("dynamic_query", {})
-            if not dynamic_query:
-                state["dynamic_query"] = f
-            else:
-                # TODO: In complex logics, we should use a more sophisticated approach to merge filters.
-                # For now, we assume that the filters are not conflicting.
-                if "must" in f:
-                    dynamic_query.setdefault("must", [])
-                    dynamic_query["must"].extend(f["must"])
-                if "should" in f:
-                    dynamic_query.setdefault("should", [])
-                    dynamic_query["should"].extend(f["should"])
-                state["dynamic_query"] = dynamic_query
-
-            applied = []
-            if source_types:
-                applied.append(f"types={source_types}")
-            if source_ids:
-                applied.append(f"ids={source_ids}")
-            return f"Applied source filter: {', '.join(applied)}"
-
-        tools = [date_filter, jira_ticket_lookup, source_filter]
+        # Wrap every AgentTool into a plain callable that captures the current
+        # state.  DSPy introspects these callables to build the ReAct prompt.
+        tools = [tool.as_agent_callable(cast(Dict[str, Any], state)) for tool in self._tools]
 
         # Initialize ReAct agent with tools
         router_agent = dspy.ReAct(self.router_signature, tools=tools, max_iters=5)
 
         # Execute with Router LM
         summary = ""
-        router_cot = {}
+        router_cot: Dict[str, Any] = {}
         with dspy.context(lm=self.router_lm):
             try:
                 pred = router_agent(question=question)
                 summary = pred.routing_summary
 
-                # Capture CoT trace
+                # Capture CoT trace from the last LM interaction.
                 history = self.router_lm.history
                 if history:
-                    last_interaction = history[-1]
+                    last = history[-1]
 
-                    # sanitize response
-                    raw_response = last_interaction.get("response", {})
+                    raw_response = last.get("response", {})
                     try:
                         if hasattr(raw_response, "model_dump"):
                             response_dict = raw_response.model_dump()
@@ -194,9 +143,8 @@ class RAGAgent:
                     except Exception:
                         response_dict = str(raw_response)
 
-                    # Structure the trace
                     messages_list: List[Any] = []
-                    for m in last_interaction.get("messages", []):
+                    for m in last.get("messages", []):
                         try:
                             if isinstance(m, dict):
                                 messages_list.append(m)
@@ -210,7 +158,7 @@ class RAGAgent:
                             messages_list.append(str(m))
 
                     router_cot = {
-                        "prompt": last_interaction.get("prompt", ""),
+                        "prompt": last.get("prompt", ""),
                         "response": response_dict,
                         "messages": messages_list,
                     }
@@ -244,18 +192,15 @@ class RAGAgent:
         specific_docs = state.get("specific_docs", [])
         vector_docs = state.get("vector_docs", [])
 
-        # Combine contexts
-        combined_docs = (specific_docs or []) + (vector_docs or [])
-
-        # Deduplicate
-        unique_docs = []
-        seen = set()
-        for d in combined_docs:
-            # Use source_doc_id or content hash
-            k = d.metadata.get("source_doc_id", d.page_content[:20])
-            if k not in seen:
+        # Combine and deduplicate context documents.
+        combined = (specific_docs or []) + (vector_docs or [])
+        unique_docs: List[Document] = []
+        seen: set = set()
+        for d in combined:
+            key = d.metadata.get("source_doc_id", d.page_content[:20])
+            if key not in seen:
                 unique_docs.append(d)
-                seen.add(k)
+                seen.add(key)
 
         context_str = "\n\n".join(
             [
@@ -264,7 +209,6 @@ class RAGAgent:
             ]
         )
 
-        # DSPy Generation with Generator LM
         generator_cot = ""
         try:
             with dspy.context(lm=self.generator_lm):

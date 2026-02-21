@@ -1,4 +1,4 @@
-"""Date and Time related tools."""
+"""Date and time related RAG agent tools."""
 
 import logging
 from datetime import datetime, timedelta, timezone
@@ -7,11 +7,14 @@ from typing import Any, Dict, Optional, Type
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 
+from src.rag.tools.base import AgentTool
+from src.rag.tools.utils import merge_filter
+
 logger = logging.getLogger(__name__)
 
 
 class TimeTool(BaseTool):
-    """Tool to get the current time."""
+    """Tool to get the current server time."""
 
     name: str = "get_current_time"
     description: str = (
@@ -24,14 +27,14 @@ class TimeTool(BaseTool):
 
 
 class DateFilterSchema(BaseModel):
-    """Schema for date filtering parameters."""
+    """Input schema for date filtering."""
 
     start_date: Optional[str] = Field(None, description="Start date in ISO format (YYYY-MM-DD) or ISO datetime.")
     end_date: Optional[str] = Field(None, description="End date in ISO format (YYYY-MM-DD) or ISO datetime.")
 
 
-class DateFilterTool(BaseTool):
-    """Tool to create date filters for vector search."""
+class DateFilterTool(AgentTool):
+    """Tool that creates a Qdrant date-range filter and applies it to the agent state."""
 
     name: str = "date_filter"
     description: str = (
@@ -42,12 +45,14 @@ class DateFilterTool(BaseTool):
     handle_tool_error: bool = True
 
     def _run(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
-        """Convert explicit dates to Qdrant filter."""
+        """Build a Qdrant range filter for ``metadata.source_updated_at``.
+
+        Returns an empty dict when no dates are provided.
+        """
         if not start_date and not end_date:
             return {}
 
-        # Construct Qdrant Range Filter for 'source_updated_at'
-        time_range = {}
+        time_range: Dict[str, str] = {}
         if start_date:
             time_range["gte"] = start_date
         if end_date:
@@ -55,9 +60,31 @@ class DateFilterTool(BaseTool):
 
         return {"must": [{"key": "metadata.source_updated_at", "range": time_range}]}
 
+    def apply_to_state(
+        self,
+        state: Dict[str, Any],
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> str:
+        """Build a date filter and merge it into ``state["dynamic_query"]``.
+
+        Args:
+            state: Mutable agent state dict.
+            start_date: Lower bound date in ISO format (inclusive).
+            end_date: Upper bound date in ISO format (inclusive).
+
+        Returns:
+            Human-readable observation for the LLM trajectory.
+        """
+        qdrant_filter = self._run(start_date=start_date, end_date=end_date)
+        if not qdrant_filter:
+            return "No date filter applied."
+        merge_filter(state, qdrant_filter)
+        return f"Applied date filter: {start_date} to {end_date}"
+
 
 class DateAdderSchema(BaseModel):
-    """Schema for date arithmetic."""
+    """Input schema for date arithmetic."""
 
     base_date: Optional[str] = Field(
         None, description="Base date in ISO format (e.g. '2023-10-01T12:00:00'). If not provided, uses current time."
@@ -72,7 +99,7 @@ class DateAdderSchema(BaseModel):
 
 
 class DateAdderTool(BaseTool):
-    """Tool to perform date arithmetic (add/subtract time)."""
+    """Tool to perform date arithmetic (add/subtract time from a base date)."""
 
     name: str = "date_adder"
     description: str = "Useful for calculating new dates by adding/subtracting time (days, hours) to a base date."
@@ -90,23 +117,18 @@ class DateAdderTool(BaseTool):
         milliseconds: int = 0,
         microseconds: int = 0,
     ) -> str:
-        """Calculate new date."""
+        """Return an ISO datetime string offset from *base_date* by the given delta."""
         if not base_date:
             dt = datetime.now(timezone.utc)
         else:
             try:
-                # Parse ISO string
                 dt = datetime.fromisoformat(base_date.replace("Z", "+00:00"))
             except ValueError:
-                # Fallback for simple date
                 try:
                     dt = datetime.strptime(base_date, "%Y-%m-%d")
                 except ValueError:
                     return f"Error: Invalid date format '{base_date}'. Use ISO 8601."
 
-        # Ensure dt is timezone aware if obtained from simple date string, assume UTC for consistency logic if needed
-        # but datetime.strptime returns naive.
-        # If naive, make it UTC
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
 
@@ -119,5 +141,4 @@ class DateAdderTool(BaseTool):
             milliseconds=milliseconds,
             microseconds=microseconds,
         )
-        new_dt = dt + delta
-        return new_dt.isoformat()
+        return (dt + delta).isoformat()
