@@ -178,7 +178,7 @@ def test_delete_documents_by_filter(manager: QdrantDocumentManager) -> None:
     points_selector = call_args[1]["points_selector"]
     # Verify it constructs a FilterSelector (or just Filter object)
     # Since we passed a Filter object directly to delete, points_selector IS the Filter.
-    assert points_selector.must[0].key == "source"
+    assert points_selector.must[0].key == "metadata.source"
     assert points_selector.must[0].match.value == "test_source"
 
 
