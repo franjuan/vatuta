@@ -60,7 +60,7 @@ class TestJiraSource(unittest.TestCase):
                 }
             )
 
-        mock_issue = {
+        mock_issue: dict[str, Any] = {
             "key": "TEST-1",
             "self": "https://jira.example.com/rest/api/2/issue/125142",
             "fields": {
