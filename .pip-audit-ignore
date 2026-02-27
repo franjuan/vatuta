@@ -1,0 +1,17 @@
+# Accepted vulnerabilities for pip-audit
+# Format: one CVE/GHSA/PYSEC-ID per line
+# Lines starting with '#' are comments and are ignored
+# Document the reason for acceptance and the review date
+#
+# Example:
+#   # CVE-XXXX-XXXXX: No fix available as of 2025-01-01.
+#   # Impact mitigated by X. Revisit when a patched version is released.
+#   CVE-XXXX-XXXXX
+
+# CVE-2025-69872: No fix available. Impact limited to the development environment.
+# Revisit when a patched version of the affected dependency is released.
+CVE-2025-69872
+
+# CVE-2026-27794: Fix available, although main dependency does not include yet
+# Revisit when a patched version of the main dependency is released.
+CVE-2026-27794

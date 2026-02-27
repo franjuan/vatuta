@@ -22,7 +22,7 @@ sentence-transformers = "^5.1.2"
 spacy = "^3.8.7"
 slack-sdk = "^3.37.0"
 python-gitlab = "^6.5.0"
-dspy-ai = "^3.0.4"
+dspy-ai = "^3.1.2"
 anthropic = "^0.71.0"
 langgraph = "^1.0.2"
 #Google
