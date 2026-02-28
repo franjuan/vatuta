@@ -118,7 +118,7 @@ Run all checks:
 just check
 ```
 
-Audit dependencies:
+Audit dependencies for vulnerabilities:
 
 ```bash
 just audit
@@ -227,12 +227,12 @@ For detailed setup instructions and usage examples, see [docs/integrations.md](d
 
 ## Contributing
 
-1. Fork the project
-1. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-1. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-1. Push to the branch (`git push origin feature/AmazingFeature`)
-1. Open a Pull Request
+For more information, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## License
+## Licensing
 
-This project is licensed under the MIT License. See the `LICENSE` file for more details.
+- **Code** is licensed under the **Apache License 2.0**. See `LICENSE`.
+- **Documentation & content** (docs, posts, diagrams, and original images unless stated otherwise)
+  are licensed under **CC BY 4.0**. See `LICENSE-docs`.
+- **Third-party materials** (e.g., dependencies, icons, fonts, datasets, model outputs) may be
+  subject to their own licenses/terms. See `THIRD_PARTY.md`.

@@ -12,6 +12,44 @@ env:
   PACKAGE_NAME: "vatuta"
 
 jobs:
+  dco:
+    name: DCO (Signed-off-by)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Check Signed-off-by on all PR commits
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = context.payload.pull_request.number;
+
+            const commits = await github.paginate(
+              github.rest.pulls.listCommits,
+              { owner, repo, pull_number, per_page: 100 }
+              );
+
+            const missing = [];
+            for (const c of commits) {
+              const msg = c.commit && c.commit.message ? c.commit.message : "";
+              if (!/^\s*Signed-off-by:\s+.+<.+>\s*$/mi.test(msg)) {
+                  missing.push(`${c.sha.substring(0, 7)}: ${msg.split('\n')[0]}`);
+              }
+            }
+
+            if (missing.length) {
+              core.setFailed(
+                `DCO sign-off missing in ${missing.length} commit(s):\n` +
+                missing.map(x => `- ${x}`).join('\n') +
+                `\n\nFix: rebase/amend commits adding sign-off:\n` +
+                `  git commit -s ...\n` +
+                `  # or for existing commits:\n` +
+                `  git commit --amend -s\n`
+              );
+            } else {
+              core.info(`All ${commits.length} commits contain Signed-off-by.`);
+            }
   pre-commit:
     name: Lint & static checks (pre-commit)
     runs-on: ubuntu-latest
