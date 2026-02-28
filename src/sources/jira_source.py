@@ -161,6 +161,11 @@ class JiraSource(Source[JiraConfig]):
 
         self._connection_validated = False
 
+    @property
+    def source_type(self) -> str:
+        """Return the source type."""
+        return "jira"
+
     def _resolve_user_entity(self, user_obj: Any) -> Optional[str]:
         """Resolve a JIRA user object to a global entity ID."""
         if not self.entity_manager or not user_obj:
@@ -221,6 +226,18 @@ class JiraSource(Source[JiraConfig]):
             self._connection_validated = True
         except Exception as e:
             raise ValueError(f"Failed to authenticate with JIRA: {e}") from e
+
+    def get_specific_query(self, document_ids: List[str]) -> Optional[Dict[str, Any]]:
+        """Check if any provided ID looks like a Jira key and return a filter."""
+        if not document_ids:
+            return None
+
+        return {
+            "must": [
+                {"key": "metadata.source", "match": {"value": "jira"}},
+                {"key": "metadata.source_doc_id", "match": {"any": document_ids}},
+            ]
+        }
 
     def collect_documents_and_chunks(
         self,
@@ -587,7 +604,16 @@ class JiraSource(Source[JiraConfig]):
         # Resolve mentions
         chunk_tags.extend(self._resolve_mentions(ticket_content))
 
-        chunks.append(self._make_chunk(doc=doc, chunk_index=chunk_idx, text=ticket_content, tags=chunk_tags))
+        chunks.append(
+            self._make_chunk(
+                doc=doc,
+                chunk_index=chunk_idx,
+                text=ticket_content,
+                tags=chunk_tags,
+                created=doc.source_created_at,
+                updated=doc.source_updated_at,
+            )
+        )
         chunk_idx += 1
 
         # Chunk 2: Relationships
@@ -595,17 +621,27 @@ class JiraSource(Source[JiraConfig]):
         if rel_text:
             chunks.append(
                 self._make_chunk(
-                    doc=doc, chunk_index=chunk_idx, text=rel_text, tags=system_tags + ["type:relationship"] + rel_tags
+                    doc=doc,
+                    chunk_index=chunk_idx,
+                    text=rel_text,
+                    tags=system_tags + ["type:relationship"] + rel_tags,
+                    created=doc.source_updated_at,  # Relationships change implies update
+                    updated=doc.source_updated_at,
                 )
             )
             chunk_idx += 1
 
         # Chunk 3+: History
         history_chunks_data = self._format_history(issue)
-        for hist_text, hist_tags in history_chunks_data:
+        for hist_text, hist_tags, hist_ts in history_chunks_data:
             chunks.append(
                 self._make_chunk(
-                    doc=doc, chunk_index=chunk_idx, text=hist_text, tags=system_tags + ["type:history"] + hist_tags
+                    doc=doc,
+                    chunk_index=chunk_idx,
+                    text=hist_text,
+                    tags=system_tags + ["type:history"] + hist_tags,
+                    created=self._parse_jira_time(str(hist_ts)) if hist_ts else None,
+                    updated=self._parse_jira_time(str(hist_ts)) if hist_ts else None,
                 )
             )
             chunk_idx += 1
@@ -713,8 +749,12 @@ class JiraSource(Source[JiraConfig]):
 
         return "\n".join(lines), tags
 
-    def _format_history(self, issue: Dict[str, Any]) -> List[Tuple[str, List[str]]]:
-        """Format changelog history into chunks."""
+    def _format_history(self, issue: Dict[str, Any]) -> List[Tuple[str, List[str], str]]:
+        """Format changelog history into chunks.
+
+        Returns:
+            List of tuples: (text, tags, timestamp_string)
+        """
         changelog = issue.get("changelog", {})
         if not changelog:
             return []
@@ -768,13 +808,17 @@ class JiraSource(Source[JiraConfig]):
 
             # Chunking by HISTORY entry count
             if len(batch_histories) >= batch_size:
-                chunks_data.append(("\n".join(batch_histories), list(batch_tags)))
+                # Store the timestamp of the first item in the batch for 'created' approximation
+                first_ts_in_batch = history.get("created", "")
+                chunks_data.append(("\n".join(batch_histories), list(batch_tags), first_ts_in_batch))
                 batch_histories = []
                 batch_tags = set()
 
         # Remaining
         if batch_histories:
-            chunks_data.append(("\n".join(batch_histories), list(batch_tags)))
+            # We'll use the last known created (from loop) or fallback
+            ts = histories[-1].get("created", "") if histories else ""
+            chunks_data.append(("\n".join(batch_histories), list(batch_tags), ts))
 
         return chunks_data
 
@@ -800,6 +844,93 @@ class JiraSource(Source[JiraConfig]):
             self._embedding_model = SentenceTransformer(self.config.chunk_embedding_model)
         return self._embedding_model
 
+    def _create_comment_chunk(
+        self,
+        doc: DocumentUnit,
+        comments: List[dict],
+        base_tags: List[str],
+        chunk_index: int,
+    ) -> ChunkRecord:
+        """Create a chunk from a list of comments.
+
+        Args:
+            doc: The parent document.
+            comments: List of comments in this chunk.
+            base_tags: Base system tags to apply.
+            chunk_index: The index for this chunk.
+
+        Returns:
+            ChunkRecord: The created chunk.
+        """
+        chunk_text = "\n\n".join([self._format_comment_for_embedding(cm)[0] for cm in comments])
+
+        all_tags = set(base_tags)
+        all_tags.add("type:comment")
+
+        for cm in comments:
+            # Comment content tags (author name)
+            _, c_tags = self._format_comment_for_embedding(cm)
+            all_tags.update(c_tags)
+
+            # Author Entity
+            author_obj = cm.get("author", {})
+            author_ent_id = self._resolve_user_entity(author_obj)
+            if author_ent_id:
+                all_tags.add(f"user:{author_ent_id}")
+
+            # Mentions
+            all_tags.update(self._resolve_mentions(cm.get("body", "")))
+
+        c_created_first = comments[0].get("created")
+        c_created_last = comments[-1].get("created")
+
+        return self._make_chunk(
+            doc,
+            chunk_index,
+            chunk_text,
+            list(all_tags),
+            created=self._parse_jira_time(str(c_created_first)) if c_created_first else None,
+            updated=self._parse_jira_time(str(c_created_last)) if c_created_last else None,
+        )
+
+    def _should_split_chunk(
+        self,
+        current_count: int,
+        current_size: int,
+        next_len: int,
+        current_emb: Any,
+        prev_emb: Optional[Any],
+    ) -> bool:
+        """Determine if a new chunk should be started.
+
+        Args:
+            current_count: Number of comments in the current chunk.
+            current_size: Total character size of the current chunk.
+            next_len: Length of the next comment to add.
+            current_emb: Embedding of the next comment.
+            prev_emb: Embedding of the previous comment (if any).
+
+        Returns:
+            True if the chunk should be split, False otherwise.
+        """
+        # 0. If current chunk is empty, can't split
+        if current_count == 0:
+            return False
+
+        # 1. Size/Count-based splitting
+        if (current_size + next_len > self.config.chunk_max_size_chars) or (
+            current_count + 1 > self.config.chunk_max_count
+        ):
+            return True
+
+        # 2. Semantic splitting
+        if prev_emb is not None:
+            similarity = cos_sim(current_emb, prev_emb).item()
+            if similarity < self.config.chunk_similarity_threshold:
+                return True
+
+        return False
+
     def _build_chunks_for_comments(
         self, doc: DocumentUnit, comments: List[dict], base_tags: List[str], start_index: int = 0
     ) -> List[ChunkRecord]:
@@ -814,64 +945,17 @@ class JiraSource(Source[JiraConfig]):
         chunks: List[ChunkRecord] = []
         current_chunk_comments: List[dict] = []
         current_chunk_size = 0
-
-        # We need to track the "logical" index of the chunk being created
         chunk_counter = start_index
-
         prev_comment_emb: Optional[Any] = None
 
         for _idx, (c, emb) in enumerate(zip(sorted_comments, embeddings, strict=False)):
             text, _ = self._format_comment_for_embedding(c)
             comment_len = len(text)
 
-            should_split = False
-
-            # 1. Size/Count-based splitting
-            if current_chunk_comments:
-                if (current_chunk_size + comment_len > self.config.chunk_max_size_chars) or (
-                    len(current_chunk_comments) + 1 > self.config.chunk_max_count
-                ):
-                    should_split = True
-
-            # 2. Semantic splitting
-            if not should_split and prev_comment_emb is not None:
-                similarity = cos_sim(emb, prev_comment_emb).item()
-                if similarity < self.config.chunk_similarity_threshold:
-                    should_split = True
-
-            if should_split and current_chunk_comments:
-                # Flush
-                chunk_text = "\n\n".join([self._format_comment_for_embedding(cm)[0] for cm in current_chunk_comments])
-                # Collect tags
-                all_tags = set(base_tags)
-                all_tags.add("type:comment")
-
-                # Regex for mentions
-                mentions_re = re.compile(r"\[~(accountid:[a-zA-Z0-9:-]+|[^\]]+)\]")
-
-                for cm in current_chunk_comments:
-                    _, c_tags = self._format_comment_for_embedding(cm)
-                    all_tags.update(c_tags)
-
-                    # Author Entity
-                    author_obj = cm.get("author", {})
-                    author_ent_id = self._resolve_user_entity(author_obj)
-                    if author_ent_id:
-                        all_tags.add(f"user:{author_ent_id}")
-
-                    # Mentions
-                    mentions = mentions_re.findall(cm.get("body", ""))
-                    for m in mentions:
-                        m_id = m.replace("accountid:", "")
-                        if len(m_id) > 5 and self.entity_manager:
-                            try:
-                                ent = self.entity_manager.get_user_by_source_id("jira", self.source_id, m_id)
-                                if ent:
-                                    all_tags.add(f"user:{ent.global_id}")
-                            except Exception:
-                                pass
-
-                chunks.append(self._make_chunk(doc, chunk_counter, chunk_text, list(all_tags)))
+            if self._should_split_chunk(
+                len(current_chunk_comments), current_chunk_size, comment_len, emb, prev_comment_emb
+            ):
+                chunks.append(self._create_comment_chunk(doc, current_chunk_comments, base_tags, chunk_counter))
                 chunk_counter += 1
 
                 current_chunk_comments = []
@@ -882,35 +966,7 @@ class JiraSource(Source[JiraConfig]):
             prev_comment_emb = emb
 
         if current_chunk_comments:
-            chunk_text = "\n\n".join([self._format_comment_for_embedding(cm)[0] for cm in current_chunk_comments])
-            all_tags = set(base_tags)
-            all_tags.add("type:comment")
-
-            mentions_re = re.compile(r"\[~(accountid:[a-zA-Z0-9:-]+|[^\]]+)\]")
-
-            for cm in current_chunk_comments:
-                _, c_tags = self._format_comment_for_embedding(cm)
-                all_tags.update(c_tags)
-
-                # Author Entity
-                author_obj = cm.get("author", {})
-                author_ent_id = self._resolve_user_entity(author_obj)
-                if author_ent_id:
-                    all_tags.add(f"user:{author_ent_id}")
-
-                # Mentions
-                mentions = mentions_re.findall(cm.get("body", ""))
-                for m in mentions:
-                    m_id = m.replace("accountid:", "")
-                    if len(m_id) > 5 and self.entity_manager:
-                        try:
-                            ent = self.entity_manager.get_user_by_source_id("jira", self.source_id, m_id)
-                            if ent:
-                                all_tags.add(f"user:{ent.global_id}")
-                        except Exception:
-                            pass
-
-            chunks.append(self._make_chunk(doc, chunk_counter, chunk_text, list(all_tags)))
+            chunks.append(self._create_comment_chunk(doc, current_chunk_comments, base_tags, chunk_counter))
 
         return chunks
 
@@ -920,6 +976,8 @@ class JiraSource(Source[JiraConfig]):
         chunk_index: int,
         text: str,
         tags: List[str],
+        created: Optional[datetime] = None,
+        updated: Optional[datetime] = None,
     ) -> ChunkRecord:
         content_hash = DocumentUnit.compute_hash(text.encode("utf-8"))
         chunk_id = sha256(f"{doc.document_id}|{chunk_index}|{content_hash}".encode()).hexdigest()
@@ -932,6 +990,8 @@ class JiraSource(Source[JiraConfig]):
             system_tags=tags,
             content_hash=content_hash,
             level=0,
+            source_created_at=created,
+            source_updated_at=updated,
         )
 
     def _parse_jira_time(self, time_str: str) -> Optional[datetime]:

@@ -149,6 +149,25 @@ class ConfluenceSource(Source[ConfluenceConfig]):
 
         self._connection_validated = False
 
+    @property
+    def source_type(self) -> str:
+        """Return the source type."""
+        return "confluence"
+
+    def get_specific_query(self, document_ids: List[str]) -> Optional[Dict[str, Any]]:
+        """Return a Qdrant filter query if any of the document IDs match resources in this source.
+
+        Args:
+            document_ids: List of specific document identifiers.
+
+        Returns:
+            Optional[Dict[str, Any]]: A Qdrant filter dictionary (e.g. {"must": [...]}) if a
+            match is found, or None if no specific identifier is detected.
+        """
+        # For Confluence, we might match page IDs, but currently we have no specific logic.
+        # We must align with the base class signature.
+        return None
+
     def _resolve_user_entity(self, user_obj: Any) -> Optional[str]:
         """Resolve a Confluence user object to a global entity ID."""
         if not self.entity_manager or not user_obj:
@@ -519,7 +538,16 @@ class ConfluenceSource(Source[ConfluenceConfig]):
             # Tags
             chunk_tags = system_tags + ["type:content", f"section:{section_header}"]
 
-            chunks.append(self._make_chunk(doc=doc, chunk_index=chunk_i, text=final_text, tags=chunk_tags))
+            chunks.append(
+                self._make_chunk(
+                    doc=doc,
+                    chunk_index=chunk_i,
+                    text=final_text,
+                    tags=chunk_tags,
+                    created=doc.source_created_at,
+                    updated=doc.source_updated_at,
+                )
+            )
 
         if not chunks:
             # Fallback if no text extracted?
@@ -652,6 +680,8 @@ class ConfluenceSource(Source[ConfluenceConfig]):
         chunk_index: int,
         text: str,
         tags: List[str],
+        created: Optional[datetime] = None,
+        updated: Optional[datetime] = None,
     ) -> ChunkRecord:
         content_hash = DocumentUnit.compute_hash(text.encode("utf-8"))
         chunk_id = sha256(f"{doc.document_id}|{chunk_index}|{content_hash}".encode()).hexdigest()
@@ -664,6 +694,8 @@ class ConfluenceSource(Source[ConfluenceConfig]):
             system_tags=tags,
             content_hash=content_hash,
             level=0,
+            source_created_at=created,
+            source_updated_at=updated,
         )
 
     def _parse_confluence_time(self, time_str: str) -> Optional[datetime]:

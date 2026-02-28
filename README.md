@@ -84,6 +84,10 @@ just pre-commit-install
 just run
 # or
 just assistant query="My query" k="20"
+
+# Run with Chain of Thought display (shows reasoning)
+just assistant query="My query" --show-cot
+
 ```
 
 ### Development

@@ -174,6 +174,11 @@ class SlackSource(Source[SlackConfig]):
 
         return cls(config=config, secrets=secrets, storage_path=storage_path, entity_manager=entity_manager)
 
+    @property
+    def source_type(self) -> str:
+        """Return the source type."""
+        return "slack"
+
     def __init__(
         self,
         config: SlackConfig,
@@ -688,6 +693,20 @@ class SlackSource(Source[SlackConfig]):
             msgs = sorted(thread.get("messages", []), key=lambda m: float(m.get("ts", 0.0)))
             return self.__process_windowed_messages(channel, ch_name, msgs, window_minutes)
 
+    def get_specific_query(self, document_ids: List[str]) -> Optional[Dict[str, Any]]:
+        """Return a Qdrant filter query if any of the document IDs match resources in this source.
+
+        Args:
+            document_ids: List of specific document identifiers.
+
+        Returns:
+            Optional[Dict[str, Any]]: A Qdrant filter dictionary (e.g. {"must": [...]}) if a
+            match is found, or None if no specific identifier is detected.
+        """
+        # For Slack, we might match channel IDs or message TS, but currently we have no specific logic.
+        # We must align with the base class signature.
+        return None
+
     # --------- Chunking helpers ----------
     def _resolve_user_display(self, user_id: Optional[str]) -> str:
         """Resolve a user display name from a user id.
@@ -775,6 +794,8 @@ class SlackSource(Source[SlackConfig]):
         text: str,
         tags: List[str],
         user_tags: Optional[List[str]] = None,
+        created: Optional[datetime] = None,
+        updated: Optional[datetime] = None,
     ) -> ChunkRecord:
         """Create a flat ChunkRecord for a given document and message text.
 
@@ -810,6 +831,8 @@ class SlackSource(Source[SlackConfig]):
             chunking_strategy="slack_message_line_v1",
             chunk_overlap=0,
             content_hash=content_hash,
+            source_created_at=created,
+            source_updated_at=updated,
         )
 
     def _get_embedding_model(self) -> SentenceTransformer:
@@ -859,7 +882,29 @@ class SlackSource(Source[SlackConfig]):
         chunk_text = "\n".join([self._format_message_for_chunk(cm) for cm in messages])
         all_tags, user_tags = self._collect_chunk_tags(messages)
 
-        return self._make_chunk(doc, start_idx, chunk_text, list(all_tags), user_tags=list(user_tags))
+        # Determine created/updated from messages in this chunk
+        chunk_created = None
+        chunk_updated = None
+        if messages:
+            try:
+                c_ts_first = float(messages[0].get("ts", 0))
+                c_ts_last = float(messages[-1].get("ts", 0))
+                if c_ts_first > 0:
+                    chunk_created = datetime.fromtimestamp(c_ts_first, tz=timezone.utc)
+                if c_ts_last > 0:
+                    chunk_updated = datetime.fromtimestamp(c_ts_last, tz=timezone.utc)
+            except Exception:
+                pass
+
+        return self._make_chunk(
+            doc,
+            start_idx,
+            chunk_text,
+            list(all_tags),
+            user_tags=list(user_tags),
+            created=chunk_created,
+            updated=chunk_updated,
+        )
 
     def _build_chunks_for_messages(self, doc: DocumentUnit, msgs: List[dict]) -> List[ChunkRecord]:
         """Build flat chunks for a list of Slack message dicts with multi-strategy splitting.
