@@ -9,7 +9,7 @@ You are working on **Vatuta** (Virtual Assistant for Task Understanding, Trackin
 ## Key Technologies
 
 - **LangChain**: For AI assistant functionality and conversation management
-- **DSPy**: For document understanding and retrieval
+- **DSPy**: For prompting formalization
 - **Poetry**: For dependency management
 - **Pydantic**: For data validation and settings
 - **pytest**: For testing
@@ -38,54 +38,12 @@ You **MUST** always invoke Python tools (pytest, mypy, ruff, black, python scrip
 - **Verification**: If documentation was not updated when functionality changed, the task is incomplete.
 - **Quality**: Documentation is checked by **pydocstyle** (Google convention) and **markdownlint**.
 
-## Development Environment
-
-### Setup Commands
-
-```bash
-# Install dependencies
-poetry install
-
-# Setup development environment
-just setup
-
-# Allow direnv (if using direnv)
-just direnv-allow
-
-# Activate virtual environment (IMPORTANT)
-source .venv/bin/activate
-# OR invoke python directly from the venv
-poetry run python script.py
-
-# IMPORTANT: Always use `poetry run` when executing python scripts to ensure dependencies are loaded correctly.
-# Example: `poetry run python tests/reproduce_jira_source.py`
-```
-
-### Common Development Tasks
-
-```bash
-# Run the assistant
-just run
-
-# Run tests
-just test
-
-# Format code
-just format
-
-# Lint code
-just lint
-
-# Run all checks
-just check
-```
-
 ## Code Style Guidelines
 
 ### Python Standards
 
 - Always use English for comments and documentation, even when my prompt is in Spanish
-- Use **type hints** for all function parameters and return values
+- Use **type hints** for all function parameters and return values, **mypy** used for validation
 - Follow **PEP 8** style guidelines
 - Use **f-strings** for string formatting
 - Keep functions **small and focused** (max 20 lines)
@@ -249,9 +207,12 @@ except Exception as e:
 - `justfile` - Task automation commands
 - `.envrc` - direnv configuration for automatic environment loading
 - `env.example` - Environment variables template
+- `.env` - Environment variables (not version controlled)
 - `pyrefly.toml` - Pyrefly LSP configuration
 - `.pre-commit-config.yaml` - Pre-commit hooks configuration
 - `.secrets.baseline` - detect-secrets baseline file
+- `config/vatuta.yaml.example` - Vatuta configuration file example
+- `config/vatuta.yaml` - Vatuta configuration file (not version controlled)
 
 ## Testing Guidelines
 
@@ -384,7 +345,7 @@ The project uses `pre-commit` to enforce strict code quality standards. The foll
 ### Code Style
 
 - Follow PEP8 strictly.
-- Max line length: **100**.
+- Max line length: **120**.
 - Use `snake_case` for functions and variables.
 - Use `PascalCase` for classes.
 
