@@ -73,14 +73,6 @@ run:
 assistant query k="20":
     poetry run vatuta --query "{{query}}" --k {{k}} --show-stats --show-sources
 
-# Build the package
-build:
-    poetry build
-
-# Publish to PyPI
-publish:
-    poetry publish
-
 # Update dependencies
 update:
     poetry update
@@ -100,67 +92,6 @@ setup: install dev install-spacy
 help:
     @echo "Available commands:"
     @just --list
-
-# Add all files and commit
-commit message:
-    git add .
-    git commit -m "{{message}}"
-
-# Push to remote repository (current branch)
-push:
-    git push origin $(git branch --show-current)
-
-# Push to remote repository with specific branch
-push-branch branch:
-    git push origin {{branch}}
-
-# Create a new branch
-branch name:
-    git checkout -b {{name}}
-
-# Switch to main branch
-main:
-    git checkout main
-
-# Switch to a specific branch
-switch branch:
-    git checkout {{branch}}
-
-# List all branches
-branches:
-    git branch -a
-
-# Delete a branch (local)
-delete-branch branch:
-    git branch -d {{branch}}
-
-# Show git status
-status:
-    git status
-
-# Show git log
-log:
-    git log --oneline -10
-
-# Pull latest changes from remote
-pull:
-    git pull origin $(git branch --show-current)
-
-# Pull from specific branch
-pull-branch branch:
-    git pull origin {{branch}}
-
-# Merge a branch into current branch
-merge branch:
-    git merge {{branch}}
-
-# Rebase current branch onto main
-rebase:
-    git rebase main
-
-# Show current branch
-current-branch:
-    git branch --show-current
 
 # Run pre-commit hooks
 pre-commit:
@@ -185,22 +116,6 @@ packages:
 # Update lock file
 lock:
     poetry lock
-
-# Export requirements
-export:
-    poetry export -f requirements.txt --output requirements.txt
-
-# Run with specific Python version
-python-version:
-    poetry env use python3.12
-
-# Create virtual environment
-venv:
-    poetry env create
-
-# Remove virtual environment
-venv-remove:
-    poetry env remove python
 
 # Show virtual environment path
 venv-path:

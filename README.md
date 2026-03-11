@@ -18,6 +18,13 @@ An intelligent personal assistant built with LangChain that can help you with va
 - 📄 Confluence page integration
 - 🧠 Vector-based knowledge base
 
+## Requirements
+
+- [Poetry](https://python-poetry.org/)
+- [Just](https://github.com/casey/just)
+- [direnv](https://direnv.net/) (optional but recommended for automatic environment loading)
+- [pre-commit](https://pre-commit.com/)
+
 ## Installation
 
 1. Clone the repository:
@@ -27,48 +34,11 @@ git clone git@github.com:franjuan/vatuta.git
 cd vatuta
 ```
 
-1. Install Poetry (if not already installed):
-
-```bash
-curl -sSL https://install.python-poetry.org | python3 -
-```
-
-1. Install Just (if not already installed):
-
-```bash
-# On macOS with Homebrew
-brew install just
-
-# On Linux
-curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to ~/bin
-
-# On Windows with Chocolatey
-choco install just
-```
-
-1. Install direnv (optional but recommended for automatic environment loading):
-
-```bash
-# On macOS with Homebrew
-brew install direnv
-
-# On Linux
-curl -sfL https://direnv.net/install.sh | bash
-
-# On Windows with Chocolatey
-choco install direnv
-```
-
 1. Allow direnv to load the environment (if using direnv):
 
 ```bash
 direnv allow
 ```
-
-**Note**: If you get `layout_poetry: command not found`, you have two options:
-
-- **Option A**: Use the basic direnv setup (recommended)
-- **Option B**: Install direnv Poetry plugin: `pip install direnv-poetry`
 
 1. Install pre-commit hooks (optional but recommended):
 
@@ -76,7 +46,19 @@ direnv allow
 just pre-commit-install
 ```
 
+1. Prepare environment and install dependencies:
+
+```bash
+just setup
+```
+
 ## Usage
+
+### Load sources
+
+```bash
+just load-sources
+```
 
 ### Run the assistant
 
@@ -86,13 +68,7 @@ just run
 just assistant query="My query" k="20"
 ```
 
-### Development
-
-Setup development environment:
-
-```bash
-just setup
-```
+## Development
 
 Run tests:
 
