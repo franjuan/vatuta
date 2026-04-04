@@ -1,25 +1,25 @@
 # Vatuta Personal Assistant - Justfile
 # Task automation for development
 
+# Load .env file automatically (makes direnv optional)
+set dotenv-load
+
 # Default recipe
 default:
     @just --list
 
-# Install dependencies
-install: install-spacy
+# Install runtime dependencies (app + spaCy model)
+install:
     poetry install
+    just install-spacy
 
-# Install development dependencies
+# Install development dependencies (all runtime deps + dev tools)
 dev:
     poetry install --with dev
 
-# Run tests
-test:
-    poetry run pytest
-
-# Run tests with verbose output
-test-verbose:
-    poetry run pytest -v
+# Run tests (pass args like '-v' for verbose output)
+test *args:
+    poetry run pytest {{args}}
 
 # Run tests with coverage
 test-coverage:
@@ -50,7 +50,7 @@ cc:
 
 
 # Audit dependencies for vulnerabilities
-audit:
+pip-audit:
     poetry run pip-audit --desc
 
 
@@ -65,23 +65,28 @@ clean:
     rm -rf .mypy_cache/
     rm -rf htmlcov/
 
-# Run the assistant
-run:
-    poetry run vatuta
+# Remove the Poetry virtualenv (useful to simulate a clean install)
+clean-env:
+    poetry env remove --all
+    @echo "✅ Virtualenv removed. Run 'just install' or 'just setup' to reinstall."
+
+# Full reset: remove virtualenv + all temporary files
+reset: clean clean-env
+    @echo "✅ Environment fully reset. Ready for a fresh install."
+
+# Show vatuta help
+vatuta-help:
+    poetry run vatuta --help
 
 # Run the assistant with query and stats (k defaults to 20)
 assistant query k="20":
-    poetry run vatuta --query "{{query}}" --k {{k}} --show-stats --show-sources
+    poetry run vatuta ask "{{query}}" --k {{k}} --show-stats --show-sources
 
-# Build the package
-build:
-    poetry build
+# Load data from all configured sources into the vector database
+load-sources:
+    poetry run vatuta update
 
-# Publish to PyPI
-publish:
-    poetry publish
-
-# Update dependencies
+# Update Python dependencies
 update:
     poetry update
 
@@ -91,8 +96,8 @@ check:
     just format-check
     just test
 
-# Setup development environment
-setup: install dev install-spacy
+# Setup development environment (dev deps + spaCy model)
+setup: dev install-spacy
     @echo "Development environment setup complete!"
     @echo "Run 'just run' to start the assistant"
 
@@ -101,74 +106,13 @@ help:
     @echo "Available commands:"
     @just --list
 
-# Add all files and commit
-commit message:
-    git add .
-    git commit -m "{{message}}"
-
-# Push to remote repository (current branch)
-push:
-    git push origin $(git branch --show-current)
-
-# Push to remote repository with specific branch
-push-branch branch:
-    git push origin {{branch}}
-
-# Create a new branch
-branch name:
-    git checkout -b {{name}}
-
-# Switch to main branch
-main:
-    git checkout main
-
-# Switch to a specific branch
-switch branch:
-    git checkout {{branch}}
-
-# List all branches
-branches:
-    git branch -a
-
-# Delete a branch (local)
-delete-branch branch:
-    git branch -d {{branch}}
-
-# Show git status
-status:
-    git status
-
-# Show git log
-log:
-    git log --oneline -10
-
-# Pull latest changes from remote
-pull:
-    git pull origin $(git branch --show-current)
-
-# Pull from specific branch
-pull-branch branch:
-    git pull origin {{branch}}
-
-# Merge a branch into current branch
-merge branch:
-    git merge {{branch}}
-
-# Rebase current branch onto main
-rebase:
-    git rebase main
-
-# Show current branch
-current-branch:
-    git branch --show-current
-
 # Run pre-commit hooks
 pre-commit:
     poetry run pre-commit run --all-files
 
 # Install pre-commit hooks
 pre-commit-install:
-    poetry run pre-commit install
+    poetry run pre-commit install --hook-type pre-commit --hook-type commit-msg
 
 # Show project structure
 tree:
@@ -185,22 +129,6 @@ packages:
 # Update lock file
 lock:
     poetry lock
-
-# Export requirements
-export:
-    poetry export -f requirements.txt --output requirements.txt
-
-# Run with specific Python version
-python-version:
-    poetry env use python3.12
-
-# Create virtual environment
-venv:
-    poetry env create
-
-# Remove virtual environment
-venv-remove:
-    poetry env remove python
 
 # Show virtual environment path
 venv-path:
@@ -277,3 +205,109 @@ qdrant-restart: qdrant-stop qdrant-start
 qdrant-dashboard:
     @echo "🌐 Opening Qdrant dashboard..."
     xdg-open http://localhost:6333/dashboard || open http://localhost:6333/dashboard || echo "Open http://localhost:6333/dashboard in your browser"
+
+# Display detailed information about a dependency and trace its reverse dependency tree
+# showing which packages in the 'main' group require it.
+find-dep dependency:
+    poetry show {{dependency}}
+    poetry show --tree --why --only main {{dependency}}
+
+dep_path_script := '''
+import sys
+import subprocess
+try:
+    import tomllib
+except ImportError:
+    tomllib = None
+
+target = sys.argv[1].lower()
+lines = sys.stdin.read().splitlines()
+
+# Load direct dependencies from pyproject.toml to filter noise
+direct_deps = set()
+if tomllib:
+    try:
+        with open("pyproject.toml", "rb") as f:
+            config = tomllib.load(f)
+        poetry = config.get("tool", {}).get("poetry", {})
+        for pkg in poetry.get("dependencies", {}):
+            direct_deps.add(pkg.lower())
+        for group in poetry.get("group", {}).values():
+            for pkg in group.get("dependencies", {}):
+                direct_deps.add(pkg.lower())
+    except Exception:
+        pass
+
+def is_direct(pkg_name):
+    if not direct_deps:
+        return True # Fallback if parsing fails
+    if pkg_name in direct_deps:
+        return True
+    for dep in direct_deps:
+        if dep.startswith(pkg_name) or pkg_name.startswith(dep):
+            return True
+    return False
+
+# Get the current installed version of the target package
+installed_version = "unknown"
+try:
+    out = subprocess.check_output(["poetry", "show", target], text=True)
+    for line in out.splitlines():
+        if line.strip().startswith("version"):
+            installed_version = line.split(":", 1)[1].strip()
+            break
+except Exception:
+    pass
+
+stack = []
+found = False
+
+for raw in lines:
+    if not raw.strip():
+        continue
+    # Skip poetry warnings
+    if raw.startswith("The lock file") or raw.startswith("Upgrade Poetry"):
+        continue
+
+    line = raw.replace("│   ", "    ")
+    line = line.replace("├── ", "    ")
+    line = line.replace("└── ", "    ")
+
+    indent = len(line) - len(line.lstrip(" "))
+    depth = indent // 4
+
+    content = line.lstrip()
+    parts = content.split()
+    name = parts[0].lower()
+    version = parts[1] if len(parts) > 1 else ""
+
+    display_name = f"{name} ({version})" if version else name
+
+    if len(stack) <= depth:
+        stack.extend([None] * (depth - len(stack) + 1))
+
+    # Store a tuple of (name, display_name) to easily check direct deps by name
+    stack[depth] = (name, display_name)
+    stack = stack[:depth + 1]
+
+    if name == target:
+        root_name = stack[0][0]
+        if is_direct(root_name):
+            path_str = " -> ".join([s[1] for s in stack])
+            print(f"{path_str} [current: {installed_version}]")
+            found = True
+
+if not found:
+    sys.exit(f"No direct paths found for {target} from pyproject.toml")
+'''
+
+# Find and show the shortest dependency paths from direct project dependencies to a specific package.
+# Usage:
+#   just dep-path numpy          # Search across all dependency groups
+#   just dep-path numpy main     # Search exclusively within the 'main' group
+dep-path package group="all":
+    @if [ "{{group}}" = "all" ]; then \
+        poetry show --tree; \
+    else \
+        poetry show --tree --only "{{group}}"; \
+    fi | poetry run python -c '{{dep_path_script}}' "{{package}}"

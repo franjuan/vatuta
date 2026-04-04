@@ -152,3 +152,9 @@ repos:
         language: node
         additional_dependencies: ["jscpd@4.0.5"]
         args: ["--min-tokens", "50", "--min-lines", "5", "--ignore", "**/*.json,**/*.lock,**/*.yaml,**/*.yml,**/tests/**,**/pocs/**"]
+
+      - id: check-signed-off-by
+        name: check signed-off-by
+        entry: bash -c 'grep -qi "^Signed-off-by:" "$1" || { echo "[ERROR] Commit message is missing Signed-off-by trailer. Please use git commit -s"; exit 1; }' --
+        language: system
+        stages: [commit-msg]
