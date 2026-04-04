@@ -1,15 +1,19 @@
 # Vatuta Personal Assistant - Justfile
 # Task automation for development
 
+# Load .env file automatically (makes direnv optional)
+set dotenv-load
+
 # Default recipe
 default:
     @just --list
 
-# Install dependencies
-install: install-spacy
+# Install runtime dependencies (app + spaCy model)
+install:
     poetry install
+    just install-spacy
 
-# Install development dependencies
+# Install development dependencies (all runtime deps + dev tools)
 dev:
     poetry install --with dev
 
@@ -61,15 +65,28 @@ clean:
     rm -rf .mypy_cache/
     rm -rf htmlcov/
 
-# Run the assistant
-run:
-    poetry run vatuta
+# Remove the Poetry virtualenv (useful to simulate a clean install)
+clean-env:
+    poetry env remove --all
+    @echo "✅ Virtualenv removed. Run 'just install' or 'just setup' to reinstall."
+
+# Full reset: remove virtualenv + all temporary files
+reset: clean clean-env
+    @echo "✅ Environment fully reset. Ready for a fresh install."
+
+# Show vatuta help
+vatuta-help:
+    poetry run vatuta --help
 
 # Run the assistant with query and stats (k defaults to 20)
 assistant query k="20":
-    poetry run vatuta --query "{{query}}" --k {{k}} --show-stats --show-sources
+    poetry run vatuta ask "{{query}}" --k {{k}} --show-stats --show-sources
 
-# Update dependencies
+# Load data from all configured sources into the vector database
+load-sources:
+    poetry run vatuta update
+
+# Update Python dependencies
 update:
     poetry update
 
@@ -79,8 +96,8 @@ check:
     just format-check
     just test
 
-# Setup development environment
-setup: install dev install-spacy
+# Setup development environment (dev deps + spaCy model)
+setup: dev install-spacy
     @echo "Development environment setup complete!"
     @echo "Run 'just run' to start the assistant"
 
@@ -255,7 +272,7 @@ for raw in lines:
     line = raw.replace("│   ", "    ")
     line = line.replace("├── ", "    ")
     line = line.replace("└── ", "    ")
-    
+
     indent = len(line) - len(line.lstrip(" "))
     depth = indent // 4
 
@@ -268,7 +285,7 @@ for raw in lines:
 
     if len(stack) <= depth:
         stack.extend([None] * (depth - len(stack) + 1))
-    
+
     # Store a tuple of (name, display_name) to easily check direct deps by name
     stack[depth] = (name, display_name)
     stack = stack[:depth + 1]
@@ -293,4 +310,4 @@ dep-path package group="all":
         poetry show --tree; \
     else \
         poetry show --tree --only "{{group}}"; \
-    fi | python -c '{{dep_path_script}}' "{{package}}"
+    fi | poetry run python -c '{{dep_path_script}}' "{{package}}"
