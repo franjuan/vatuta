@@ -11,8 +11,3 @@
 # CVE-2025-69872: No fix available. Impact limited to the development environment.
 # Revisit when a patched version of the affected dependency is released.
 CVE-2025-69872
-
-# CVE-2026-27794: Fix available in langgraph-checkpoint dependency
-# But not in dependency langgraph
-# Revisit when a patched version of langgraph is released.
-CVE-2026-27794
