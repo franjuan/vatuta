@@ -112,7 +112,7 @@ pre-commit:
 
 # Install pre-commit hooks
 pre-commit-install:
-    poetry run pre-commit install
+    poetry run pre-commit install --hook-type pre-commit --hook-type commit-msg
 
 # Show project structure
 tree:
