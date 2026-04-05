@@ -13,6 +13,8 @@
   [![Managed by Poetry](https://img.shields.io/badge/managed%20by-poetry-blueviolet)](https://python-poetry.org/)
   [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
   [![LangChain](https://img.shields.io/badge/LangChain-1C3C3C?logo=langchain&logoColor=white)](https://python.langchain.com/)
+  [![Qdrant](https://img.shields.io/badge/Qdrant-FD5255?logo=qdrant&logoColor=white)](https://qdrant.tech/)
+  [![DSPy](https://img.shields.io/badge/DSPy-276DC3?logo=python&logoColor=white)](https://github.com/stanfordnlp/dspy)
 </div>
 
 ---
