@@ -157,7 +157,7 @@ Three main layers:
 | Dependency Mgmt | [Poetry](https://python-poetry.org/) | Package and virtualenv management |
 | Task Automation | [Just](https://github.com/casey/just) | Developer task runner |
 | Linting | [Ruff](https://github.com/astral-sh/ruff), [mypy](https://mypy-lang.org/) | Code quality and type checking |
-| Security | [Bandit](https://github.com/PyCQA/bandit), [Semgrep](https://semgrep.dev/), [pip-audit](https://github.com/pypa/pip-audit), [detect-secrets](https://github.com/Yelp/detect-secrets) | Static analysis and vulnerability scanning |
+| Security | [Bandit](https://github.com/PyCQA/bandit), [Semgrep](https://github.com/semgrep/semgrep), [pip-audit](https://github.com/pypa/pip-audit), [detect-secrets](https://github.com/Yelp/detect-secrets) | Static analysis and vulnerability scanning |
 | CI/CD | [GitHub Actions](https://github.com/features/actions) | Automated testing, linting, and SBOM generation |
 
 ---
