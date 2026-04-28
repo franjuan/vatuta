@@ -11,3 +11,19 @@
 # CVE-2025-69872: No fix available. Impact limited to the development environment.
 # Revisit when a patched version of the affected dependency is released.
 CVE-2025-69872
+
+# CVE-2026-35029 (litellm): /config/update endpoint authorization bypass.
+# We are currently blocked from updating litellm to 1.83.0 by dspy 3.2.0 (requires <=1.82.6).
+CVE-2026-35029
+
+# CVE-2026-35030 (litellm): JWT authentication cache key collision vulnerability.
+# We are currently blocked from updating litellm to 1.83.0 by dspy 3.2.0 (requires <=1.82.6).
+CVE-2026-35030
+
+# GHSA-69x8-hrgq-fjj8 (litellm): Weak password hashing and hash exposure in API endpoints.
+# We are currently blocked from updating litellm to 1.83.0 by dspy 3.2.0 (requires <=1.82.6).
+GHSA-69x8-hrgq-fjj8
+
+# GHSA-xqmj-j6mv-4862 (litellm): Remote code execution via un-sandboxed /prompts/test templates.
+# We are currently blocked from updating litellm to 1.83.7-stable by dspy 3.2.0 (requires <=1.82.6).
+GHSA-xqmj-j6mv-4862
