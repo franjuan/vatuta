@@ -118,9 +118,7 @@ def test_confluence_chunking_logic() -> None:
     print("Testing chunking logic...")
 
     # Mock Config
-    cfg = ConfluenceConfig(
-        id="test-source", url="http://test", spaces=["TEST"], chunk_max_size_chars=50, chunk_similarity_threshold=0.1
-    )
+    cfg = ConfluenceConfig(id="test-source", url="http://test", spaces=["TEST"], chunk_max_size_chars=50)
     source = ConfluenceSource(
         cfg, secrets={"jira_user": "u", "jira_api_token": "t"}, storage_path=tempfile.gettempdir()
     )

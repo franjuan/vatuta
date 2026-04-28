@@ -45,10 +45,6 @@ class ConfluenceConfig(BaseSourceConfig):
         default=None, description="Initial lookback days for first run. If None, fetch all."
     )
     chunk_max_size_chars: int = Field(default=1000, description="Max characters per chunk")
-    chunk_similarity_threshold: float = Field(default=0.15, description="Cosine similarity threshold")
-    chunk_overlap: int = Field(
-        default=0, description="Overlap between chunks in characters (not used for header split)"
-    )
 
 
 class ConfluenceCheckpoint(Checkpoint[ConfluenceConfig]):
