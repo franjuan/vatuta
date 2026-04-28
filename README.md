@@ -484,14 +484,50 @@ just test-coverage       # With HTML coverage report (htmlcov/)
 
 ---
 
-## Known Limitations & TODOs
+## Future Improvements
 
-- **Slack channel filtering**: The `slack.py` source connector has internal support for filtering ingestion
-  by specific `channel_ids` (via the `filters` argument). However, this is currently not exposed in
-  `config/vatuta.yaml` or the CLI. By default, Vatuta ingests all channels matching the configured
-  `channel_types`. Wiring up `channel_ids` filtering is a pending TODO.
+The current project is a proof of concept. The following areas represent key opportunities for future enhancement:
 
-- **Entity Manager**: The Entity Manager implementation and design requires a complete review and refactoring
+- **Embeddings Token Limit**: The `all-MiniLM-L6-v2` model is efficient but capped at 256 tokens. Chunk sizes
+  must be strictly managed to prevent truncation during embedding generation.
+
+- **Real-Time Ingestion**: Transitioning from scheduled batch processing to event-driven streaming would enable
+  proactive, real-time responses to new data.
+
+- **Source Citations**: Enforcing direct linking to original sources in the LLM prompt would improve response
+  auditability and reduce hallucinations.
+
+- **Reranking Over Filtering**: Instead of dropping chunks with missing metadata prior to search, implement a
+  reranking step to preserve potentially relevant documents in the context.
+
+- **Hybrid Retrieval**: Combine dense semantic vectors with sparse lexical representations in Qdrant to improve
+  searches for exact terms, acronyms, and ticket IDs.
+
+- **GraphRAG Implementation**: Explore GraphRAG to better handle broad queries, relationships between entities,
+  and aggregations that currently overwhelm the standard vector RAG approach.
+
+- **Unsupervised Topic Classification**: Automatically categorize queries and document chunks by topic to enhance
+  filtering and reranking accuracy.
+
+- **Testing & Validation**: Expand unit test coverage and implement robust validation mechanisms across the
+  codebase.
+
+- **Automated Prompt Optimization**: Leverage DSPy to automatically optimize prompts using defined metrics and
+  evaluation samples.
+
+- **Proactive Agents**: Evolve the assistant from a reactive query-responder to a proactive agent capable of
+  responding to system triggers or scheduled events.
+
+- **Comprehensive Security Analysis**: Supplement existing static and dependency scans with a thorough evaluation
+  against the OWASP Top 10 for LLMs and Generative AI.
+
+- **Extended LLM Support**: Validate and integrate additional language models once a robust evaluation framework
+  is established.
+
+- **Slack Channel Filtering**: Expose the existing internal support for filtering Slack ingestion by specific
+  `channel_ids` through the application configuration and CLI.
+
+- **Entity Manager Overhaul**: Completely review and refactor the cross-source identity resolution architecture.
 
 ---
 
