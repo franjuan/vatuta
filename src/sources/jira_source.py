@@ -880,6 +880,14 @@ class JiraSource(Source[JiraConfig]):
     def _get_embedding_model(self) -> SentenceTransformer:
         if self._embedding_model is None:
             self._embedding_model = SentenceTransformer(self.config.chunk_embedding_model)
+            model_max_chars = self._embedding_model.max_seq_length * 4
+            if self.config.chunk_max_size_chars > model_max_chars:
+                logger.warning(
+                    f"Configured chunk_max_size_chars ({self.config.chunk_max_size_chars}) is larger than the "
+                    f"embedding model's capacity ({model_max_chars} chars). Using {model_max_chars} instead."
+                )
+                self.config.chunk_max_size_chars = model_max_chars
+            self._EMBEDDING_MODEL_MAX_CHARS = model_max_chars
         return self._embedding_model
 
     def _create_comment_chunk(

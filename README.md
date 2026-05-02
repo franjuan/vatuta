@@ -57,6 +57,7 @@ language from a single CLI.
 - 🦊 **GitLab** — issues and MRs *(PoC)*
 - 📅 **Google Calendar** — events and schedules *(work in progress)*
 - ⚡ Incremental updates with checkpointing and caching (no full re-ingestion)
+- 📏 Dynamic chunk size limits automatically capped by the embedding model's capacity to prevent truncation
 - 👤 **Global Entity Manager** — resolves the same entity (users right now) across Jira,
   Confluence and Slack *(work in progress)*
 
@@ -497,9 +498,6 @@ just test-coverage       # With HTML coverage report (htmlcov/)
 ## Future Improvements
 
 The current project is a proof of concept. The following areas represent key opportunities for future enhancement:
-
-- **Embeddings Token Limit**: The `all-MiniLM-L6-v2` model is efficient but capped at 256 tokens. Chunk sizes
-  must be strictly managed to prevent truncation during embedding generation.
 
 - **Real-Time Ingestion**: Transitioning from scheduled batch processing to event-driven streaming would enable
   proactive, real-time responses to new data.

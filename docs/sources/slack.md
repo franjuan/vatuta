@@ -29,7 +29,8 @@ re-fetches and avoiding storing excessive PII or payload.
 3. Chunk model
    - Multi-strategy splitting via `_build_chunks_for_messages`:
      1. **Time**: Split if gap > `chunk_time_interval_minutes` (default 240 mins).
-     2. **Size**: Split if `chunk_max_size_chars` (2000) or `chunk_max_messages` (20 msgs) exceeded.
+     2. **Size**: Split if `chunk_max_size_chars` (2000, capped by embedding model capacity) or
+        `chunk_max_messages` (20 msgs) exceeded.
      3. **Semantic**: Split if cosine similarity between consecutive messages < `chunk_similarity_threshold` (0.15).
    - Chunk text format (LLM-friendly):
      `[YYYY-MM-DD HH:MM UTC] Display Name: normalized text`
@@ -90,7 +91,7 @@ Required:
 - `user_cache_ttl_seconds` (int; TTL for user entries; default 7 days)
 - `initial_lookback_days` (int; days to look back when starting fresh; default 7)
 - `chunk_time_interval_minutes` (int; max minutes between messages in a chunk; default 240)
-- `chunk_max_size_chars` (int; max characters per chunk; default 2000)
+- `chunk_max_size_chars` (int; max characters per chunk; default 2000, capped by embedding model capacity)
 - `chunk_max_messages` (int; max messages per chunk; default 20)
 - `chunk_similarity_threshold` (float; cosine similarity threshold for splitting; default 0.15)
 - `chunk_embedding_model` (str; model for semantic embeddings; default "all-MiniLM-L6-v2")
