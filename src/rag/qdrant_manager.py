@@ -62,6 +62,8 @@ class QdrantDocumentManager:
 
         self._warned_sources: set[str] = set()
 
+        # HuggingFaceEmbedding is a LangChain wrapper that uses SentenceTransformer.
+        # Get the underlying SentenceTransformer client to get the max_seq_length
         client = getattr(self.embeddings, "client", getattr(self.embeddings, "_client", None))
         self._max_chars = getattr(client, "max_seq_length", None)
         if self._max_chars is not None:

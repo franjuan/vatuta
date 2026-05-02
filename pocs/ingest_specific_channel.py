@@ -37,7 +37,7 @@ def main():
         chunk_max_size_chars=2000,
         chunk_max_messages=20,
         chunk_similarity_threshold=0.15,
-        chunk_embedding_model="sentence-transformers/all-MiniLM-L6-v2"
+        chunk_embedding_model="intfloat/multilingual-e5-small"
     )
     
     # Token from env

@@ -20,7 +20,7 @@ class TestSlackCheckpoint(unittest.TestCase):
             id="test",
             enabled=True,
             workspace_domain="test.slack.com",
-            chunk_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+            chunk_embedding_model="intfloat/multilingual-e5-small",
         )
         checkpoint = SlackCheckpoint(config=config)
 
@@ -43,7 +43,7 @@ class TestSlackCheckpoint(unittest.TestCase):
                 id="test",
                 enabled=True,
                 workspace_domain="test.slack.com",
-                chunk_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+                chunk_embedding_model="intfloat/multilingual-e5-small",
             )
         )
         channel_id = "C1"
@@ -78,7 +78,7 @@ class TestSlackCheckpoint(unittest.TestCase):
                 id="test",
                 enabled=True,
                 workspace_domain="test.slack.com",
-                chunk_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+                chunk_embedding_model="intfloat/multilingual-e5-small",
             )
         )
         checkpoint.update_channel_ts("C1", newest_ts=200.0, oldest_ts=100.0)

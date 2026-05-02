@@ -66,7 +66,7 @@ The application connects to Qdrant using settings in `config/vatuta.yaml`:
 qdrant:
   url: "http://localhost:6333"
   collection_name: "vatuta_documents"
-  embeddings_model: "sentence-transformers/all-MiniLM-L6-v2"
+  embeddings_model: "intfloat/multilingual-e5-small"
 ```
 
 ## Dashboard

@@ -12,9 +12,7 @@ class TestAddDocuments(unittest.TestCase):
     def setUp(self) -> None:
         self.test_dir = tempfile.mkdtemp()
         with patch("src.rag.document_manager.HuggingFaceEmbeddings"):
-            self.dm = DocumentManager(
-                embeddings_model="sentence-transformers/all-MiniLM-L6-v2", storage_dir=self.test_dir
-            )
+            self.dm = DocumentManager(embeddings_model="intfloat/multilingual-e5-small", storage_dir=self.test_dir)
             self.dm.embeddings = MagicMock()
             # Fake embeddings for FAISS
             self.dm.embeddings.embed_documents.return_value = [[0.1] * 384]

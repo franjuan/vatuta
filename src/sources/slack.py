@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import time
+import urllib.parse
 from dataclasses import field
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
@@ -24,7 +25,8 @@ from time import perf_counter
 from typing import Any, Callable, Dict, Final, List, Optional, Set, Tuple, cast
 
 from pydantic import Field
-from sentence_transformers.SentenceTransformer import SentenceTransformer
+from sentence_transformers import SentenceTransformer
+from sentence_transformers.util import cos_sim
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from slack_sdk.http_retry.builtin_handlers import (
@@ -275,8 +277,13 @@ class SlackSource(Source[SlackConfig]):
                 }
             )
 
-        # Lazy loaded embedding model
-        self._embedding_model: SentenceTransformer | None = None
+        # Embedding model
+        self._embedding_model: SentenceTransformer = self._get_embedding_model()
+        max_seq_length = self._embedding_model.max_seq_length
+        if max_seq_length is None:
+            raise ValueError(f"Embedding model {self.config.chunk_embedding_model!r} does not define max_seq_length")
+
+        self._EMBEDDING_MODEL_MAX_CHARS: int = max_seq_length * 4
 
     def _api_call(self, method: str, func: Callable, **kwargs: Any) -> Any:
         """Execute a Slack API call with standard rate limiting, retries, and metrics.
@@ -355,8 +362,6 @@ class SlackSource(Source[SlackConfig]):
 
     def load_checkpoint(self) -> SlackCheckpoint:
         """Load existing checkpoint or create a new one."""
-        from pathlib import Path
-
         cp_path = Path(self.storage_path) / self.source_id / "checkpoint.json"
         if cp_path.exists():
             return SlackCheckpoint.load(cp_path, self.config)
@@ -748,7 +753,6 @@ class SlackSource(Source[SlackConfig]):
         Returns:
             A string representing the text with mentions replaced with the user display name.
         """
-        import re
 
         def repl(m: re.Match) -> str:
             uid = m.group(1)
@@ -765,9 +769,6 @@ class SlackSource(Source[SlackConfig]):
         Returns:
             A list of strings representing the simple tags extracted from the text.
         """
-        import re
-        import urllib.parse
-
         tags: set[str] = set()
         url_re = re.compile(r"(https?://[^\s>]+)")
         for u in url_re.findall(text or ""):
@@ -849,16 +850,17 @@ class SlackSource(Source[SlackConfig]):
         )
 
     def _get_embedding_model(self) -> SentenceTransformer:
-        if self._embedding_model is None:
+        if getattr(self, "_embedding_model", None) is None:
             self._embedding_model = SentenceTransformer(self.config.chunk_embedding_model)
-            model_max_chars = self._embedding_model.max_seq_length * 4
+            if not hasattr(self._embedding_model, "max_seq_length"):
+                raise ValueError(f"Embedding model {self.config.chunk_embedding_model!r} does not have max_seq_length")
+            model_max_chars = getattr(self._embedding_model, "max_seq_length", 0) * 4
             if self.config.chunk_max_size_chars > model_max_chars:
                 logger.warning(
                     f"Configured chunk_max_size_chars ({self.config.chunk_max_size_chars}) is larger than the "
                     f"embedding model's capacity ({model_max_chars} chars). Using {model_max_chars} instead."
                 )
                 self.config.chunk_max_size_chars = model_max_chars
-            self._EMBEDDING_MODEL_MAX_CHARS = model_max_chars
         return self._embedding_model
 
     def _collect_chunk_tags(self, messages: List[dict]) -> Tuple[Set[str], Set[str]]:
@@ -927,10 +929,6 @@ class SlackSource(Source[SlackConfig]):
             updated=chunk_updated,
         )
 
-    # Approximate max chars for the configured embedding model.
-    # Based on all-MiniLM-L6-v2 (256 tokens * ~4 chars/token). Update when model changes.
-    _EMBEDDING_MODEL_MAX_CHARS: int = 1024
-
     def _build_chunks_for_messages(self, doc: DocumentUnit, msgs: List[dict]) -> List[ChunkRecord]:
         """Build flat chunks for a list of Slack message dicts with multi-strategy splitting.
 
@@ -948,10 +946,6 @@ class SlackSource(Source[SlackConfig]):
         """
         if not msgs:
             return []
-
-        from time import perf_counter
-
-        from sentence_transformers.util import cos_sim
 
         sid = self.source_id
 
@@ -1631,7 +1625,7 @@ if __name__ == "__main__":
         workspace_domain=os.getenv("SLACK_WORKSPACE_DOMAIN", "https://slack.com"),
         user_cache_path=os.path.join("data", "slack", "slack-main", "slack_users_cache.json"),
         user_cache_ttl_seconds=0,
-        chunk_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+        chunk_embedding_model="intfloat/multilingual-e5-small",
     )
     entity_manager = EntityManager(storage_path="data/entities.json")
     slack_source = SlackSource(

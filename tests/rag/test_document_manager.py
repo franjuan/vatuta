@@ -18,9 +18,7 @@ class TestDocumentManagerDeletion(unittest.TestCase):
 
         # Mock embeddings to avoid heavy loading
         with patch("src.rag.document_manager.HuggingFaceEmbeddings"):
-            self.dm = DocumentManager(
-                embeddings_model="sentence-transformers/all-MiniLM-L6-v2", storage_dir=self.test_dir
-            )
+            self.dm = DocumentManager(embeddings_model="intfloat/multilingual-e5-small", storage_dir=self.test_dir)
             # Mock the internal embeddings object used by FAISS
             self.dm.embeddings = MagicMock()
             self.dm.embeddings.embed_documents.return_value = [[0.1] * 384] * 10

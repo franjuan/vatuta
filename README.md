@@ -316,7 +316,7 @@ entities_manager:
 qdrant:
   url: "http://localhost:6333"
   collection_name: "vatuta_documents"
-  embeddings_model: "sentence-transformers/all-MiniLM-L6-v2"
+  embeddings_model: "intfloat/multilingual-e5-small"
 
 # Sources to ingest
 sources:
@@ -333,14 +333,14 @@ sources:
       channel_window_minutes: 60
       user_cache_path: "data/slack/slack-main/slack_users_cache.json"
       user_cache_ttl_seconds: 7 * 24 * 60 * 60
-      chunk_embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+      chunk_embedding_model: "intfloat/multilingual-e5-small"
 
   jira:
     jira-main:
       enabled: true
       url: "https://your-domain.atlassian.net"
       projects: ["PROJECT1", "PROJECT2"]
-      chunk_embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+      chunk_embedding_model: "intfloat/multilingual-e5-small"
 
   confluence:
     confluence-main:

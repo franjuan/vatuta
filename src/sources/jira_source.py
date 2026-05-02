@@ -19,7 +19,7 @@ from typing import Any, Dict, Final, List, Optional, Set, Tuple
 
 from jira import JIRA
 from pydantic import Field
-from sentence_transformers.SentenceTransformer import SentenceTransformer
+from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
 
 from src.entities.manager import EntityManager
@@ -134,8 +134,6 @@ class JiraSource(Source[JiraConfig]):
 
     def load_checkpoint(self) -> JiraCheckpoint:
         """Load existing checkpoint or create a new one."""
-        from pathlib import Path
-
         cp_path = Path(self.storage_path) / self.source_id / "checkpoint.json"
 
         if cp_path.exists():
@@ -170,7 +168,14 @@ class JiraSource(Source[JiraConfig]):
             validate=False,
             get_server_info=False,
         )
-        self._embedding_model: SentenceTransformer | None = None
+
+        # Embedding model
+        self._embedding_model: SentenceTransformer = self._get_embedding_model()
+        max_seq_length = self._embedding_model.max_seq_length
+        if max_seq_length is None:
+            raise ValueError(f"Embedding model {self.config.chunk_embedding_model!r} does not define max_seq_length")
+
+        self._EMBEDDING_MODEL_MAX_CHARS: int = max_seq_length * 4
 
         self._connection_validated = False
 
@@ -878,9 +883,11 @@ class JiraSource(Source[JiraConfig]):
         return "\n".join(lines), tags
 
     def _get_embedding_model(self) -> SentenceTransformer:
-        if self._embedding_model is None:
+        if getattr(self, "_embedding_model", None) is None:
             self._embedding_model = SentenceTransformer(self.config.chunk_embedding_model)
-            model_max_chars = self._embedding_model.max_seq_length * 4
+            if not hasattr(self._embedding_model, "max_seq_length"):
+                raise ValueError(f"Embedding model {self.config.chunk_embedding_model!r} does not have max_seq_length")
+            model_max_chars = getattr(self._embedding_model, "max_seq_length", 0) * 4
             if self.config.chunk_max_size_chars > model_max_chars:
                 logger.warning(
                     f"Configured chunk_max_size_chars ({self.config.chunk_max_size_chars}) is larger than the "
@@ -939,10 +946,6 @@ class JiraSource(Source[JiraConfig]):
             updated=self._parse_jira_time(str(c_created_last)) if c_created_last else None,
         )
 
-    # Approximate max chars for the configured embedding model.
-    # Based on all-MiniLM-L6-v2 (256 tokens * ~4 chars/token). Update when model changes.
-    _EMBEDDING_MODEL_MAX_CHARS: int = 1024
-
     def _should_split_chunk(
         self,
         current_count: int,
@@ -987,8 +990,6 @@ class JiraSource(Source[JiraConfig]):
     ) -> List[ChunkRecord]:
         if not comments:
             return []
-
-        from time import perf_counter
 
         sid = self.source_id
 
@@ -1195,7 +1196,7 @@ def main() -> None:
         chunk_max_size_chars=2000,
         chunk_max_comments=10,
         chunk_similarity_threshold=0.15,
-        chunk_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+        chunk_embedding_model="intfloat/multilingual-e5-small",
     )
 
     entity_manager = EntityManager(storage_path="data/entities.json")

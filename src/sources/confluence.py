@@ -565,8 +565,6 @@ class ConfluenceSource(Source[ConfluenceConfig]):
             pass
 
         # Ingestion quality metrics
-        # Approximate max chars for all-MiniLM-L6-v2 (256 tokens * ~4 chars/token).
-        _model_max_chars = 1024
         sid = self.source_id
         INGEST_DOCUMENT_SIZE_CHARS.labels(source="confluence", source_id=sid).observe(len(markdown_text))
         for ch in chunks:
@@ -575,7 +573,7 @@ class ConfluenceSource(Source[ConfluenceConfig]):
                 chunk_chars
             )
             INGEST_CHUNK_TOKEN_BUDGET_RATIO.labels(source="confluence", source_id=sid, chunk_type="content").observe(
-                chunk_chars / _model_max_chars
+                chunk_chars / self.config.chunk_max_size_chars
             )
         INGEST_CHUNKS_PER_DOCUMENT.labels(source="confluence", source_id=sid).observe(len(chunks))
 

@@ -23,7 +23,7 @@ class TestJiraSource(unittest.TestCase):
             include_comments=True,
             projects=["TEST", "DEV"],
             id="test_jira",
-            chunk_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+            chunk_embedding_model="intfloat/multilingual-e5-small",
         )
         self.storage_path = self.temp_dir
         self.secrets = {"jira_user": "user", "jira_api_token": "token"}
@@ -407,6 +407,7 @@ class TestJiraSource(unittest.TestCase):
 
         # Mock embedding model
         mock_model = MagicMock()
+        mock_model.max_seq_length = 256
         mock_get_model.return_value = mock_model
 
         # We define simple orthogonal vectors for controlling similarity
