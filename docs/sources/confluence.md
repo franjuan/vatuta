@@ -34,9 +34,8 @@ internal HTML storage format.
    - Checkpoints track the max `lastModified` timestamp per **Space**.
 
 5. **Observability**
-   - Prometheus metrics:
-     - `confluence_cql_latency_seconds`, `confluence_cql_calls_total`
-     - `confluence_collect_space_latency_seconds`, `confluence_collect_space_items`
+   - Prometheus metrics are emitted for CQL performance and ingestion quality.
+   - See [Observability & Metrics](../observability.md) for full details.
 
 ## Rationale
 

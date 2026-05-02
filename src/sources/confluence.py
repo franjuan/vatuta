@@ -26,7 +26,18 @@ from pydantic import Field
 from src.entities.manager import EntityManager
 
 # Import Prometheus metrics from centralized module
-from src.metrics.metrics import API_CALLS, API_LATENCY, OP_ITEMS, OP_LATENCY
+from src.metrics.metrics import (
+    API_CALLS,
+    API_LATENCY,
+    INGEST_CHUNK_SIZE_CHARS,
+    INGEST_CHUNK_TOKEN_BUDGET_RATIO,
+    INGEST_CHUNKS_PER_DOCUMENT,
+    INGEST_CHUNKS_TOTAL,
+    INGEST_DOCUMENT_SIZE_CHARS,
+    INGEST_DOCUMENTS_TOTAL,
+    OP_ITEMS,
+    OP_LATENCY,
+)
 from src.models.documents import ChunkRecord, DocumentUnit
 from src.models.source_config import BaseSourceConfig
 from src.sources.checkpoint import Checkpoint
@@ -245,6 +256,10 @@ class ConfluenceSource(Source[ConfluenceConfig]):
             )
             all_docs.extend(docs)
             all_chunks.extend(chunks)
+            INGEST_DOCUMENTS_TOTAL.labels(source="confluence", source_id=self.source_id).inc(len(docs))
+            INGEST_CHUNKS_TOTAL.labels(source="confluence", source_id=self.source_id, chunk_type="content").inc(
+                len(chunks)
+            )
 
         if update_checkpoint:
             try:
@@ -548,6 +563,21 @@ class ConfluenceSource(Source[ConfluenceConfig]):
         if not chunks:
             # Fallback if no text extracted?
             pass
+
+        # Ingestion quality metrics
+        # Approximate max chars for all-MiniLM-L6-v2 (256 tokens * ~4 chars/token).
+        _model_max_chars = 1024
+        sid = self.source_id
+        INGEST_DOCUMENT_SIZE_CHARS.labels(source="confluence", source_id=sid).observe(len(markdown_text))
+        for ch in chunks:
+            chunk_chars = len(ch.text)
+            INGEST_CHUNK_SIZE_CHARS.labels(source="confluence", source_id=sid, chunk_type="content").observe(
+                chunk_chars
+            )
+            INGEST_CHUNK_TOKEN_BUDGET_RATIO.labels(source="confluence", source_id=sid, chunk_type="content").observe(
+                chunk_chars / _model_max_chars
+            )
+        INGEST_CHUNKS_PER_DOCUMENT.labels(source="confluence", source_id=sid).observe(len(chunks))
 
         return doc, chunks
 

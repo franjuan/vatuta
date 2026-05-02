@@ -35,7 +35,7 @@ def main():
         initial_lookback_days=180,
         chunk_time_interval_minutes=240,
         chunk_max_size_chars=2000,
-        chunk_max_count=20,
+        chunk_max_messages=20,
         chunk_similarity_threshold=0.15,
         chunk_embedding_model="all-MiniLM-L6-v2"
     )

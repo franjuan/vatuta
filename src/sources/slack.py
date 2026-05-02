@@ -36,7 +36,21 @@ from slack_sdk.http_retry.builtin_handlers import (
 from src.entities.manager import EntityManager
 
 # Import Prometheus metrics from centralized module
-from src.metrics.metrics import API_CALLS, API_LATENCY, OP_ITEMS, OP_LATENCY, USER_CACHE_HITS, USER_CACHE_MISSES
+from src.metrics.metrics import (
+    API_CALLS,
+    API_LATENCY,
+    INGEST_CHUNK_SIZE_CHARS,
+    INGEST_CHUNK_SPLIT_REASON,
+    INGEST_CHUNK_TOKEN_BUDGET_RATIO,
+    INGEST_CHUNKS_PER_DOCUMENT,
+    INGEST_CHUNKS_TOTAL,
+    INGEST_DOCUMENTS_TOTAL,
+    INGEST_EMBEDDING_LATENCY_SECONDS,
+    OP_ITEMS,
+    OP_LATENCY,
+    USER_CACHE_HITS,
+    USER_CACHE_MISSES,
+)
 from src.models.documents import ChunkRecord, DocumentUnit
 from src.models.source_config import BaseSourceConfig
 from src.sources.checkpoint import Checkpoint
@@ -63,7 +77,7 @@ class SlackConfig(BaseSourceConfig):
     )
     chunk_time_interval_minutes: int = Field(default=240, description="Max minutes between messages in a chunk")
     chunk_max_size_chars: int = Field(default=2000, description="Max characters per chunk")
-    chunk_max_count: int = Field(default=20, description="Max messages per chunk")
+    chunk_max_messages: int = Field(default=20, description="Max messages per chunk")
     chunk_similarity_threshold: float = Field(default=0.15, description="Cosine similarity threshold for splitting")
     chunk_embedding_model: str = Field(default="all-MiniLM-L6-v2", description="Model for semantic embeddings")
     api_retries: int = Field(default=3, description="Number of retries for unexpected API errors")
@@ -906,12 +920,16 @@ class SlackSource(Source[SlackConfig]):
             updated=chunk_updated,
         )
 
+    # Approximate max chars for the configured embedding model.
+    # Based on all-MiniLM-L6-v2 (256 tokens * ~4 chars/token). Update when model changes.
+    _EMBEDDING_MODEL_MAX_CHARS: int = 1024
+
     def _build_chunks_for_messages(self, doc: DocumentUnit, msgs: List[dict]) -> List[ChunkRecord]:
         """Build flat chunks for a list of Slack message dicts with multi-strategy splitting.
 
         Strategies:
         1. Time: Split if gap > chunk_time_interval_minutes
-        2. Size: Split if chunk size > chunk_max_size_chars OR count > chunk_max_count
+        2. Size: Split if chunk size > chunk_max_size_chars OR count > chunk_max_messages
         3. Semantic: Split if cosine similarity < chunk_similarity_threshold
 
         Args:
@@ -924,15 +942,21 @@ class SlackSource(Source[SlackConfig]):
         if not msgs:
             return []
 
+        from time import perf_counter
+
         from sentence_transformers.util import cos_sim
+
+        sid = self.source_id
 
         # Sort messages by timestamp
         sorted_msgs = sorted(msgs, key=lambda mm: float(mm.get("ts", 0.0)))
 
-        # Pre-calculate embeddings for all messages
+        # Pre-calculate embeddings for all messages — timed for observability
         texts_for_embedding = [m.get("text", "") or " " for m in sorted_msgs]
         model = self._get_embedding_model()
+        _emb_start = perf_counter()
         embeddings = model.encode(texts_for_embedding)
+        INGEST_EMBEDDING_LATENCY_SECONDS.labels(source="slack", source_id=sid).observe(perf_counter() - _emb_start)
 
         chunks: List[ChunkRecord] = []
 
@@ -949,28 +973,43 @@ class SlackSource(Source[SlackConfig]):
             ts = float(m.get("ts", 0.0))
 
             should_split = False
+            split_reason: Optional[str] = None
 
             # 1. Time-based splitting
             if prev_msg_ts is not None:
                 delta_minutes = (ts - prev_msg_ts) / 60.0
                 if delta_minutes > self.config.chunk_time_interval_minutes:
                     should_split = True
+                    split_reason = "time"
 
             # 2. Size/Count-based splitting (check against accumulated chunk)
             if not should_split and current_chunk_msgs:
-                if (current_chunk_size + msg_len > self.config.chunk_max_size_chars) or (
-                    len(current_chunk_msgs) + 1 > self.config.chunk_max_count
-                ):
+                if current_chunk_size + msg_len > self.config.chunk_max_size_chars:
                     should_split = True
+                    split_reason = "size_chars"
+                elif len(current_chunk_msgs) + 1 > self.config.chunk_max_messages:
+                    should_split = True
+                    split_reason = "size_count"
 
             # 3. Semantic splitting
             if not should_split and prev_msg_emb is not None:
                 similarity = cos_sim(emb, prev_msg_emb).item()
                 if similarity < self.config.chunk_similarity_threshold:
                     should_split = True
+                    split_reason = "semantic"
 
             if should_split and current_chunk_msgs:
-                chunks.append(self._finalize_chunk(doc, current_chunk_start_idx, current_chunk_msgs))
+                if split_reason:
+                    INGEST_CHUNK_SPLIT_REASON.labels(source="slack", source_id=sid, reason=split_reason).inc()
+                chunk = self._finalize_chunk(doc, current_chunk_start_idx, current_chunk_msgs)
+                chunk_chars = len(chunk.text)
+                INGEST_CHUNK_SIZE_CHARS.labels(source="slack", source_id=sid, chunk_type="slack_message").observe(
+                    chunk_chars
+                )
+                INGEST_CHUNK_TOKEN_BUDGET_RATIO.labels(
+                    source="slack", source_id=sid, chunk_type="slack_message"
+                ).observe(chunk_chars / self._EMBEDDING_MODEL_MAX_CHARS)
+                chunks.append(chunk)
 
                 current_chunk_msgs = []
                 current_chunk_size = 0
@@ -982,8 +1021,17 @@ class SlackSource(Source[SlackConfig]):
             prev_msg_emb = emb
 
         if current_chunk_msgs:
-            chunks.append(self._finalize_chunk(doc, current_chunk_start_idx, current_chunk_msgs))
+            chunk = self._finalize_chunk(doc, current_chunk_start_idx, current_chunk_msgs)
+            chunk_chars = len(chunk.text)
+            INGEST_CHUNK_SIZE_CHARS.labels(source="slack", source_id=sid, chunk_type="slack_message").observe(
+                chunk_chars
+            )
+            INGEST_CHUNK_TOKEN_BUDGET_RATIO.labels(source="slack", source_id=sid, chunk_type="slack_message").observe(
+                chunk_chars / self._EMBEDDING_MODEL_MAX_CHARS
+            )
+            chunks.append(chunk)
 
+        INGEST_CHUNKS_PER_DOCUMENT.labels(source="slack", source_id=sid).observe(len(chunks))
         return chunks
 
     def __process_channel_messages(
@@ -1464,6 +1512,10 @@ class SlackSource(Source[SlackConfig]):
                 docs_for_channel, chunks_for_channel = self.__process_channel_messages(channel, messages)
                 all_documents.extend(docs_for_channel)
                 all_chunks.extend(chunks_for_channel)
+                INGEST_DOCUMENTS_TOTAL.labels(source="slack", source_id=self.source_id).inc(len(docs_for_channel))
+                INGEST_CHUNKS_TOTAL.labels(source="slack", source_id=self.source_id, chunk_type="slack_message").inc(
+                    len(chunks_for_channel)
+                )
                 logger.info(
                     f"documents built for channel {channel_id}: channel_docs={len(docs_for_channel)} "
                     f"channel_chunks={len(chunks_for_channel)} "

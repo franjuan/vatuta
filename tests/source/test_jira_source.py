@@ -398,7 +398,7 @@ class TestJiraSource(unittest.TestCase):
         # Configuration for test
         test_config = self.jira_config.model_copy(
             update={
-                "chunk_max_count": 2,
+                "chunk_max_comments": 2,
                 "chunk_max_size_chars": 1000,
                 "chunk_similarity_threshold": 0.5,
             }
@@ -474,7 +474,7 @@ class TestJiraSource(unittest.TestCase):
         test_config = self.jira_config.model_copy(
             update={
                 "chunk_max_size_chars": 10000,
-                "chunk_max_count": 2,
+                "chunk_max_comments": 2,
             }
         )
         source = JiraSource(config=test_config, secrets=self.secrets, storage_path=self.temp_dir)
@@ -485,7 +485,7 @@ class TestJiraSource(unittest.TestCase):
         # Test Semantic Splitting
         test_config = self.jira_config.model_copy(
             update={
-                "chunk_max_count": 10,
+                "chunk_max_comments": 10,
                 "chunk_max_size_chars": 10000,
                 "chunk_similarity_threshold": 0.8,
             }
