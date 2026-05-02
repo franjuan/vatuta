@@ -80,7 +80,7 @@ vatuta-help:
 
 # Run the assistant with query and stats (k defaults to 20)
 assistant query k="20":
-    poetry run vatuta ask "{{query}}" --k {{k}} --show-stats --show-sources
+    poetry run vatuta ask "{{query}}" --k {{k}} --show-stats --show-sources --show-cot
 
 # Load data from all configured sources into the vector database
 load-sources:

@@ -296,13 +296,16 @@ cp config/vatuta.yaml.example config/vatuta.yaml
 ```yaml
 # LLM backend selection
 rag:
-  llm_backend:
+  llm_backends:
     bedrock:
       model_id: "bedrock/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
       temperature: 0.2
     gemini:
-      model_id: "gemini/gemini-2-flash"
+      model_id: "gemini/gemini-3-flash-preview"
       temperature: 1.0
+
+  router_backend: "gemini"
+  generator_backend: "bedrock"
 
 # Cross-source identity resolution storage
 entities_manager:
@@ -316,6 +319,20 @@ qdrant:
 
 # Sources to ingest
 sources:
+  slack:
+    slack-main:
+      enabled: true
+      workspace_domain: "https://your-workspace.slack.com"
+      channel_types:
+        - "public_channel"
+        - "private_channel"
+        - "im"
+        - "mpim"
+      initial_lookback_days: 30
+      channel_window_minutes: 60
+      user_cache_path: "data/slack/slack-main/slack_users_cache.json"
+      user_cache_ttl_seconds: 7 * 24 * 60 * 60
+
   jira:
     jira-main:
       enabled: true
@@ -327,13 +344,6 @@ sources:
       enabled: true
       url: "https://your-domain.atlassian.net"
       spaces: ["SPACE1"]
-      initial_lookback_days: 30
-
-  slack:
-    slack-main:
-      enabled: true
-      workspace_domain: "https://your-workspace.slack.com"
-      channel_types: ["public_channel", "private_channel", "im", "mpim"]
       initial_lookback_days: 30
 ```
 

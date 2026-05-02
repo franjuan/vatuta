@@ -5,7 +5,7 @@ Defines the abstract interface for all data sources.
 
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Generic, List, Optional, Tuple, TypeVar
+from typing import Any, Dict, Generic, List, Optional, Tuple, TypeVar
 
 from src.entities.manager import EntityManager
 from src.models.documents import ChunkRecord, DocumentUnit
@@ -56,6 +56,11 @@ class Source(Generic[TConfig]):
         self.storage_path = Path(storage_path).expanduser().resolve()
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
+    @property
+    def source_type(self) -> str:
+        """Return the type of this source (e.g., 'jira', 'confluence')."""
+        raise NotImplementedError
+
     def collect_documents_and_chunks(
         self,
         checkpoint: Checkpoint,
@@ -104,3 +109,15 @@ class Source(Generic[TConfig]):
             date_to: Optional UTC datetime upper bound (inclusive).
         """
         raise NotImplementedError
+
+    def get_specific_query(self, document_ids: List[str]) -> Optional[Dict[str, Any]]:
+        """Return a Qdrant filter query if any of the document IDs match resources in this source.
+
+        Args:
+            document_ids: List of specific document identifiers (e.g. Jira keys).
+
+        Returns:
+            Optional[Dict[str, Any]]: A Qdrant filter dictionary (e.g. {"must": [...]}) if a
+            match is found, or None if no specific identifier is detected.
+        """
+        return None
