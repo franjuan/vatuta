@@ -85,7 +85,7 @@ Note: Standard fields like `status` are deduplicated.
 - `chunk_max_size_chars` (int): Max characters per comment chunk. Default 2000 (capped by embedding model limit).
 - `chunk_max_comments` (int): Max comments per comment chunk. Default 10.
 - `chunk_similarity_threshold` (float): Cosine similarity threshold for splitting comment chunks. Default 0.15.
-- `chunk_embedding_model` (str): SentenceTransformer model for embeddings. Default "all-MiniLM-L6-v2".
+- `chunk_embedding_model` (str): SentenceTransformer model for embeddings. **Required**.
 
 ## Interface summary
 

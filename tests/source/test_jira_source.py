@@ -23,6 +23,7 @@ class TestJiraSource(unittest.TestCase):
             include_comments=True,
             projects=["TEST", "DEV"],
             id="test_jira",
+            chunk_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
         )
         self.storage_path = self.temp_dir
         self.secrets = {"jira_user": "user", "jira_api_token": "token"}

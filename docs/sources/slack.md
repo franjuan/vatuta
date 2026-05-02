@@ -94,7 +94,7 @@ Required:
 - `chunk_max_size_chars` (int; max characters per chunk; default 2000, capped by embedding model capacity)
 - `chunk_max_messages` (int; max messages per chunk; default 20)
 - `chunk_similarity_threshold` (float; cosine similarity threshold for splitting; default 0.15)
-- `chunk_embedding_model` (str; model for semantic embeddings; default "all-MiniLM-L6-v2")
+- `chunk_embedding_model` (str; model for semantic embeddings; **Required**)
 - `api_retries` (int; retries for unexpected API errors; default 3)
 
 Optional tier overrides:

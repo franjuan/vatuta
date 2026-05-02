@@ -71,7 +71,7 @@ class JiraConfig(BaseSourceConfig):
     chunk_similarity_threshold: float = Field(
         default=0.15, description="Cosine similarity threshold for comment chunk splitting"
     )
-    chunk_embedding_model: str = Field(default="all-MiniLM-L6-v2", description="Model for semantic embeddings")
+    chunk_embedding_model: str = Field(..., description="Model for semantic embeddings")
 
 
 class JiraCheckpoint(Checkpoint[JiraConfig]):
@@ -1195,6 +1195,7 @@ def main() -> None:
         chunk_max_size_chars=2000,
         chunk_max_comments=10,
         chunk_similarity_threshold=0.15,
+        chunk_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
     )
 
     entity_manager = EntityManager(storage_path="data/entities.json")

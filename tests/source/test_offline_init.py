@@ -13,6 +13,7 @@ def mock_jira_config() -> JiraConfig:
         url="https://jira.example.com",
         projects=["PROJ"],
         id="jira-test",
+        chunk_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
     )
 
 

@@ -333,12 +333,14 @@ sources:
       channel_window_minutes: 60
       user_cache_path: "data/slack/slack-main/slack_users_cache.json"
       user_cache_ttl_seconds: 7 * 24 * 60 * 60
+      chunk_embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
 
   jira:
     jira-main:
       enabled: true
       url: "https://your-domain.atlassian.net"
       projects: ["PROJECT1", "PROJECT2"]
+      chunk_embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
 
   confluence:
     confluence-main:

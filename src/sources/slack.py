@@ -79,7 +79,7 @@ class SlackConfig(BaseSourceConfig):
     chunk_max_size_chars: int = Field(default=2000, description="Max characters per chunk")
     chunk_max_messages: int = Field(default=20, description="Max messages per chunk")
     chunk_similarity_threshold: float = Field(default=0.15, description="Cosine similarity threshold for splitting")
-    chunk_embedding_model: str = Field(default="all-MiniLM-L6-v2", description="Model for semantic embeddings")
+    chunk_embedding_model: str = Field(..., description="Model for semantic embeddings")
     api_retries: int = Field(default=3, description="Number of retries for unexpected API errors")
 
 
@@ -839,7 +839,6 @@ class SlackSource(Source[SlackConfig]):
             end_line=None,
             start_char=None,
             end_char=None,
-            embedding_model="sentence-transformers/all-MiniLM-L6-v2",
             system_tags=tags,
             user_tags=user_tags or [],
             chunking_strategy="slack_message_line_v1",
@@ -1632,6 +1631,7 @@ if __name__ == "__main__":
         workspace_domain=os.getenv("SLACK_WORKSPACE_DOMAIN", "https://slack.com"),
         user_cache_path=os.path.join("data", "slack", "slack-main", "slack_users_cache.json"),
         user_cache_ttl_seconds=0,
+        chunk_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
     )
     entity_manager = EntityManager(storage_path="data/entities.json")
     slack_source = SlackSource(

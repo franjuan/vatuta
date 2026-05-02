@@ -4,6 +4,7 @@ This module handles storing, retrieving, and managing documents using Qdrant vec
 """
 
 import hashlib
+import logging
 import os
 import uuid
 from typing import Any, Dict, List, Optional, TypeAlias
@@ -29,6 +30,8 @@ from qdrant_client.models import (
 
 from src.models.config import QdrantConfig
 from src.models.documents import ChunkRecord, DocumentUnit
+
+logger = logging.getLogger(__name__)
 
 QdrantFilterCondition: TypeAlias = (
     FieldCondition | IsEmptyCondition | IsNullCondition | HasIdCondition | HasVectorCondition | NestedCondition | Filter
@@ -56,6 +59,13 @@ class QdrantDocumentManager:
 
         # Ensure collection exists
         self._ensure_collection()
+
+        self._warned_sources: set[str] = set()
+
+        client = getattr(self.embeddings, "client", getattr(self.embeddings, "_client", None))
+        self._max_chars = getattr(client, "max_seq_length", None)
+        if self._max_chars is not None:
+            self._max_chars *= 4
 
         # Create LangChain vector store wrapper
         self.vectorstore = QdrantVectorStore(
@@ -166,7 +176,18 @@ class QdrantDocumentManager:
                 if parent is None:
                     print(f"⚠️ Skipping chunk {ch.chunk_id}: missing parent document {ch.parent_document_id}")
                     continue
-                lc_docs.append(ch.to_langchain_document(parent))
+
+                if self._max_chars is not None and len(ch.text) > self._max_chars:
+                    source = parent.source
+                    if source not in self._warned_sources:
+                        logger.warning(
+                            f"Chunk in source '{source}' exceeds Qdrant embedding model '{self.config.embeddings_model}' max size of {self._max_chars} chars. It will be truncated."
+                        )
+                        self._warned_sources.add(source)
+
+                lc_doc = ch.to_langchain_document(parent)
+                lc_doc.metadata["embedding_model"] = self.config.embeddings_model
+                lc_docs.append(lc_doc)
 
             if not lc_docs:
                 print("⚠️ No valid chunks to add after parent resolution")
@@ -524,6 +545,13 @@ class QdrantDocumentManager:
             List of matching LangChain Documents.
         """
         try:
+            if self._max_chars is not None:
+                if len(query) > self._max_chars:
+                    logger.warning(
+                        f"Search query exceeds Qdrant embedding model max length ({self._max_chars} chars) and will be truncated. "
+                        "Consider summarizing the query before searching or using BM25/Lexical hybrid search."
+                    )
+
             # We use similarity_search_with_score to apply threshold if needed
             docs_and_scores = self.vectorstore.similarity_search_with_score(
                 query=query,

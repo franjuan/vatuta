@@ -15,7 +15,13 @@ class TestSlackCheckpoint(unittest.TestCase):
 
     def test_default_behavior(self) -> None:
         """Test default checkpoint behavior with initial lookback days."""
-        config = SlackConfig(initial_lookback_days=7, id="test", enabled=True, workspace_domain="test.slack.com")
+        config = SlackConfig(
+            initial_lookback_days=7,
+            id="test",
+            enabled=True,
+            workspace_domain="test.slack.com",
+            chunk_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+        )
         checkpoint = SlackCheckpoint(config=config)
 
         # Check default latest_ts
@@ -32,7 +38,14 @@ class TestSlackCheckpoint(unittest.TestCase):
 
     def test_update_logic(self) -> None:
         """Test checkpoint update logic for expanding time ranges."""
-        checkpoint = SlackCheckpoint(config=SlackConfig(id="test", enabled=True, workspace_domain="test.slack.com"))
+        checkpoint = SlackCheckpoint(
+            config=SlackConfig(
+                id="test",
+                enabled=True,
+                workspace_domain="test.slack.com",
+                chunk_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+            )
+        )
         channel_id = "C1"
 
         # Initial update
@@ -60,7 +73,14 @@ class TestSlackCheckpoint(unittest.TestCase):
 
     def test_state_structure(self) -> None:
         """Test internal state structure of checkpoint."""
-        checkpoint = SlackCheckpoint(config=SlackConfig(id="test", enabled=True, workspace_domain="test.slack.com"))
+        checkpoint = SlackCheckpoint(
+            config=SlackConfig(
+                id="test",
+                enabled=True,
+                workspace_domain="test.slack.com",
+                chunk_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+            )
+        )
         checkpoint.update_channel_ts("C1", newest_ts=200.0, oldest_ts=100.0)
 
         channels = checkpoint.state.get("channels", {})

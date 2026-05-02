@@ -37,7 +37,7 @@ sources:
       # chunk_max_size_chars: 2000         # max characters per chunk (capped by embedding model limit)
       # chunk_max_messages: 20             # max messages per chunk
       # chunk_similarity_threshold: 0.15   # cosine similarity threshold for semantic splitting
-      # chunk_embedding_model: "all-MiniLM-L6-v2"
+      chunk_embedding_model: "sentence-transformers/all-MiniLM-L6-v2" # Used solely for semantic splitting, independent of Qdrant
 
   jira:
     jira-main:
@@ -48,7 +48,7 @@ sources:
       # chunk_max_size_chars: 2000         # max characters per comment chunk (capped by embedding model limit)
       # chunk_max_comments: 10             # max comments per comment chunk
       # chunk_similarity_threshold: 0.15   # cosine similarity threshold for semantic splitting
-      # chunk_embedding_model: "all-MiniLM-L6-v2"
+      chunk_embedding_model: "sentence-transformers/all-MiniLM-L6-v2" # Used solely for semantic splitting, independent of Qdrant
       # history_chunk_size: 20             # max history entries per history chunk
 
   confluence:

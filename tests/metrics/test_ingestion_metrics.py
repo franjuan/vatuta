@@ -34,6 +34,7 @@ class TestSlackIngestionMetrics(unittest.TestCase):
             chunk_max_size_chars=500,
             chunk_max_messages=5,
             chunk_similarity_threshold=0.5,
+            chunk_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
             enabled=True,
         )
         self.source = SlackSource(
