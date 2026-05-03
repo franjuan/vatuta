@@ -29,7 +29,8 @@ re-fetches and avoiding storing excessive PII or payload.
 3. Chunk model
    - Multi-strategy splitting via `_build_chunks_for_messages`:
      1. **Time**: Split if gap > `chunk_time_interval_minutes` (default 240 mins).
-     2. **Size**: Split if `chunk_max_size_chars` (2000) or `chunk_max_count` (20 msgs) exceeded.
+     2. **Size**: Split if `chunk_max_size_chars` (2000, capped by embedding model capacity) or
+        `chunk_max_messages` (20 msgs) exceeded.
      3. **Semantic**: Split if cosine similarity between consecutive messages < `chunk_similarity_threshold` (0.15).
    - Chunk text format (LLM-friendly):
      `[YYYY-MM-DD HH:MM UTC] Display Name: normalized text`
@@ -45,13 +46,10 @@ re-fetches and avoiding storing excessive PII or payload.
    - On HTTP 429, honor `Retry-After`, sleep, and notify limiter to back off.
 
 5. Observability
-   - Prometheus metrics:
-     - `slack_api_latency_seconds{method,status}` (Histogram)
-     - `slack_api_calls_total{method,status}` (Counter)
-     - `slack_operation_latency_seconds{operation}` (Histogram)
-     - `slack_operation_items{operation}` (Histogram)
-     - `slack_user_cache_hits_total`, `slack_user_cache_misses_total` (Counters)
-   - Structured INFO/DEBUG logs for pacing, cooldowns, and per-operation summaries.
+   - Vatuta uses Prometheus for tracking API limits, ingestion volume, and chunking quality.
+   - For a full list of metrics (including `source_api_calls_total`, `ingest_chunk_token_budget_ratio`, etc.),
+     please see the central [Observability & Metrics](../observability.md) documentation.
+   - Structured INFO/DEBUG logs are also provided for pacing, cooldowns, and per-operation summaries.
 
 6. Users cache (persistent)
    - Backed by a JSON persistent cache (`PersistentCache`) with TTL per entry.
@@ -93,10 +91,10 @@ Required:
 - `user_cache_ttl_seconds` (int; TTL for user entries; default 7 days)
 - `initial_lookback_days` (int; days to look back when starting fresh; default 7)
 - `chunk_time_interval_minutes` (int; max minutes between messages in a chunk; default 240)
-- `chunk_max_size_chars` (int; max characters per chunk; default 2000)
-- `chunk_max_count` (int; max messages per chunk; default 20)
+- `chunk_max_size_chars` (int; max characters per chunk; default 2000, capped by embedding model capacity)
+- `chunk_max_messages` (int; max messages per chunk; default 20)
 - `chunk_similarity_threshold` (float; cosine similarity threshold for splitting; default 0.15)
-- `chunk_embedding_model` (str; model for semantic embeddings; default "all-MiniLM-L6-v2")
+- `chunk_embedding_model` (str; model for semantic embeddings; **Required**)
 - `api_retries` (int; retries for unexpected API errors; default 3)
 
 Optional tier overrides:

@@ -21,8 +21,8 @@ class DocumentManager:
 
     def __init__(
         self,
+        embeddings_model: str,
         storage_dir: str = "data",
-        embeddings_model: str = "sentence-transformers/all-MiniLM-L6-v2",
     ) -> None:
         """Initialize application state.
 
@@ -389,8 +389,12 @@ def main() -> None:
     print("📚 Document Manager Demo")
     print("=" * 30)
 
+    from src.models.config import ConfigLoader
+
+    config = ConfigLoader.load("config/vatuta.yaml")
+
     # Initialize document manager
-    manager = DocumentManager()
+    manager = DocumentManager(embeddings_model=config.qdrant.embeddings_model)
 
     # Show current stats
     stats = manager.get_document_stats()

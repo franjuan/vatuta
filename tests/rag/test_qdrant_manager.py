@@ -25,7 +25,9 @@ class FakeEmbeddings(Embeddings):
 
 @pytest.fixture
 def mock_qdrant_config() -> QdrantConfig:
-    return QdrantConfig(url="http://localhost:6333", collection_name="vatuta_test", embeddings_model="all-MiniLM-L6-v2")
+    return QdrantConfig(
+        url="http://localhost:6333", collection_name="vatuta_test", embeddings_model="multilingual-e5-small"
+    )
 
 
 @pytest.fixture

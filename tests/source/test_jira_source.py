@@ -23,6 +23,7 @@ class TestJiraSource(unittest.TestCase):
             include_comments=True,
             projects=["TEST", "DEV"],
             id="test_jira",
+            chunk_embedding_model="intfloat/multilingual-e5-small",
         )
         self.storage_path = self.temp_dir
         self.secrets = {"jira_user": "user", "jira_api_token": "token"}
@@ -398,7 +399,7 @@ class TestJiraSource(unittest.TestCase):
         # Configuration for test
         test_config = self.jira_config.model_copy(
             update={
-                "chunk_max_count": 2,
+                "chunk_max_comments": 2,
                 "chunk_max_size_chars": 1000,
                 "chunk_similarity_threshold": 0.5,
             }
@@ -406,6 +407,7 @@ class TestJiraSource(unittest.TestCase):
 
         # Mock embedding model
         mock_model = MagicMock()
+        mock_model.max_seq_length = 256
         mock_get_model.return_value = mock_model
 
         # We define simple orthogonal vectors for controlling similarity
@@ -474,7 +476,7 @@ class TestJiraSource(unittest.TestCase):
         test_config = self.jira_config.model_copy(
             update={
                 "chunk_max_size_chars": 10000,
-                "chunk_max_count": 2,
+                "chunk_max_comments": 2,
             }
         )
         source = JiraSource(config=test_config, secrets=self.secrets, storage_path=self.temp_dir)
@@ -485,7 +487,7 @@ class TestJiraSource(unittest.TestCase):
         # Test Semantic Splitting
         test_config = self.jira_config.model_copy(
             update={
-                "chunk_max_count": 10,
+                "chunk_max_comments": 10,
                 "chunk_max_size_chars": 10000,
                 "chunk_similarity_threshold": 0.8,
             }

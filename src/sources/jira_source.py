@@ -19,13 +19,26 @@ from typing import Any, Dict, Final, List, Optional, Set, Tuple
 
 from jira import JIRA
 from pydantic import Field
-from sentence_transformers.SentenceTransformer import SentenceTransformer
+from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
 
 from src.entities.manager import EntityManager
 
 # Import Prometheus metrics from centralized module
-from src.metrics.metrics import API_CALLS, API_LATENCY, OP_ITEMS, OP_LATENCY
+from src.metrics.metrics import (
+    API_CALLS,
+    API_LATENCY,
+    INGEST_CHUNK_SIZE_CHARS,
+    INGEST_CHUNK_SPLIT_REASON,
+    INGEST_CHUNK_TOKEN_BUDGET_RATIO,
+    INGEST_CHUNKS_PER_DOCUMENT,
+    INGEST_CHUNKS_TOTAL,
+    INGEST_DOCUMENT_SIZE_CHARS,
+    INGEST_DOCUMENTS_TOTAL,
+    INGEST_EMBEDDING_LATENCY_SECONDS,
+    OP_ITEMS,
+    OP_LATENCY,
+)
 from src.models.documents import ChunkRecord, DocumentUnit
 from src.models.source_config import BaseSourceConfig
 from src.sources.checkpoint import Checkpoint
@@ -54,11 +67,11 @@ class JiraConfig(BaseSourceConfig):
 
     # Comment chunking configuration
     chunk_max_size_chars: int = Field(default=2000, description="Max characters per comment chunk")
-    chunk_max_count: int = Field(default=10, description="Max comments per comment chunk")
+    chunk_max_comments: int = Field(default=10, description="Max comments per comment chunk")
     chunk_similarity_threshold: float = Field(
         default=0.15, description="Cosine similarity threshold for comment chunk splitting"
     )
-    chunk_embedding_model: str = Field(default="all-MiniLM-L6-v2", description="Model for semantic embeddings")
+    chunk_embedding_model: str = Field(..., description="Model for semantic embeddings")
 
 
 class JiraCheckpoint(Checkpoint[JiraConfig]):
@@ -121,8 +134,6 @@ class JiraSource(Source[JiraConfig]):
 
     def load_checkpoint(self) -> JiraCheckpoint:
         """Load existing checkpoint or create a new one."""
-        from pathlib import Path
-
         cp_path = Path(self.storage_path) / self.source_id / "checkpoint.json"
 
         if cp_path.exists():
@@ -157,7 +168,14 @@ class JiraSource(Source[JiraConfig]):
             validate=False,
             get_server_info=False,
         )
-        self._embedding_model: SentenceTransformer | None = None
+
+        # Embedding model
+        self._embedding_model: SentenceTransformer = self._get_embedding_model()
+        max_seq_length = self._embedding_model.max_seq_length
+        if max_seq_length is None:
+            raise ValueError(f"Embedding model {self.config.chunk_embedding_model!r} does not define max_seq_length")
+
+        self._EMBEDDING_MODEL_MAX_CHARS: int = max_seq_length * 4
 
         self._connection_validated = False
 
@@ -342,6 +360,14 @@ class JiraSource(Source[JiraConfig]):
                 doc, issue_chunks = self._process_issue(issue, names, schema)
                 docs.append(doc)
                 chunks.extend(issue_chunks)
+                INGEST_DOCUMENTS_TOTAL.labels(source="jira", source_id=self.source_id).inc()
+                for ch in issue_chunks:
+                    chunk_type = "ticket"
+                    for tag in ch.system_tags:
+                        if tag.startswith("type:"):
+                            chunk_type = tag.split(":", 1)[1]
+                            break
+                    INGEST_CHUNKS_TOTAL.labels(source="jira", source_id=self.source_id, chunk_type=chunk_type).inc()
 
                 # Track latest updated timestamp
                 updated_str = issue["fields"]["updated"]
@@ -652,6 +678,23 @@ class JiraSource(Source[JiraConfig]):
             comment_chunks = self._build_chunks_for_comments(doc, comments, system_tags, start_index=chunk_idx)
             chunks.extend(comment_chunks)
 
+        sid = self.source_id
+        # Observe ticket body size as document size
+        INGEST_DOCUMENT_SIZE_CHARS.labels(source="jira", source_id=sid).observe(len(ticket_content))
+        # Observe per-type chunk sizes and total chunks per document
+        for ch in chunks:
+            chunk_type = "ticket"
+            for tag in ch.system_tags:
+                if tag.startswith("type:"):
+                    chunk_type = tag.split(":", 1)[1]
+                    break
+            chunk_chars = len(ch.text)
+            INGEST_CHUNK_SIZE_CHARS.labels(source="jira", source_id=sid, chunk_type=chunk_type).observe(chunk_chars)
+            INGEST_CHUNK_TOKEN_BUDGET_RATIO.labels(source="jira", source_id=sid, chunk_type=chunk_type).observe(
+                chunk_chars / self._EMBEDDING_MODEL_MAX_CHARS
+            )
+        INGEST_CHUNKS_PER_DOCUMENT.labels(source="jira", source_id=sid).observe(len(chunks))
+
         return doc, chunks
 
     def _format_ticket_content(self, issue: Dict[str, Any], names: Dict[str, str], schema: Dict[str, Any]) -> str:
@@ -840,8 +883,18 @@ class JiraSource(Source[JiraConfig]):
         return "\n".join(lines), tags
 
     def _get_embedding_model(self) -> SentenceTransformer:
-        if self._embedding_model is None:
+        if getattr(self, "_embedding_model", None) is None:
             self._embedding_model = SentenceTransformer(self.config.chunk_embedding_model)
+            if not hasattr(self._embedding_model, "max_seq_length"):
+                raise ValueError(f"Embedding model {self.config.chunk_embedding_model!r} does not have max_seq_length")
+            model_max_chars = getattr(self._embedding_model, "max_seq_length", 0) * 4
+            if self.config.chunk_max_size_chars > model_max_chars:
+                logger.warning(
+                    f"Configured chunk_max_size_chars ({self.config.chunk_max_size_chars}) is larger than the "
+                    f"embedding model's capacity ({model_max_chars} chars). Using {model_max_chars} instead."
+                )
+                self.config.chunk_max_size_chars = model_max_chars
+            self._EMBEDDING_MODEL_MAX_CHARS = model_max_chars
         return self._embedding_model
 
     def _create_comment_chunk(
@@ -900,8 +953,8 @@ class JiraSource(Source[JiraConfig]):
         next_len: int,
         current_emb: Any,
         prev_emb: Optional[Any],
-    ) -> bool:
-        """Determine if a new chunk should be started.
+    ) -> Optional[str]:
+        """Determine if a new chunk should be started, returning the split reason.
 
         Args:
             current_count: Number of comments in the current chunk.
@@ -911,25 +964,26 @@ class JiraSource(Source[JiraConfig]):
             prev_emb: Embedding of the previous comment (if any).
 
         Returns:
-            True if the chunk should be split, False otherwise.
+            A split reason string ("size_chars", "size_count", "semantic") if the chunk
+            should be split, or None if no split is needed.
         """
         # 0. If current chunk is empty, can't split
         if current_count == 0:
-            return False
+            return None
 
         # 1. Size/Count-based splitting
-        if (current_size + next_len > self.config.chunk_max_size_chars) or (
-            current_count + 1 > self.config.chunk_max_count
-        ):
-            return True
+        if current_size + next_len > self.config.chunk_max_size_chars:
+            return "size_chars"
+        if current_count + 1 > self.config.chunk_max_comments:
+            return "size_count"
 
         # 2. Semantic splitting
         if prev_emb is not None:
             similarity = cos_sim(current_emb, prev_emb).item()
             if similarity < self.config.chunk_similarity_threshold:
-                return True
+                return "semantic"
 
-        return False
+        return None
 
     def _build_chunks_for_comments(
         self, doc: DocumentUnit, comments: List[dict], base_tags: List[str], start_index: int = 0
@@ -937,10 +991,14 @@ class JiraSource(Source[JiraConfig]):
         if not comments:
             return []
 
+        sid = self.source_id
+
         sorted_comments = sorted(comments, key=lambda c: str(c.get("created", "")))
         texts_for_embedding = [c.get("body", "") or " " for c in sorted_comments]
         model = self._get_embedding_model()
+        _emb_start = perf_counter()
         embeddings = model.encode(texts_for_embedding)
+        INGEST_EMBEDDING_LATENCY_SECONDS.labels(source="jira", source_id=sid).observe(perf_counter() - _emb_start)
 
         chunks: List[ChunkRecord] = []
         current_chunk_comments: List[dict] = []
@@ -952,10 +1010,18 @@ class JiraSource(Source[JiraConfig]):
             text, _ = self._format_comment_for_embedding(c)
             comment_len = len(text)
 
-            if self._should_split_chunk(
+            split_reason = self._should_split_chunk(
                 len(current_chunk_comments), current_chunk_size, comment_len, emb, prev_comment_emb
-            ):
-                chunks.append(self._create_comment_chunk(doc, current_chunk_comments, base_tags, chunk_counter))
+            )
+            if split_reason:
+                INGEST_CHUNK_SPLIT_REASON.labels(source="jira", source_id=sid, reason=split_reason).inc()
+                chunk = self._create_comment_chunk(doc, current_chunk_comments, base_tags, chunk_counter)
+                chunk_chars = len(chunk.text)
+                INGEST_CHUNK_SIZE_CHARS.labels(source="jira", source_id=sid, chunk_type="comment").observe(chunk_chars)
+                INGEST_CHUNK_TOKEN_BUDGET_RATIO.labels(source="jira", source_id=sid, chunk_type="comment").observe(
+                    chunk_chars / self._EMBEDDING_MODEL_MAX_CHARS
+                )
+                chunks.append(chunk)
                 chunk_counter += 1
 
                 current_chunk_comments = []
@@ -966,7 +1032,13 @@ class JiraSource(Source[JiraConfig]):
             prev_comment_emb = emb
 
         if current_chunk_comments:
-            chunks.append(self._create_comment_chunk(doc, current_chunk_comments, base_tags, chunk_counter))
+            chunk = self._create_comment_chunk(doc, current_chunk_comments, base_tags, chunk_counter)
+            chunk_chars = len(chunk.text)
+            INGEST_CHUNK_SIZE_CHARS.labels(source="jira", source_id=sid, chunk_type="comment").observe(chunk_chars)
+            INGEST_CHUNK_TOKEN_BUDGET_RATIO.labels(source="jira", source_id=sid, chunk_type="comment").observe(
+                chunk_chars / self._EMBEDDING_MODEL_MAX_CHARS
+            )
+            chunks.append(chunk)
 
         return chunks
 
@@ -1122,8 +1194,9 @@ def main() -> None:
         use_cached_data=False,
         taggeable_fields=["priority", "issuetype", "status", "assignee", "reporter", "labels"],
         chunk_max_size_chars=2000,
-        chunk_max_count=10,
+        chunk_max_comments=10,
         chunk_similarity_threshold=0.15,
+        chunk_embedding_model="intfloat/multilingual-e5-small",
     )
 
     entity_manager = EntityManager(storage_path="data/entities.json")

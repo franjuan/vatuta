@@ -137,8 +137,8 @@ class ChunkRecord(BaseModel):
         default=None,
         description="Last update timestamp of the specific source item this chunk represents.",
     )
-    embedding_model: str = Field(
-        default="sentence-transformers/all-MiniLM-L6-v2",
+    embedding_model: Optional[str] = Field(
+        default=None,
         description="Embedding model identifier used to compute vectors.",
     )
     embedding_version: Optional[str] = Field(
@@ -229,7 +229,7 @@ class ChunkRecord(BaseModel):
             indexed_at=(datetime.fromisoformat(m["indexed_at"]) if m.get("indexed_at") else None),
             source_created_at=(datetime.fromisoformat(m["source_created_at"]) if m.get("source_created_at") else None),
             source_updated_at=(datetime.fromisoformat(m["source_updated_at"]) if m.get("source_updated_at") else None),
-            embedding_model=str(m.get("embedding_model", "")),
+            embedding_model=m.get("embedding_model"),
             embedding_version=m.get("embedding_version"),
             vector_dim=m.get("vector_dim"),
             token_count=m.get("token_count"),

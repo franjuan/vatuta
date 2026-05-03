@@ -17,8 +17,9 @@ class TestSlackChunking(unittest.TestCase):
             workspace_domain="test.slack.com",
             chunk_time_interval_minutes=60,  # 1 hour
             chunk_max_size_chars=100,
-            chunk_max_count=3,
+            chunk_max_messages=3,
             chunk_similarity_threshold=0.5,
+            chunk_embedding_model="intfloat/multilingual-e5-small",
             enabled=True,
         )
         self.source = SlackSource(

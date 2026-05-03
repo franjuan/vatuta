@@ -57,6 +57,7 @@ language from a single CLI.
 - 🦊 **GitLab** — issues and MRs *(PoC)*
 - 📅 **Google Calendar** — events and schedules *(work in progress)*
 - ⚡ Incremental updates with checkpointing and caching (no full re-ingestion)
+- 📏 Dynamic chunk size limits automatically capped by the embedding model's capacity to prevent truncation
 - 👤 **Global Entity Manager** — resolves the same entity (users right now) across Jira,
   Confluence and Slack *(work in progress)*
 
@@ -300,9 +301,13 @@ rag:
     bedrock:
       model_id: "bedrock/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
       temperature: 0.2
+      max_tokens: 800
+      top_k: 4
     gemini:
       model_id: "gemini/gemini-3-flash-preview"
       temperature: 1.0
+      max_tokens: 800
+      top_k: 4
 
   router_backend: "gemini"
   generator_backend: "bedrock"
@@ -315,7 +320,7 @@ entities_manager:
 qdrant:
   url: "http://localhost:6333"
   collection_name: "vatuta_documents"
-  embeddings_model: "sentence-transformers/all-MiniLM-L6-v2"
+  embeddings_model: "intfloat/multilingual-e5-small"
 
 # Sources to ingest
 sources:
@@ -332,12 +337,14 @@ sources:
       channel_window_minutes: 60
       user_cache_path: "data/slack/slack-main/slack_users_cache.json"
       user_cache_ttl_seconds: 7 * 24 * 60 * 60
+      chunk_embedding_model: "intfloat/multilingual-e5-small"
 
   jira:
     jira-main:
       enabled: true
       url: "https://your-domain.atlassian.net"
       projects: ["PROJECT1", "PROJECT2"]
+      chunk_embedding_model: "intfloat/multilingual-e5-small"
 
   confluence:
     confluence-main:
@@ -497,9 +504,6 @@ just test-coverage       # With HTML coverage report (htmlcov/)
 ## Future Improvements
 
 The current project is a proof of concept. The following areas represent key opportunities for future enhancement:
-
-- **Embeddings Token Limit**: The `all-MiniLM-L6-v2` model is efficient but capped at 256 tokens. Chunk sizes
-  must be strictly managed to prevent truncation during embedding generation.
 
 - **Real-Time Ingestion**: Transitioning from scheduled batch processing to event-driven streaming would enable
   proactive, real-time responses to new data.

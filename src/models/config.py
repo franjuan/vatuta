@@ -53,7 +53,7 @@ class QdrantConfig(BaseModel):
     url: str = Field(default="http://localhost:6333", description="Qdrant server URL")
     collection_name: str = Field(default="vatuta_documents", description="Collection name for documents")
     embeddings_model: str = Field(
-        default="sentence-transformers/all-MiniLM-L6-v2",
+        ...,
         description="HuggingFace embeddings model",
     )
 
@@ -62,7 +62,7 @@ class VatutaConfig(BaseModel):
     """Main configuration for Vatuta application."""
 
     rag: RagConfig
-    qdrant: QdrantConfig = Field(default_factory=QdrantConfig)
+    qdrant: QdrantConfig
     sources: SourcesConfig
     entities_manager: EntityManagerConfig = Field(default_factory=EntityManagerConfig)
 
