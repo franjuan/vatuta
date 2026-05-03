@@ -301,9 +301,13 @@ rag:
     bedrock:
       model_id: "bedrock/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
       temperature: 0.2
+      max_tokens: 800
+      top_k: 4
     gemini:
       model_id: "gemini/gemini-3-flash-preview"
       temperature: 1.0
+      max_tokens: 800
+      top_k: 4
 
   router_backend: "gemini"
   generator_backend: "bedrock"
