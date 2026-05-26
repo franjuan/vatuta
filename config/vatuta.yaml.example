@@ -20,7 +20,10 @@ entities_manager:
 qdrant:
   url: "http://localhost:6333"
   collection_name: "vatuta_documents"
+  # dense_vector_name: "dense"
   embeddings_model: "intfloat/multilingual-e5-small"
+  # sparse_vector_name: "sparse"
+  sparse_embeddings_model: "Qdrant/bm25"
 
 sources:
   slack:

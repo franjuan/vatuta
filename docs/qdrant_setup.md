@@ -60,14 +60,30 @@ QDRANT_API_KEY=your_secure_random_key_here
 
 ### Application Config
 
-The application connects to Qdrant using settings in `config/vatuta.yaml`:
+The application connects to Qdrant using settings in `config/vatuta.yaml`. Vatuta supports **Hybrid Search**,
+combining Semantic Search (dense vectors) with Lexical Search (BM25 sparse vectors).
 
 ```yaml
 qdrant:
   url: "http://localhost:6333"
   collection_name: "vatuta_documents"
+
+  # Semantic Search (Dense)
   embeddings_model: "intfloat/multilingual-e5-small"
+  # dense_vector_name: "dense" # Optional, defaults to "dense"
+
+  # Lexical Search (Sparse / BM25)
+  sparse_embeddings_model: "Qdrant/bm25"
+  # sparse_vector_name: "sparse" # Optional, defaults to "sparse"
 ```
+
+### Hybrid Search (BM25 + Semantic)
+
+Vatuta automatically uses **RetrievalMode.HYBRID**. This means:
+
+- **Semantic Search**: Driven by HuggingFace models (`embeddings_model`).
+- **Lexical Search (BM25)**: Evaluated locally via `fastembed` (`sparse_embeddings_model`) and matched natively by Qdrant.
+- **Fusion**: Results are merged automatically using Qdrant's Reciprocal Rank Fusion (RRF).
 
 ## Dashboard
 
