@@ -63,7 +63,7 @@ language from a single CLI.
 
 ### Query & retrieval
 
-- 🔍 Vector-based semantic search over all your sources simultaneously
+- 🔍 **Hybrid search** (Semantic + BM25 Lexical) over all your sources simultaneously
 - 🗂️ Metadata filtering and selection of sources
 - 🔀 Dynamic routing for applying filtering or collecting documents as interpreted from query
 - 🧠 LangGraph-powered RAG agent with tool-based retrieval
@@ -513,9 +513,6 @@ The current project is a proof of concept. The following areas represent key opp
 
 - **Reranking Over Filtering**: Instead of dropping chunks with missing metadata prior to search, implement a
   reranking step to preserve potentially relevant documents in the context.
-
-- **Hybrid Retrieval**: Combine dense semantic vectors with sparse lexical representations in Qdrant to improve
-  searches for exact terms, acronyms, and ticket IDs.
 
 - **GraphRAG Implementation**: Explore GraphRAG to better handle broad queries, relationships between entities,
   and aggregations that currently overwhelm the standard vector RAG approach.
