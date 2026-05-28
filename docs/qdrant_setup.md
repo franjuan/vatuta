@@ -108,4 +108,12 @@ Qdrant comes with a built-in web UI dashboard.
 ### Data Persistence
 
 **Note**: Data is mounted to `$(pwd)/data/qdrant` (or `{{justfile_directory()}}/data/qdrant`).
-Ensure this directory has write permissions.
+
+To prevent Docker from creating the persistence directory as `root` or generating root-owned database files inside it,
+we use the following setup:
+
+1. **Pre-creation**: The `just qdrant-start` recipe pre-creates `data/qdrant` on the host using your local system
+user.
+2. **Unprivileged Image**: We run the official unprivileged image (`qdrant/qdrant:latest-unprivileged`). This image
+runs Qdrant as a non-root user (UID `1000`) inside the container. Because of this, all generated database files
+in your local `data/qdrant` folder are mapped directly to your local system user and not to `root`.
