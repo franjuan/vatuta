@@ -467,7 +467,7 @@ def _display_sources(result: Dict[str, Any]) -> None:
         title = d.metadata.get("title") or d.metadata.get("source_doc_id") or "Untitled"
         src = d.metadata.get("source", "unknown")
         preview = d.page_content[:100].replace("\n", " ") + "..."
-        table.add_row(str(idx), "[magenta]Semantic[/magenta]", title, src, preview)
+        table.add_row(str(idx), "[magenta]Hybrid[/magenta]", title, src, preview)
         idx += 1
 
     console.print("\n")
