@@ -160,3 +160,5 @@ token.json
 mypy_report/
 ruff-report.txt
 data*.zip
+
+local.md
