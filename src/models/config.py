@@ -56,6 +56,18 @@ class QdrantConfig(BaseModel):
         ...,
         description="HuggingFace embeddings model",
     )
+    dense_vector_name: str = Field(
+        default="dense",
+        description="Name of the dense vector field in Qdrant",
+    )
+    sparse_vector_name: str = Field(
+        default="sparse",
+        description="Name of the sparse vector field in Qdrant",
+    )
+    sparse_embeddings_model: str = Field(
+        ...,
+        description="FastEmbed model for sparse embeddings",
+    )
 
 
 class VatutaConfig(BaseModel):

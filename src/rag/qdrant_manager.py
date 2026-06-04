@@ -12,7 +12,7 @@ from uuid import UUID
 
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_qdrant import QdrantVectorStore
+from langchain_qdrant import FastEmbedSparse, QdrantVectorStore, RetrievalMode
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
@@ -23,8 +23,10 @@ from qdrant_client.models import (
     IsEmptyCondition,
     IsNullCondition,
     MatchValue,
+    Modifier,
     NestedCondition,
     PointIdsList,
+    SparseVectorParams,
     VectorParams,
 )
 
@@ -54,8 +56,11 @@ class QdrantDocumentManager:
         self.client = QdrantClient(url=config.url, api_key=api_key)
         self.collection_name = config.collection_name
 
-        # Initialize embeddings
+        # Initialize dense embeddings
         self.embeddings = HuggingFaceEmbeddings(model_name=config.embeddings_model)
+
+        # Initialize sparse embeddings (BM25)
+        self.sparse_embeddings = FastEmbedSparse(model_name=config.sparse_embeddings_model)
 
         # Ensure collection exists
         self._ensure_collection()
@@ -74,6 +79,10 @@ class QdrantDocumentManager:
             client=self.client,
             collection_name=self.collection_name,
             embedding=self.embeddings,
+            sparse_embedding=self.sparse_embeddings,
+            retrieval_mode=RetrievalMode.HYBRID,
+            vector_name=self.config.dense_vector_name,
+            sparse_vector_name=self.config.sparse_vector_name,
         )
 
     def _ensure_collection(self) -> None:
@@ -89,12 +98,18 @@ class QdrantDocumentManager:
 
             self.client.create_collection(
                 collection_name=self.collection_name,
-                vectors_config=VectorParams(
-                    size=vector_size,
-                    distance=Distance.COSINE,
-                ),
+                vectors_config={
+                    self.config.dense_vector_name: VectorParams(
+                        size=vector_size,
+                        distance=Distance.COSINE,
+                    )
+                },
+                sparse_vectors_config={
+                    self.config.sparse_vector_name: SparseVectorParams(
+                        modifier=Modifier.IDF,
+                    )
+                },
             )
-            print(f"✅ Created collection: {self.collection_name} (vector size: {vector_size})")
             print(f"✅ Created collection: {self.collection_name} (vector size: {vector_size})")
 
     def _generate_doc_id(self, doc: Document) -> str:
@@ -519,6 +534,10 @@ class QdrantDocumentManager:
                 client=self.client,
                 collection_name=self.collection_name,
                 embedding=self.embeddings,
+                sparse_embedding=self.sparse_embeddings,
+                retrieval_mode=RetrievalMode.HYBRID,
+                vector_name=self.config.dense_vector_name,
+                sparse_vector_name=self.config.sparse_vector_name,
             )
 
             print("🗑️ Cleared all documents from knowledge base")

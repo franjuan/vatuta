@@ -176,8 +176,9 @@ install-spacy:
 qdrant-start:
     @echo "🚀 Starting Qdrant..."
     -docker rm -f vatuta-qdrant 2>/dev/null
-    docker pull qdrant/qdrant:latest
-    docker run -d --name vatuta-qdrant -p 6333:6333 -p 6334:6334 -e QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY} -v {{justfile_directory()}}/data/qdrant:/qdrant/storage:z qdrant/qdrant:latest
+    docker pull qdrant/qdrant:latest-unprivileged
+    mkdir -p {{justfile_directory()}}/data/qdrant
+    docker run -d --name vatuta-qdrant -p 6333:6333 -p 6334:6334 -e QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY} -v {{justfile_directory()}}/data/qdrant:/qdrant/storage:z qdrant/qdrant:latest-unprivileged
     @echo "✅ Qdrant started at http://localhost:6333"
     @echo "📊 Dashboard: http://localhost:6333/dashboard"
 
