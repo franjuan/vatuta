@@ -170,6 +170,7 @@ jobs:
       - name: Generate pip-audit text report
         run: |
           poetry run pip-audit ${{ env.PIP_AUDIT_IGNORE_FLAGS }} --desc > pip-audit.txt || true
+          cat pip-audit.txt
 
       - name: Run pip-audit (JSON report)
         run: |
@@ -177,6 +178,7 @@ jobs:
 
       - name: Upload pip-audit report
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: security-audit
           path: |
