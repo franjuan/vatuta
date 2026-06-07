@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "vatuta"
-version = "0.1.0"
+version = "0.2.0"
 description = "Personal AI Assistant"
 authors = ["JuanFran Adame <juanfran.adame@gmail.com>"]
 readme = "README.md"

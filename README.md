@@ -43,6 +43,7 @@ language from a single CLI.
 - [Project Structure](#project-structure)
 - [Development](#development)
 - [Contributing](#contributing)
+- [Release Notes](RELEASE.md)
 - [License](#license)
 
 ---
