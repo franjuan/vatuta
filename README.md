@@ -29,6 +29,9 @@ language from a single CLI.
 > times, with full context. Vatuta is a proof of concept showing how a RAG system can reduce that mental
 > load — replacing frantic tab-switching with a single, honest, up-to-date answer.
 
+📖 **Project Article**: For a deep dive into the motivation, implementation, and challenges of the project, check out
+[Vatuta, a RAG for managers](https://bytesandchips.com/2026/04/26/vatuta-a-rag-for-managers/).
+
 ---
 
 ## Table of Contents
