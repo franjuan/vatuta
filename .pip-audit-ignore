@@ -11,3 +11,6 @@
 # CVE-2025-69872: No fix available. Impact limited to the development environment.
 # Revisit when a patched version of the affected dependency is released.
 CVE-2025-69872
+
+# CVE-2025-3000: Accepted torch vulnerability on 2026-06-10
+CVE-2025-3000

@@ -4,7 +4,7 @@ This module defines the configuration structure for RAG settings and data source
 """
 
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 import yaml
 from pydantic import BaseModel, Field
@@ -55,6 +55,18 @@ class QdrantConfig(BaseModel):
     embeddings_model: str = Field(
         ...,
         description="HuggingFace embeddings model",
+    )
+    embeddings_query_prefix: Optional[str] = Field(
+        default=None,
+        description="Prefix to prepend to queries during semantic search",
+    )
+    embeddings_document_prefix: Optional[str] = Field(
+        default=None,
+        description="Prefix to prepend to documents during indexing",
+    )
+    embeddings_normalize: bool = Field(
+        default=False,
+        description="Whether to normalize dense embeddings (L2 normalization)",
     )
     dense_vector_name: str = Field(
         default="dense",

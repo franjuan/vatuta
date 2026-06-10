@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, TypeAlias
 from uuid import UUID
 
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_qdrant import FastEmbedSparse, QdrantVectorStore, RetrievalMode
 from qdrant_client import QdrantClient
@@ -40,6 +41,53 @@ QdrantFilterCondition: TypeAlias = (
 )
 
 
+class PrefixedEmbeddings(Embeddings):
+    """Wrapper class to prepend prefixes to queries and documents for embeddings."""
+
+    def __init__(
+        self,
+        embeddings: Embeddings,
+        query_prefix: Optional[str] = None,
+        document_prefix: Optional[str] = None,
+    ) -> None:
+        """Initialize with underlying embeddings and optional prefixes.
+
+        Args:
+            embeddings (Embeddings): The base LangChain Embeddings instance.
+            query_prefix (Optional[str]): Prefix to prepend to search queries.
+            document_prefix (Optional[str]): Prefix to prepend to documents.
+        """
+        self.embeddings = embeddings
+        self.query_prefix = query_prefix
+        self.document_prefix = document_prefix
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Embed documents, prepending the document prefix if configured.
+
+        Args:
+            texts (list[str]): List of strings to embed.
+
+        Returns:
+            list[list[float]]: List of embeddings.
+        """
+        if self.document_prefix:
+            texts = [f"{self.document_prefix}{t}" for t in texts]
+        return self.embeddings.embed_documents(texts)  # type: ignore[no-any-return]
+
+    def embed_query(self, text: str) -> list[float]:
+        """Embed query, prepending the query prefix if configured.
+
+        Args:
+            text (str): Query string to embed.
+
+        Returns:
+            list[float]: Embedding vector.
+        """
+        if self.query_prefix:
+            text = f"{self.query_prefix}{text}"
+        return self.embeddings.embed_query(text)  # type: ignore[no-any-return]
+
+
 class QdrantDocumentManager:
     """Manages documents in Qdrant vector database with LangChain integration."""
 
@@ -57,7 +105,15 @@ class QdrantDocumentManager:
         self.collection_name = config.collection_name
 
         # Initialize dense embeddings
-        self.embeddings = HuggingFaceEmbeddings(model_name=config.embeddings_model)
+        raw_embeddings = HuggingFaceEmbeddings(
+            model_name=config.embeddings_model,
+            encode_kwargs={"normalize_embeddings": config.embeddings_normalize},
+        )
+        self.embeddings = PrefixedEmbeddings(
+            raw_embeddings,
+            query_prefix=config.embeddings_query_prefix,
+            document_prefix=config.embeddings_document_prefix,
+        )
 
         # Initialize sparse embeddings (BM25)
         self.sparse_embeddings = FastEmbedSparse(model_name=config.sparse_embeddings_model)

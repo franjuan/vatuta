@@ -70,6 +70,9 @@ qdrant:
 
   # Semantic Search (Dense)
   embeddings_model: "intfloat/multilingual-e5-small"
+  embeddings_query_prefix: "query: "       # Optional: prefix prepended to search queries
+  embeddings_document_prefix: "passage: "   # Optional: prefix prepended to documents being indexed
+  embeddings_normalize: true                # Optional: L2 normalize dense embeddings (defaults to false)
   # dense_vector_name: "dense" # Optional, defaults to "dense"
 
   # Lexical Search (Sparse / BM25)
@@ -81,7 +84,9 @@ qdrant:
 
 Vatuta automatically uses **RetrievalMode.HYBRID**. This means:
 
-- **Semantic Search**: Driven by HuggingFace models (`embeddings_model`).
+- **Semantic Search**: Driven by HuggingFace models (`embeddings_model`). Optional prefix fields
+  (`embeddings_query_prefix` and `embeddings_document_prefix`) can be set in the configuration to prepend task
+  instructions (e.g., `"query: "` and `"passage: "` for E5 models) to search queries and documents respectively.
 - **Lexical Search (BM25)**: Evaluated locally via `fastembed` (`sparse_embeddings_model`) and matched natively by Qdrant.
 - **Fusion**: Results are merged automatically using Qdrant's Reciprocal Rank Fusion (RRF).
 

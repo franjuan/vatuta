@@ -22,6 +22,9 @@ qdrant:
   collection_name: "vatuta_documents"
   # dense_vector_name: "dense"
   embeddings_model: "intfloat/multilingual-e5-small"
+  embeddings_query_prefix: "query: "
+  embeddings_document_prefix: "passage: "
+  embeddings_normalize: true
   # sparse_vector_name: "sparse"
   sparse_embeddings_model: "Qdrant/bm25"
 

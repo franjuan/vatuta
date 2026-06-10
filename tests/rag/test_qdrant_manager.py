@@ -70,8 +70,30 @@ def test_init(
 ) -> None:
     assert manager.collection_name == "vatuta_test"
     mock_qdrant_client.return_value.get_collections.assert_called_once()
-    mock_embedding_function.assert_called_once()
+    mock_embedding_function.assert_called_once_with(
+        model_name="multilingual-e5-small",
+        encode_kwargs={"normalize_embeddings": False},
+    )
     mock_qdrant_vectorstore.assert_called_once()
+
+
+def test_init_with_normalization(
+    mock_qdrant_client: QdrantClient,
+    mock_embedding_function: HuggingFaceEmbeddings,
+    mock_qdrant_vectorstore: QdrantVectorStore,
+) -> None:
+    config = QdrantConfig(
+        url="http://localhost:6333",
+        collection_name="vatuta_test",
+        embeddings_model="multilingual-e5-small",
+        embeddings_normalize=True,
+        sparse_embeddings_model="Qdrant/bm25",
+    )
+    _ = QdrantDocumentManager(config)
+    mock_embedding_function.assert_called_with(
+        model_name="multilingual-e5-small",
+        encode_kwargs={"normalize_embeddings": True},
+    )
 
 
 def test_generate_doc_id(manager: QdrantDocumentManager) -> None:
@@ -217,3 +239,45 @@ def test_get_document_stats(manager: QdrantDocumentManager) -> None:
 
     assert stats["total_documents"] == 100
     assert "sources" in stats
+
+
+def test_prefixed_embeddings_with_prefixes() -> None:
+    """Test PrefixedEmbeddings prepends configured prefixes."""
+    from src.rag.qdrant_manager import PrefixedEmbeddings
+
+    mock_base = MagicMock(spec=Embeddings)
+    mock_base.embed_documents.return_value = [[0.1]]
+    mock_base.embed_query.return_value = [0.1]
+
+    prefixed = PrefixedEmbeddings(
+        embeddings=mock_base,
+        query_prefix="query: ",
+        document_prefix="passage: ",
+    )
+
+    # Test document embedding
+    prefixed.embed_documents(["hello", "world"])
+    mock_base.embed_documents.assert_called_once_with(["passage: hello", "passage: world"])
+
+    # Test query embedding
+    prefixed.embed_query("search me")
+    mock_base.embed_query.assert_called_once_with("query: search me")
+
+
+def test_prefixed_embeddings_without_prefixes() -> None:
+    """Test PrefixedEmbeddings does not alter strings if no prefixes configured."""
+    from src.rag.qdrant_manager import PrefixedEmbeddings
+
+    mock_base = MagicMock(spec=Embeddings)
+    mock_base.embed_documents.return_value = [[0.1]]
+    mock_base.embed_query.return_value = [0.1]
+
+    prefixed = PrefixedEmbeddings(embeddings=mock_base)
+
+    # Test document embedding
+    prefixed.embed_documents(["hello", "world"])
+    mock_base.embed_documents.assert_called_once_with(["hello", "world"])
+
+    # Test query embedding
+    prefixed.embed_query("search me")
+    mock_base.embed_query.assert_called_once_with("search me")
