@@ -191,9 +191,10 @@ def test_add_chunk_records(manager: QdrantDocumentManager) -> None:
 
 def test_delete_documents_by_filter(manager: QdrantDocumentManager) -> None:
     manager.client = MagicMock()
-    # Mock scroll response for the count check before deletion
-    # scroll returns (points, offset)
-    manager.client.scroll.return_value = ([MagicMock()] * 5, None)
+    # Mock count response for the count check before deletion
+    count_result = MagicMock()
+    count_result.count = 5
+    manager.client.count.return_value = count_result
 
     deleted_count = manager.delete_documents(source="test_source")
 

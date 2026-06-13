@@ -320,14 +320,12 @@ class QdrantDocumentManager:
             filter_query = Filter(must=conditions)
 
             # Get count before deletion (for reporting)
-            scroll_result = self.client.scroll(
+            count_result = self.client.count(
                 collection_name=self.collection_name,
-                scroll_filter=filter_query,
-                limit=10000,  # Get all matching
-                with_payload=False,
-                with_vectors=False,
+                count_filter=filter_query,
+                exact=True,
             )
-            count_before = len(scroll_result[0]) if scroll_result else 0
+            count_before: int = int(count_result.count)
 
             # Delete with filter
             print(f"🗑️ Deleting {count_before} records...")

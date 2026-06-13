@@ -9,6 +9,11 @@ All notable changes to the Vatuta project are documented in this file.
 - **Embedding Configuration**: Support for configurable embedding prefixes (`embeddings_query_prefix` and
 `embeddings_document_prefix`) and L2 normalization (`embeddings_normalize`) in the Qdrant manager.
 
+### Fixed
+
+- **Document Deletion Count**: Fixed a limitation in Qdrant document manager where it would only report up to 10,
+000 deleted documents by replacing pagination-based scroll count with native Qdrant `count` API.
+
 ---
 
 ## [0.2.0] - 2026-06-04
