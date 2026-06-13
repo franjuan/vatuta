@@ -2,6 +2,15 @@
 
 All notable changes to the Vatuta project are documented in this file.
 
+## [0.2.1] - 2026-06-13
+
+### Added
+
+- **Embedding Configuration**: Support for configurable embedding prefixes (`embeddings_query_prefix` and
+`embeddings_document_prefix`) and L2 normalization (`embeddings_normalize`) in the Qdrant manager.
+
+---
+
 ## [0.2.0] - 2026-06-04
 
 ### Added
