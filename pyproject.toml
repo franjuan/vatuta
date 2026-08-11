@@ -1,11 +1,15 @@
-[tool.poetry]
+[project]
 name = "vatuta"
 version = "0.2.1"
 description = "Personal AI Assistant"
-authors = ["JuanFran Adame <juanfran.adame@gmail.com>"]
+authors = [
+    { name = "JuanFran Adame", email = "juanfran.adame@gmail.com" }
+]
 readme = "README.md"
-packages = [{include = "src"}]
 license = "Apache-2.0"
+
+[tool.poetry]
+packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.14"
@@ -39,9 +43,11 @@ rich = "^14.2.0"
 prometheus-client = "^0.23.1"
 pyyaml = "^6.0.3"
 pydocstyle = "^6.3.0"
-google-genai = "1.56.0"
-langchain-google-genai = "4.1.2"
+google-genai = "^1.56.0"
+langchain-google-genai = "^4.1.2"
 fastembed = "^0.8.0"
+mcp = "^1.28.1"
+docker = "^7.2.0"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -65,7 +71,7 @@ lxml = "^6.0.2"
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.poetry.scripts]
+[project.scripts]
 vatuta = "src.client.client:app"
 bedrock = "pocs.bedrock_tool:main"
 
@@ -131,7 +137,8 @@ module = [
     "typer.*",
     "rich.*",
     "prometheus_client.*",
-    "yaml.*"
+    "yaml.*",
+    "docker.*"
 ]
 ignore_missing_imports = true
 
