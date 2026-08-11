@@ -1,5 +1,6 @@
 """Configuration and path validation for MCP containers."""
 
+import re
 from pathlib import Path
 from typing import Any, Optional
 
@@ -15,6 +16,7 @@ DEFAULT_FORBIDDEN_EXACT_PATHS: set[str] = {
     "/boot",
     "/home",
     "/var",
+    "/run",
 }
 
 DEFAULT_FORBIDDEN_PATH_PREFIXES: tuple[str, ...] = (
@@ -24,11 +26,37 @@ DEFAULT_FORBIDDEN_PATH_PREFIXES: tuple[str, ...] = (
     "/proc/",
     "/dev/",
     "/boot/",
+    "/run/",
     "/var/run/",
     "/var/lib/docker",
     "/var/log",
     "/var/backups",
 )
+
+
+def is_item_allowed(item_id: str, whitelist_patterns: Optional[list[str]] = None) -> bool:
+    """Check if an item identifier matches any regex pattern in a whitelist.
+
+    If whitelist_patterns is None, all items are allowed by default.
+
+    Args:
+        item_id: The identifier string (e.g. tool name, prompt name, or resource URI/name).
+        whitelist_patterns: Optional list of regex patterns allowed.
+
+    Returns:
+        bool: True if item_id matches at least one regex in whitelist_patterns or if whitelist is None.
+    """
+    if whitelist_patterns is None:
+        return True
+
+    for pattern in whitelist_patterns:
+        try:
+            if re.search(pattern, item_id):
+                return True
+        except re.error:
+            continue
+
+    return False
 
 
 def is_forbidden_host_path(
@@ -49,21 +77,24 @@ def is_forbidden_host_path(
     if not src:
         return True
 
+    if "docker.sock" in src:
+        return True
+
     # Use defaults if not provided
     exact_paths = forbidden_exact if forbidden_exact is not None else DEFAULT_FORBIDDEN_EXACT_PATHS
     prefixes = forbidden_prefixes if forbidden_prefixes is not None else DEFAULT_FORBIDDEN_PATH_PREFIXES
 
     try:
-        # Resolve path to catch '..' and symlinks
+        # Resolve path to catch '..' and symlinks (e.g. /var/run -> /run)
         resolved = str(Path(src).resolve())
     except Exception:
         # If path resolution fails (e.g. invalid chars), deny it
         return True
 
-    if resolved in exact_paths:
+    if "docker.sock" in resolved:
         return True
 
-    if resolved == "/var/run/docker.sock":
+    if resolved in exact_paths:
         return True
 
     for prefix in prefixes:
@@ -103,6 +134,20 @@ class MCPContainerConfig(BaseModel):
     forbidden_path_prefixes: tuple[str, ...] = Field(
         default=DEFAULT_FORBIDDEN_PATH_PREFIXES,
         description="Path prefixes forbidden from being mounted.",
+    )
+
+    # Whitelist filtering configuration (regex patterns)
+    allowed_tools: Optional[list[str]] = Field(
+        default=None,
+        description="Optional list of regex patterns to whitelist allowed tools.",
+    )
+    allowed_prompts: Optional[list[str]] = Field(
+        default=None,
+        description="Optional list of regex patterns to whitelist allowed prompts.",
+    )
+    allowed_resources: Optional[list[str]] = Field(
+        default=None,
+        description="Optional list of regex patterns to whitelist allowed resources.",
     )
 
     @model_validator(mode="after")

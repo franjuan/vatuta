@@ -18,8 +18,10 @@ async def main() -> None:
         "auto_pull": True,
         "allow_network": False,
         "read_only": True,
-        # Allow custom path configuration overrides if needed
-        # "forbidden_exact_paths": {"/", "/etc"}, 
+        # Whitelist filtering (regex patterns)
+        "allowed_tools": ["^echo$", "^add$"],
+        "allowed_prompts": [".*_prompt"],
+        "allowed_resources": ["test://static/.*"],
     }
 
     print(f"Loading configuration: {config_dict}")
@@ -60,6 +62,34 @@ async def main() -> None:
             print(f" -> 'add' result: {add_result.content}")
         except Exception as e:
             print(f" -> Error calling 'add' tool: {e}")
+
+        # Attempt to call a blocked tool not in allowed_tools
+        try:
+            await server.call_tool("printEnv", {})
+            print(" -> Unexpected success calling 'printEnv'")
+        except ValueError as e:
+            print(f" -> Blocked call to 'printEnv' correctly caught: {e}")
+
+        # Fetch sample prompt
+        print("\nFetching sample prompt:")
+        try:
+            prompt_data = await server.get_prompt("simple_prompt")
+            print(f" -> 'simple_prompt' result: {prompt_data}")
+        except Exception as e:
+            print(f" -> Error fetching prompt: {e}")
+
+        # List and read sample resource
+        print("\nReading sample resources:")
+        try:
+            resources_result = await server.list_resources()
+            if resources_result.resources:
+                sample_uri = str(resources_result.resources[0].uri)
+                resource_content = await server.read_resource(sample_uri)
+                print(f" -> Resource '{sample_uri}' content: {resource_content}")
+            else:
+                print(" -> No resources available to read.")
+        except Exception as e:
+            print(f" -> Error reading resource: {e}")
 
 
 if __name__ == "__main__":

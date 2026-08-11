@@ -6,8 +6,9 @@ from typing import Any, Optional
 import docker
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.types import ClientCapabilities
 
-from src.mcp.config import MCPContainerConfig
+from src.mcp.config import MCPContainerConfig, is_item_allowed
 
 
 def check_image_exists(image: str) -> bool:
@@ -46,8 +47,23 @@ def get_image_digest(image: str) -> str:
         raise RuntimeError(f"Docker API error while getting digest for '{image}': {e}") from e
 
 
+def cleanup_existing_container(container_name: str) -> None:
+    """Remove any existing container with the given name if it exists (stopped or running)."""
+    try:
+        client = docker.from_env()
+        container = client.containers.get(container_name)
+        container.remove(force=True)
+    except docker.errors.NotFound:
+        pass
+    except docker.errors.APIError:
+        pass
+
+
 def ensure_image_available(config: MCPContainerConfig) -> str:
     """Ensure image is available locally and return its resolved RepoDigest."""
+    # Cleanup any leftover container from a previous run with the same instance name
+    cleanup_existing_container(f"vatuta-mcp-{config.name}")
+
     # If the image is already pinned with a digest, just ensure it exists
     if "@sha256:" in config.image:
         if not check_image_exists(config.image):
@@ -114,9 +130,15 @@ def build_docker_mcp_params(config: MCPContainerConfig, resolved_image: str) -> 
 class MCPServer:
     """Main class for managing an MCP server lifecycle and client session."""
 
-    def __init__(self, config: MCPContainerConfig):
+    def __init__(
+        self,
+        config: MCPContainerConfig,
+        capabilities: Optional[ClientCapabilities] = None,
+    ):
         """Initialize the MCP Server."""
         self.config = config
+        # Explicit client capabilities (defaults to empty ClientCapabilities with no capabilities enabled)
+        self.capabilities = capabilities or ClientCapabilities()
         self._exit_stack: Optional[Any] = None
         self.session: Optional[ClientSession] = None
 
@@ -161,26 +183,61 @@ class MCPServer:
             await self._stdio_cm.__aexit__(None, None, None)
             self._stdio_cm = None
 
+        # Ensure leftover container with this instance name is removed
+        await asyncio.to_thread(cleanup_existing_container, f"vatuta-mcp-{self.config.name}")
+
     async def list_tools(self) -> Any:
-        """List available tools from the MCP server."""
+        """List available tools from the MCP server, filtered by whitelist configuration."""
         if not self.session:
             raise RuntimeError("MCP session not started.")
-        return await self.session.list_tools()
+        result = await self.session.list_tools()
+        if self.config.allowed_tools is not None:
+            result.tools = [t for t in result.tools if is_item_allowed(t.name, self.config.allowed_tools)]
+        return result
 
     async def list_prompts(self) -> Any:
-        """List available prompts from the MCP server."""
+        """List available prompts from the MCP server, filtered by whitelist configuration."""
         if not self.session:
             raise RuntimeError("MCP session not started.")
-        return await self.session.list_prompts()
+        result = await self.session.list_prompts()
+        if self.config.allowed_prompts is not None:
+            result.prompts = [p for p in result.prompts if is_item_allowed(p.name, self.config.allowed_prompts)]
+        return result
 
     async def list_resources(self) -> Any:
-        """List available resources from the MCP server."""
+        """List available resources from the MCP server, filtered by whitelist configuration."""
         if not self.session:
             raise RuntimeError("MCP session not started.")
-        return await self.session.list_resources()
+        result = await self.session.list_resources()
+        if self.config.allowed_resources is not None:
+            result.resources = [
+                r
+                for r in result.resources
+                if is_item_allowed(str(r.uri), self.config.allowed_resources)
+                or is_item_allowed(r.name, self.config.allowed_resources)
+            ]
+        return result
 
     async def call_tool(self, name: str, arguments: Optional[dict[str, Any]] = None) -> Any:
-        """Call a specific tool on the MCP server."""
+        """Call a specific tool on the MCP server if authorized by whitelist configuration."""
         if not self.session:
             raise RuntimeError("MCP session not started.")
+        if not is_item_allowed(name, self.config.allowed_tools):
+            raise ValueError(f"Tool '{name}' is not allowed by security whitelist configuration.")
         return await self.session.call_tool(name, arguments or {})
+
+    async def get_prompt(self, name: str, arguments: Optional[dict[str, str]] = None) -> Any:
+        """Get a specific prompt from the MCP server if authorized by whitelist configuration."""
+        if not self.session:
+            raise RuntimeError("MCP session not started.")
+        if not is_item_allowed(name, self.config.allowed_prompts):
+            raise ValueError(f"Prompt '{name}' is not allowed by security whitelist configuration.")
+        return await self.session.get_prompt(name, arguments or {})
+
+    async def read_resource(self, uri: str) -> Any:
+        """Read a specific resource from the MCP server by its URI if authorized by whitelist configuration."""
+        if not self.session:
+            raise RuntimeError("MCP session not started.")
+        if not is_item_allowed(uri, self.config.allowed_resources):
+            raise ValueError(f"Resource URI '{uri}' is not allowed by security whitelist configuration.")
+        return await self.session.read_resource(uri)

@@ -275,8 +275,17 @@ mounts: []
 # forbidden_exact_paths:
 #   - "/"
 #   - "/etc"
+
+# Optional: Whitelist filtering regex patterns for tools, prompts, and resources
+allowed_tools:
+  - "^echo$"
+  - "^add$"
+allowed_prompts:
+  - ".*_prompt"
+allowed_resources:
+  - "test://static/.*"
 ```
 
 The configuration is seamlessly parsed into the `MCPContainerConfig` Pydantic model (`src/mcp/config.py`),
 ensuring that multiple concurrent instances (differentiated by `name`) run securely according to the established
-policies.
+policies and whitelist rules.
