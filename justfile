@@ -35,8 +35,8 @@ lint:
 # Format code
 format:
     poetry run black src tests
-    poetry run ruff check src tests --fix
     poetry run isort src tests
+    poetry run ruff check src tests --fix
 
 # Check code formatting
 format-check:

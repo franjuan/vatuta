@@ -204,11 +204,12 @@ jobs:
 
       - name: Generate Bandit HTML report
         run: |
-          bandit -r . -f html -o bandit-report.html || true
+          bandit -r . -x ./tests,./pocs -f html -o bandit-report.html || true
 
       - name: Run Bandit (JSON report)
         run: |
-          bandit -r . -f json -o bandit-report.json || true
+          bandit -r . -x ./tests,./pocs -f json -o bandit-report.json || true
+
 
       - name: Upload Bandit report
         uses: actions/upload-artifact@v4
