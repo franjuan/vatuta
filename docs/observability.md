@@ -84,3 +84,67 @@ optimally sized for embeddings, Vatuta tracks these metrics:
 2. **Review `ingest_chunk_split_reason_total`**: If chunks are predominantly splitting on `size_chars`
    or `size_count`, you might need to adjust your thresholds to allow the `semantic` strategy
    to operate effectively.
+
+## Logging Architecture
+
+Vatuta uses Python's standard `logging` library configured via `logging.config.dictConfig` from YAML configuration files.
+
+### Configuration (`config/logging.yaml`)
+
+The default logging structure is defined in `config/logging.yaml`:
+
+```yaml
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  standard:
+    format: "%(message)s"
+    datefmt: "[%X]"
+
+handlers:
+  console:
+    class: rich.logging.RichHandler
+    level: DEBUG
+    rich_tracebacks: true
+    tracebacks_show_locals: false
+    log_time_format: "[%X]"
+
+root:
+  level: INFO
+  handlers:
+    - console
+
+loggers:
+  src:
+    level: INFO
+  src.rag.agent:
+    level: DEBUG
+  qdrant_client:
+    level: WARNING
+  httpx:
+    level: WARNING
+  httpcore:
+    level: WARNING
+  docker:
+    level: WARNING
+  external.mcp:
+    level: INFO
+```
+
+### Application Logger Namespaces
+
+- **`src`**: Root namespace for all internal Vatuta modules (`src.rag`, `src.sources`, `src.client`, etc.).
+- **`src.rag.agent`**: Detailed internal logging for RAG agent execution and decision paths.
+- **`external.mcp.<server_name>`**: Loggers capturing stderr output from isolated MCP Docker container processes
+  (e.g. `external.mcp.everything`, `external.mcp.wikipedia`).
+
+### CLI Controls
+
+- `--log-config <path>`: Specify a custom YAML logging configuration file.
+- `-v` / `--verbose`: Force root and `src` loggers to `DEBUG` level during CLI invocation.
+
+### Logging Formatting Standard
+
+All internal modules use **lazy printf-style formatting** (`logger.info("Message %s", arg)`) rather than string
+interpolation (`f"..."`) to ensure formatting operations are deferred until log evaluation.

@@ -42,6 +42,7 @@ from src.models.documents import ChunkRecord, DocumentUnit
 from src.models.source_config import BaseSourceConfig
 from src.sources.checkpoint import Checkpoint
 from src.sources.source import Source
+from src.utils.logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -793,7 +794,7 @@ class ConfluenceSource(Source[ConfluenceConfig]):
 
 def main() -> None:
     """Execute Confluence document collection."""
-    logging.basicConfig(level=logging.INFO)
+    setup_logging()
 
     # Example configuration from environment
     confluence_url = os.getenv("JIRA_INSTANCE_URL", "")

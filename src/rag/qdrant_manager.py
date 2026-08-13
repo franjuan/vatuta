@@ -166,7 +166,7 @@ class QdrantDocumentManager:
                     )
                 },
             )
-            print(f"✅ Created collection: {self.collection_name} (vector size: {vector_size})")
+            logger.info("Created collection: %s (vector size: %d)", self.collection_name, vector_size)
 
     def _generate_doc_id(self, doc: Document) -> str:
         """Generate a unique ID for a document based on content hash.
@@ -201,10 +201,10 @@ class QdrantDocumentManager:
             True if successful, False otherwise
         """
         if not documents:
-            print("⚠️ No documents to add")
+            logger.warning("No documents to add")
             return False
 
-        print(f"📝 Adding {len(documents)} documents to Qdrant...")
+        logger.info("Adding %d documents to Qdrant...", len(documents))
 
         try:
             # Generate IDs for all documents
@@ -214,14 +214,11 @@ class QdrantDocumentManager:
             # QdrantVectorStore handles upserts (overwriting existing IDs)
             self.vectorstore.add_documents(documents, ids=doc_ids)
 
-            print(f"✅ Successfully added {len(documents)} documents")
+            logger.info("Successfully added %d documents", len(documents))
             return True
 
         except Exception as e:
-            print(f"❌ Error adding documents: {e}")
-            import traceback
-
-            traceback.print_exc()
+            logger.error("Error adding documents: %s", e, exc_info=True)
             return False
 
     def add_chunk_records(
@@ -240,21 +237,24 @@ class QdrantDocumentManager:
         """
         try:
             if not chunks:
-                print("⚠️ No chunk records to add")
+                logger.warning("No chunk records to add")
                 return False
 
             lc_docs: List[Document] = []
             for ch in chunks:
                 parent = documents_by_id.get(ch.parent_document_id)
                 if parent is None:
-                    print(f"⚠️ Skipping chunk {ch.chunk_id}: missing parent document {ch.parent_document_id}")
+                    logger.warning("Skipping chunk %s: missing parent document %s", ch.chunk_id, ch.parent_document_id)
                     continue
 
                 if self._max_chars is not None and len(ch.text) > self._max_chars:
                     source = parent.source
                     if source not in self._warned_sources:
                         logger.warning(
-                            f"Chunk in source '{source}' exceeds Qdrant embedding model '{self.config.embeddings_model}' max size of {self._max_chars} chars. It will be truncated."
+                            "Chunk in source '%s' exceeds Qdrant embedding model '%s' max size of %d chars. It will be truncated.",
+                            source,
+                            self.config.embeddings_model,
+                            self._max_chars,
                         )
                         self._warned_sources.add(source)
 
@@ -263,7 +263,7 @@ class QdrantDocumentManager:
                 lc_docs.append(lc_doc)
 
             if not lc_docs:
-                print("⚠️ No valid chunks to add after parent resolution")
+                logger.warning("No valid chunks to add after parent resolution")
                 return False
 
             # Collect IDs from chunks (convert to UUIDs for Qdrant)
@@ -275,16 +275,13 @@ class QdrantDocumentManager:
                     chunk_ids.append(chunk_uuid)
 
             # Add to vector store
-            print(f"🆕 Adding {len(lc_docs)} chunks to vector store...")
+            logger.info("Adding %d chunks to vector store...", len(lc_docs))
             self.vectorstore.add_documents(lc_docs, ids=chunk_ids)
 
-            print(f"✅ Successfully added {len(lc_docs)} chunks")
+            logger.info("Successfully added %d chunks", len(lc_docs))
             return True
         except Exception as e:
-            print(f"❌ Error adding chunk records: {e}")
-            import traceback
-
-            traceback.print_exc()
+            logger.error("Error adding chunk records: %s", e, exc_info=True)
             return False
 
     def delete_documents(
@@ -302,7 +299,7 @@ class QdrantDocumentManager:
             Number of documents deleted.
         """
         if not source and not source_instance_id:
-            print("⚠️ No deletion criteria specified")
+            logger.warning("No deletion criteria specified")
             return 0
 
         try:
@@ -328,20 +325,17 @@ class QdrantDocumentManager:
             count_before: int = int(count_result.count)
 
             # Delete with filter
-            print(f"🗑️ Deleting {count_before} records...")
+            logger.info("Deleting %d records...", count_before)
             self.client.delete(
                 collection_name=self.collection_name,
                 points_selector=filter_query,
             )
 
-            print(f"✅ Deleted {count_before} records")
+            logger.info("Deleted %d records", count_before)
             return count_before
 
         except Exception as e:
-            print(f"❌ Error during deletion: {e}")
-            import traceback
-
-            traceback.print_exc()
+            logger.error("Error during deletion: %s", e, exc_info=True)
             return 0
 
     def delete_documents_by_ids(self, ids: list[int | str | UUID]) -> bool:
@@ -361,10 +355,10 @@ class QdrantDocumentManager:
                 collection_name=self.collection_name,
                 points_selector=PointIdsList(points=ids),
             )
-            print(f"✅ Deleted {len(ids)} documents by ID")
+            logger.info("Deleted %d documents by ID", len(ids))
             return True
         except Exception as e:
-            print(f"❌ Error deleting from vectorstore: {e}")
+            logger.error("Error deleting from vectorstore: %s", e, exc_info=True)
             return False
 
     def get_detailed_stats(self) -> Dict[str, Any]:
@@ -453,7 +447,7 @@ class QdrantDocumentManager:
             }
 
         except Exception as e:
-            print(f"⚠️ Error getting detailed stats: {e}")
+            logger.warning("Error getting detailed stats: %s", e)
             return {
                 "total_documents": 0,
                 "sources": {},
@@ -510,7 +504,7 @@ class QdrantDocumentManager:
             return stats
 
         except Exception as e:
-            print(f"⚠️ Error getting stats: {e}")
+            logger.warning("Error getting stats: %s", e)
             return {
                 "total_documents": 0,
                 "sources": {},
@@ -567,7 +561,7 @@ class QdrantDocumentManager:
             return documents
 
         except Exception as e:
-            print(f"⚠️ Error listing documents: {e}")
+            logger.warning("Error listing documents: %s", e)
             return []
 
     def clear_all_documents(self) -> bool:
@@ -594,11 +588,11 @@ class QdrantDocumentManager:
                 sparse_vector_name=self.config.sparse_vector_name,
             )
 
-            print("🗑️ Cleared all documents from knowledge base")
+            logger.info("Cleared all documents from knowledge base")
             return True
 
         except Exception as e:
-            print(f"❌ Error clearing documents: {e}")
+            logger.error("Error clearing documents: %s", e, exc_info=True)
             return False
 
     def search(
@@ -623,8 +617,9 @@ class QdrantDocumentManager:
             if self._max_chars is not None:
                 if len(query) > self._max_chars:
                     logger.warning(
-                        f"Search query exceeds Qdrant embedding model max length ({self._max_chars} chars) and will be truncated. "
-                        "Consider summarizing the query before searching or using BM25/Lexical hybrid search."
+                        "Search query exceeds Qdrant embedding model max length (%d chars) and will be truncated. "
+                        "Consider summarizing the query before searching or using BM25/Lexical hybrid search.",
+                        self._max_chars,
                     )
 
             # We use similarity_search_with_score to apply threshold if needed
@@ -645,7 +640,7 @@ class QdrantDocumentManager:
             return results
 
         except Exception as e:
-            print(f"❌ Error during search: {e}")
+            logger.error("Error during search: %s", e, exc_info=True)
             return []
 
     def get_documents(self, filter: Any, limit: Optional[int] = None) -> List[Document]:
@@ -690,7 +685,7 @@ class QdrantDocumentManager:
             return documents
 
         except Exception as e:
-            print(f"❌ Error during direct retrieval: {e}")
+            logger.error("Error during direct retrieval: %s", e, exc_info=True)
             return []
 
 

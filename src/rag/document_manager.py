@@ -5,6 +5,7 @@ This module handles storing, retrieving, and managing documents in the knowledge
 
 import hashlib
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -14,6 +15,8 @@ from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 
 from src.models.documents import ChunkRecord, DocumentUnit
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentManager:
@@ -58,12 +61,12 @@ class DocumentManager:
                     self.embeddings,
                     allow_dangerous_deserialization=True,  # We control the data source
                 )
-                print(f"📚 Loaded existing vector store with {len(self.documents_metadata)} documents")
+                logger.info("Loaded existing vector store with %d documents", len(self.documents_metadata))
             else:
-                print("📚 No existing vector store found. Starting fresh.")
+                logger.info("No existing vector store found. Starting fresh.")
 
         except Exception as e:
-            print(f"⚠️ Error loading existing data: {e}")
+            logger.error("Error loading existing data: %s", e)
             self.documents_metadata = {}
             self.vectorstore = None
 
@@ -73,7 +76,7 @@ class DocumentManager:
             with open(self.documents_metadata_file, "w") as f:
                 json.dump(self.documents_metadata, f, indent=2)
         except Exception as e:
-            print(f"⚠️ Error saving metadata: {e}")
+            logger.error("Error saving metadata: %s", e)
 
     def _save_vectorstore(self) -> None:
         """Save vector store to file."""
@@ -81,7 +84,7 @@ class DocumentManager:
             if self.vectorstore:
                 self.vectorstore.save_local(str(self.vectorstore_dir))
         except Exception as e:
-            print(f"⚠️ Error saving vector store: {e}")
+            logger.error("Error saving vector store: %s", e)
 
     def _generate_doc_id(self, doc: Document) -> str:
         """Generate a unique ID for a document based on content hash."""
@@ -104,10 +107,10 @@ class DocumentManager:
             True if successful, False otherwise
         """
         if not documents:
-            print("⚠️ No documents to add")
+            logger.warning("No documents to add")
             return False
 
-        print(f"📝 Adding {len(documents)} documents to knowledge base...")
+        logger.info("Adding %d documents to knowledge base...", len(documents))
 
         try:
             # Generate IDs for all documents
@@ -115,10 +118,10 @@ class DocumentManager:
 
             # Create or update vector store
             if self.vectorstore is None:
-                print("🆕 Creating new vector store...")
+                logger.info("Creating new vector store...")
                 self.vectorstore = FAISS.from_documents(documents, self.embeddings, ids=doc_ids)
             else:
-                print("🔄 Updating existing vector store...")
+                logger.info("Updating existing vector store...")
                 # Remove existing documents with same IDs to avoid duplicates
                 try:
                     self.vectorstore.delete(doc_ids)
@@ -146,11 +149,11 @@ class DocumentManager:
             self._save_metadata()
             self._save_vectorstore()
 
-            print(f"✅ Successfully added {len(documents)} documents")
+            logger.info("Successfully added %d documents", len(documents))
             return True
 
         except Exception as e:
-            print(f"❌ Error adding documents: {e}")
+            logger.error("Error adding documents: %s", e, exc_info=True)
             return False
 
     def add_chunk_records(
@@ -170,26 +173,26 @@ class DocumentManager:
         try:
 
             if not chunks:
-                print("⚠️ No chunk records to add")
+                logger.warning("No chunk records to add")
                 return False
 
             lc_docs: List[Document] = []
             for ch in chunks:
                 parent = documents_by_id.get(ch.parent_document_id)
                 if parent is None:
-                    print(f"⚠️ Skipping chunk {ch.chunk_id}: missing parent document {ch.parent_document_id}")
+                    logger.warning("Skipping chunk %s: missing parent document %s", ch.chunk_id, ch.parent_document_id)
                     continue
                 lc_docs.append(ch.to_langchain_document(parent))
 
             if not lc_docs:
-                print("⚠️ No valid chunks to add after parent resolution")
+                logger.warning("No valid chunks to add after parent resolution")
                 return False
 
             # Collect IDs from chunks
             chunk_ids = [ch.chunk_id for ch in chunks]
 
             # Create or update vector store
-            print(f"🆕 Adding {len(lc_docs)} chunks to vector store...")
+            logger.info("Adding %d chunks to vector store...", len(lc_docs))
             if self.vectorstore is None:
                 self.vectorstore = FAISS.from_documents(lc_docs, self.embeddings, ids=chunk_ids)
             else:
@@ -227,13 +230,10 @@ class DocumentManager:
             self._save_metadata()
             self._save_vectorstore()
 
-            print(f"✅ Successfully added {len(lc_docs)} chunks")
+            logger.info("Successfully added %d chunks", len(lc_docs))
             return True
         except Exception as e:
-            print(f"❌ Error adding chunk records: {e}")
-            import traceback
-
-            traceback.print_exc()
+            logger.error("Error adding chunk records: %s", e, exc_info=True)
             return False
 
     def delete_documents(self, source: Optional[str] = None, source_instance_id: Optional[str] = None) -> int:
@@ -256,10 +256,10 @@ class DocumentManager:
             ids_to_delete.append(key)
 
         if not ids_to_delete:
-            print("⚠️ No documents matched deletion criteria")
+            logger.warning("No documents matched deletion criteria")
             return 0
 
-        print(f"🗑️ Deleting {len(ids_to_delete)} records...")
+        logger.info("Deleting %d records...", len(ids_to_delete))
 
         try:
             # 1. Delete from VectorStore
@@ -267,7 +267,7 @@ class DocumentManager:
                 try:
                     self.vectorstore.delete(ids_to_delete)
                 except Exception as e:
-                    print(f"⚠️ FAISS deletion error (possibly IDs not found): {e}")
+                    logger.warning("FAISS deletion error (possibly IDs not found): %s", e)
 
             # 2. Delete from Metadata
             for key in ids_to_delete:
@@ -276,14 +276,11 @@ class DocumentManager:
             self._save_metadata()
             self._save_vectorstore()
 
-            print(f"✅ Deleted {len(ids_to_delete)} records")
+            logger.info("Deleted %d records", len(ids_to_delete))
             return len(ids_to_delete)
 
         except Exception as e:
-            print(f"❌ Error during deletion: {e}")
-            import traceback
-
-            traceback.print_exc()
+            logger.error("Error during deletion: %s", e, exc_info=True)
             return 0
 
     def get_document_stats(self) -> Dict[str, Any]:
@@ -359,11 +356,11 @@ class DocumentManager:
 
                 shutil.rmtree(self.vectorstore_dir)
 
-            print("🗑️ Cleared all documents from knowledge base")
+            logger.info("Cleared all documents from knowledge base")
             return True
 
         except Exception as e:
-            print(f"❌ Error clearing documents: {e}")
+            logger.error("Error clearing documents: %s", e, exc_info=True)
             return False
 
     def delete_documents_by_ids(self, ids: List[str]) -> bool:
@@ -380,7 +377,7 @@ class DocumentManager:
                 self._save_vectorstore()
             return True
         except Exception as e:
-            print(f"❌ Error deleting from vectorstore: {e}")
+            logger.error("Error deleting from vectorstore: %s", e, exc_info=True)
             return False
 
 

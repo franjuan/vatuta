@@ -1,0 +1,42 @@
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  standard:
+    format: "%(message)s"
+    datefmt: "[%X]"
+
+handlers:
+  console:
+    class: rich.logging.RichHandler
+    level: DEBUG
+    rich_tracebacks: true
+    tracebacks_show_locals: false
+    log_time_format: "[%X]"
+
+root:
+  level: INFO
+  handlers:
+    - console
+
+loggers:
+  src:
+    level: INFO
+
+  src.rag.agent:
+    level: DEBUG
+
+  qdrant_client:
+    level: WARNING
+
+  httpx:
+    level: WARNING
+
+  httpcore:
+    level: WARNING
+
+  docker:
+    level: WARNING
+
+  external.mcp:
+    level: INFO

@@ -69,6 +69,8 @@ repos:
       - id: bandit
         language_version: python3.12
         args: ["-q", "-ll"]
+        exclude: ^(tests|pocs)/
+
 
   - repo: https://github.com/returntocorp/semgrep
     rev: v1.152.0

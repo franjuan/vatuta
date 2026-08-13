@@ -94,6 +94,16 @@ filters correctly.
 | **State effect** | Extends `state["specific_docs"]` |
 | **Dependencies** | Requires `sources: List[Source]` and `manager: QdrantDocumentManager` |
 
+### `MCPToolWrapper`
+
+| | |
+| --- | --- |
+| **File** | `src/rag/tools/mcp.py` |
+| **Trigger** | Dynamically triggered based on the descriptions provided by configured MCP servers |
+| **`_run` output** | None (Executes asynchronously on the Docker container via `call_tool`) |
+| **State effect** | Formats the response from the MCP tool and returns it as a string to the router |
+| **Dependencies** | Requires a running `MCPServer` instance and an `AsyncLoopThread` to bridge sync-over-async |
+
 ## Adding a New Tool
 
 1. **Create** a new file `src/rag/tools/my_tool.py`.

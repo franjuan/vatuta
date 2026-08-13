@@ -36,7 +36,8 @@ You **MUST** always invoke Python tools (pytest, mypy, ruff, black, python scrip
 - **Execution**: You MUST update the relevant documentation in `docs/` (e.g., `docs/integrations.md`, component docs)
 *during* the execution phase, not as an afterthought.
 - **Verification**: If documentation was not updated when functionality changed, the task is incomplete.
-- **Quality**: Documentation is checked by **pydocstyle** (Google convention) and **markdownlint**.
+- **Quality**: Documentation is checked by **pydocstyle** (Google convention) and **markdownlint** (MD013 line
+  length limit: **120** characters, configured in `.markdownlint.json`).
 
 ## Code Style Guidelines
 
@@ -213,6 +214,8 @@ except Exception as e:
 - `.secrets.baseline` - detect-secrets baseline file
 - `config/vatuta.yaml.example` - Vatuta configuration file example
 - `config/vatuta.yaml` - Vatuta configuration file (not version controlled)
+- `config/logging.yaml.example` - Logging configuration file example
+- `config/logging.yaml` - Logging configuration file
 
 ## Testing Guidelines
 
@@ -257,16 +260,32 @@ class Settings(BaseSettings):
         env_file = ".env"
 ```
 
-### Logging
+### Logging Rules & Standards
+
+Always follow these logging rules across the entire `src/` package:
+
+1. **Module-Level Logger**: Define `logger = logging.getLogger(__name__)` at the top of every module using logs.
+2. **Lazy Formatting**: Always use lazy printf-style formatting (`logger.info("User %s started session", user_id)`),
+   **NEVER f-strings** (`f"..."`), to avoid string formatting overhead when logs are disabled.
+3. **No `print()` for Subsystem Logging**: Do not use raw `print()` statements in domain modules. Use `logger` methods
+   (`info`, `debug`, `warning`, `error`, `exception`). Reserve Rich `console.print` exclusively for interactive CLI
+   output in `src/client/`.
+4. **Centralized Configuration**: Do NOT invoke `logging.basicConfig(...)` at module level. Logging is configured at
+   application entry points via `setup_logging()` reading `config/logging.yaml` (`dictConfig` with
+   `RichHandler(rich_tracebacks=True, log_time_format="[%X]")`).
+5. **External Container Stream Capture**: Redirect external subprocess/container stderr streams using `LoggerWriter(logging.getLogger(f"external.mcp.{server_name}"))`.
 
 ```python
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Use structured logging
-logger.info(f"User {user_id} started chat session")
-logger.error(f"API call failed: {error}", extra={"user_id": user_id})
+# Correct: Lazy formatting
+logger.info("Processed %d items for source %s", item_count, source_id)
+logger.error("Failed to connect to host %s: %s", host, error, exc_info=True)
+
+# Incorrect: f-string formatting (DO NOT USE)
+logger.info(f"Processed {item_count} items for source {source_id}")
 ```
 
 ## Quick Commands Reference
@@ -319,7 +338,7 @@ The project uses `pre-commit` to enforce strict code quality standards. The foll
 - **Isort**: Import sorting
 - **Ruff**: Fast linting (replaces flake8)
 - **Yamllint**: YAML validation
-- **Markdownlint-cli2**: Markdown style validation
+- **Markdownlint-cli2**: Markdown style validation (MD013 line length limit: **120** characters)
 - **Trailing whitespace & End-of-file**: Standard hygiene
 
 ### 2. Static Analysis & Type Checking
@@ -345,7 +364,7 @@ The project uses `pre-commit` to enforce strict code quality standards. The foll
 ### Code Style
 
 - Follow PEP8 strictly.
-- Max line length: **120**.
+- Max line length: **120** (for both Python code and Markdown documentation).
 - Use `snake_case` for functions and variables.
 - Use `PascalCase` for classes.
 

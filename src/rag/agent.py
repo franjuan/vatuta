@@ -10,11 +10,14 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from src.mcp.server import MCPServer
 from src.models.config import VatutaConfig
 from src.rag.engine import DSPyRAGModule, build_dspy_lm
 from src.rag.qdrant_manager import QdrantDocumentManager
 from src.rag.tools import AgentTool, DateFilterTool, JiraTicketTool, SourceFilterTool
+from src.rag.tools.mcp import MCPToolWrapper
 from src.sources.source import Source
+from src.utils.async_runner import AsyncLoopThread
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +44,8 @@ class RouteSignature(dspy.Signature):
     - If the user implies a time range (e.g., yesterday, last week), call date_filter with precise ISO start/end based on the current time.
     - If the user wants to search in specific sources (e.g., "in Jira", "in Confluence documents"), call source_filter with the source_types or source_ids from the available sources list. You can combine multiple sources.
     - If the user mentions Jira ticket keys (e.g., PROJ-123), call jira_ticket_lookup with all keys.
-    - Stop calling tools when no further filters/docs are needed.
+    - You also have access to additional external tools (e.g., for fetching data, searching the web, or performing calculations). Call them if they can help answer the user's question.
+    - Stop calling tools when no further filters, docs, or external information are needed.
     """
 
     question: str = dspy.InputField()
@@ -62,6 +66,11 @@ class RAGAgent:
         self.sources = sources
         self.doc_manager = doc_manager
         self.retrieval_k = retrieval_k
+
+        # MCP Servers tracking
+        self.mcp_configs = config.mcp_servers
+        self.mcp_servers: List[MCPServer] = []
+        self.async_runner: AsyncLoopThread | None = None
 
         rag_conf = config.rag
 
@@ -99,6 +108,54 @@ class RAGAgent:
         workflow.add_edge("generate", END)
 
         return workflow.compile()
+
+    def __enter__(self) -> "RAGAgent":
+        """Enter context manager, starting MCP servers."""
+        if self.mcp_configs:
+            logger.info("Starting AsyncLoopThread for MCP servers...")
+            self.async_runner = AsyncLoopThread()
+            self.async_runner.start()
+
+            for name, mcp_config in self.mcp_configs.items():
+                logger.info(f"Initializing MCP server: {name}")
+                server = MCPServer(mcp_config)
+                self.mcp_servers.append(server)
+
+                try:
+                    # Start the server in the background loop
+                    self.async_runner.run_coroutine(server.start())
+
+                    # Fetch available tools
+                    tools_result = self.async_runner.run_coroutine(server.list_tools())
+                    for tool in tools_result.tools:
+                        logger.info("Loading MCP tool: %s from server %s", tool.name, name)
+                        wrapper = MCPToolWrapper(
+                            server=server,
+                            async_runner=self.async_runner,
+                            tool_name=tool.name,
+                            description=tool.description or f"MCP tool {tool.name}",
+                            input_schema=tool.inputSchema,
+                        )
+                        self._tools.append(wrapper)
+                except Exception as e:
+                    logger.error("Failed to start MCP server %s or load tools: %s", name, e, exc_info=True)
+
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Exit context manager, stopping MCP servers."""
+        if not self.async_runner:
+            return
+
+        for server in self.mcp_servers:
+            try:
+                self.async_runner.run_coroutine(server.stop())
+            except Exception as e:
+                logger.error("Error stopping MCP server %s: %s", server.config.name, e, exc_info=True)
+
+        self.mcp_servers.clear()
+        self.async_runner.stop()
+        self.async_runner = None
 
     def route(self, state: AgentState) -> Dict[str, Any]:
         """Decide what to do: call tools using DSPy ReAct or finish."""
@@ -164,7 +221,7 @@ class RAGAgent:
                     }
 
             except Exception as e:
-                logger.error(f"Router failed: {e}")
+                logger.error("Router failed: %s", e, exc_info=True)
                 summary = f"Routing failed: {e}"
                 router_cot = {"error": str(e)}
 

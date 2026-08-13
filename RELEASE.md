@@ -2,6 +2,52 @@
 
 All notable changes to the Vatuta project are documented in this file.
 
+## [0.3.0] - 2026-08-13
+
+### Added
+
+- **Model Context Protocol (MCP) Client Integration**: Enables the `RAGAgent` to dynamically discover, register, and
+  invoke external tools provided by MCP servers within the DSPy ReAct routing loop. Input argument schemas are
+  generated at runtime directly from server JSON Schema metadata. Includes end-to-end unit test coverage for
+  container lifecycle and tool wrappers.
+- **MCP Tool Filtering (Whitelisting)**: Added regex-based tool whitelisting (`allowed_tools`) per MCP server
+  configuration, allowing fine-grained restriction of which server tools are exposed to the agent.
+- **Hardened Docker Container Execution**: Implemented an isolated stdio container runner for MCP servers using the
+  Python Docker SDK. Enforces least-privilege security policies (read-only root filesystem, non-root user execution,
+  dropped Linux capabilities, network isolation, resource limits) with pre-run image digest resolution.
+- **Sync/Async Execution Bridge**: Introduced a background event loop manager (`AsyncLoopThread`) to safely bridge
+  synchronous LangGraph nodes and DSPy ReAct routing loops with asynchronous MCP container stdio sessions without
+  blocking or corrupting event loops.
+- **Agent Lifecycle & CLI Context Management**: Extended `RAGAgent` with context manager support (`__enter__` /
+  `__exit__`) for automatic container initialization, dynamic tool discovery, and graceful resource teardown,
+  integrated directly into the `vatuta ask` CLI workflow.
+
+### Changed & Refactored
+
+- **Poetry 2.0 Migration & Dependencies**: Upgraded `pyproject.toml` configuration to Poetry 2.0 specification
+  standards (`[project]` table format) and added `mcp` (`^1.28.1`) and `docker` (`^7.2.0`) dependencies. Configured
+  `isort` and `ruff` (`known_third_party = ["mcp"]`) to prevent import shadowing between PyPI `mcp` and local
+  project modules.
+- **Logging Hygiene & Architecture**: Replaced ad-hoc `print()` and f-string logging across data sources
+  (`slack.py`, `qdrant_manager.py`) with centralized `setup_logging` and lazy string formatting, adhering strictly to
+  new code quality guidelines.
+- **Python Version Pinning**: Restricted max Python version to `<3.14` in `pyproject.toml` and documentation due to
+  compatibility considerations.
+- **Default LLM & MCP Image Configurations**: Updated default Gemini LLM model identifier in configuration
+  templates to `gemini/gemini-3.7-flash` and updated the default Wikipedia MCP server image reference to
+  `mcp/wikipedia-mcp`.
+- **Documentation & Operational Troubleshooting**: Added comprehensive MCP architecture and security documentation
+  (`docs/mcp.md`), and updated `docs/qdrant_setup.md` with troubleshooting steps for Docker container storage
+  permission issues (`data/qdrant` ownership) and API key configuration.
+
+### Fixed
+
+- **Agent Tool Calling Heuristics**: Adjusted DSPy ReAct routing prompt to explicitly emphasize the usage of
+  external tools, preventing the LLM from aggressively skipping tool execution when no internal RAG filters were
+  needed.
+
+---
+
 ## [0.2.1] - 2026-06-13
 
 ### Added

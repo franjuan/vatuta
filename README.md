@@ -6,7 +6,7 @@
   <p><em>Virtual Assistant for Task Understanding, Tracking &amp; Automation</em></p>
 
   [![CI](https://github.com/franjuan/vatuta/actions/workflows/ci.yml/badge.svg)](https://github.com/franjuan/vatuta/actions/workflows/ci.yml)
-  [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue)](https://www.python.org/)
+  [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://www.python.org/)
   [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
   [![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-orange)](https://github.com/astral-sh/ruff)
   [![Checked with mypy](https://www.mypy-lang.org/static/mypy_badge.svg)](https://mypy-lang.org/)
@@ -75,6 +75,7 @@ to version 0.2.0, including hybrid search, ingestion metrics, and dependency upd
 - 🗂️ Metadata filtering and selection of sources
 - 🔀 Dynamic routing for applying filtering or collecting documents as interpreted from query
 - 🧠 LangGraph-powered RAG agent with tool-based retrieval
+- 🔌 **MCP Integration** dynamically expands agent capabilities with Model Context Protocol servers
 - 🌐 Multiple LLM backends: **AWS Bedrock**, **Google Gemini**, **Anthropic Claude**
 - 📊 Configurable `k` parameter and source-display for transparent answers
 
@@ -157,6 +158,7 @@ Three main layers:
 | AI Framework | [LangChain](https://github.com/langchain-ai/langchain), [LangGraph](https://github.com/langchain-ai/langgraph) | Agent orchestration and RAG chains |
 | Prompt Engineering | [DSPy](https://github.com/stanfordnlp/dspy) | Prompt formalization and optimization |
 | LLM Providers | AWS Bedrock, Google Gemini, Anthropic Claude | Language model backends |
+| Tool Integrations | [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) | Dynamic external tool discovery and execution |
 | Vector Database | [Qdrant](https://qdrant.tech/qdrant-vector-database/) | Semantic document storage and search |
 | Embeddings | [Sentence Transformers](https://sbert.net/) | Local embedding generation (no API cost) |
 | NLP | [spaCy](https://spacy.io/) | Intelligent text chunking |
@@ -180,7 +182,7 @@ Three main layers:
 
 | Tool | Version | Notes |
 | ---- | ------- | ----- |
-| [Python](https://www.python.org/) | >= 3.12 | Tested up to 3.14 |
+| [Python](https://www.python.org/) | >= 3.12, < 3.14 | Tested up to 3.13 (Python 3.14 capped due to missing pre-compiled `spaCy` wheels on PyPI) |
 | [Poetry](https://python-poetry.org/) | >= 1.8 | Dependency and virtualenv management |
 | [Just](https://github.com/casey/just) | any | Task runner |
 | [Docker](https://www.docker.com/) | any | Optional — only needed to run Qdrant locally (see [qdrant_setup.md](docs/qdrant_setup.md)) |
@@ -312,7 +314,7 @@ rag:
       max_tokens: 800
       top_k: 4
     gemini:
-      model_id: "gemini/gemini-3-flash-preview"
+      model_id: "gemini/gemini-3.7-flash"
       temperature: 1.0
       max_tokens: 800
       top_k: 4
@@ -385,6 +387,15 @@ Vatuta ingests data from multiple sources into a shared Qdrant vector collection
 | Google Calendar | 🚧 In Progress | — |
 
 For full setup and usage instructions, see [docs/integrations.md](docs/integrations.md).
+
+### Model Context Protocol (MCP)
+
+Vatuta acts as a fully-featured MCP Client, allowing it to seamlessly integrate with any external Model Context
+Protocol server via isolated Docker containers. This enables the RAG agent to dynamically discover and execute
+external tools (e.g., web search, database querying, calculations, GitHub integration) during the routing phase
+without requiring custom code.
+
+See [docs/mcp.md](docs/mcp.md) for full setup instructions, configuration details, and the security architecture.
 
 ### Qdrant Vector Database
 
@@ -547,6 +558,12 @@ The current project is a proof of concept. The following areas represent key opp
   `channel_ids` through the application configuration and CLI.
 
 - **Entity Manager Overhaul**: Completely review and refactor the cross-source identity resolution architecture.
+
+- **Python 3.14 & spaCy Upgrade**: Update `spacy` dependency constraint and uncap Python version to `<3.15` as soon
+  as `cp314` pre-compiled wheels are published on PyPI.
+
+- **Diskcache Vulnerability Remediation**: Revisit ignored vulnerability `CVE-2025-69872` (or related `diskcache`
+  issues in `.pip-audit-ignore`) and upgrade the library once an upstream patch is released.
 
 ---
 
