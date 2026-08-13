@@ -36,7 +36,8 @@ You **MUST** always invoke Python tools (pytest, mypy, ruff, black, python scrip
 - **Execution**: You MUST update the relevant documentation in `docs/` (e.g., `docs/integrations.md`, component docs)
 *during* the execution phase, not as an afterthought.
 - **Verification**: If documentation was not updated when functionality changed, the task is incomplete.
-- **Quality**: Documentation is checked by **pydocstyle** (Google convention) and **markdownlint**.
+- **Quality**: Documentation is checked by **pydocstyle** (Google convention) and **markdownlint** (MD013 line
+  length limit: **120** characters, configured in `.markdownlint.json`).
 
 ## Code Style Guidelines
 
@@ -337,7 +338,7 @@ The project uses `pre-commit` to enforce strict code quality standards. The foll
 - **Isort**: Import sorting
 - **Ruff**: Fast linting (replaces flake8)
 - **Yamllint**: YAML validation
-- **Markdownlint-cli2**: Markdown style validation
+- **Markdownlint-cli2**: Markdown style validation (MD013 line length limit: **120** characters)
 - **Trailing whitespace & End-of-file**: Standard hygiene
 
 ### 2. Static Analysis & Type Checking
@@ -363,7 +364,7 @@ The project uses `pre-commit` to enforce strict code quality standards. The foll
 ### Code Style
 
 - Follow PEP8 strictly.
-- Max line length: **120**.
+- Max line length: **120** (for both Python code and Markdown documentation).
 - Use `snake_case` for functions and variables.
 - Use `PascalCase` for classes.
 

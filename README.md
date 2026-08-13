@@ -182,7 +182,7 @@ Three main layers:
 
 | Tool | Version | Notes |
 | ---- | ------- | ----- |
-| [Python](https://www.python.org/) | >= 3.12 | Tested up to 3.13 |
+| [Python](https://www.python.org/) | >= 3.12, < 3.14 | Tested up to 3.13 (Python 3.14 capped due to missing pre-compiled `spaCy` wheels on PyPI) |
 | [Poetry](https://python-poetry.org/) | >= 1.8 | Dependency and virtualenv management |
 | [Just](https://github.com/casey/just) | any | Task runner |
 | [Docker](https://www.docker.com/) | any | Optional — only needed to run Qdrant locally (see [qdrant_setup.md](docs/qdrant_setup.md)) |
@@ -558,6 +558,12 @@ The current project is a proof of concept. The following areas represent key opp
   `channel_ids` through the application configuration and CLI.
 
 - **Entity Manager Overhaul**: Completely review and refactor the cross-source identity resolution architecture.
+
+- **Python 3.14 & spaCy Upgrade**: Update `spacy` dependency constraint and uncap Python version to `<3.15` as soon
+  as `cp314` pre-compiled wheels are published on PyPI.
+
+- **Diskcache Vulnerability Remediation**: Revisit ignored vulnerability `CVE-2025-69872` (or related `diskcache`
+  issues in `.pip-audit-ignore`) and upgrade the library once an upstream patch is released.
 
 ---
 
