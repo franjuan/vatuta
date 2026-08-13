@@ -120,12 +120,14 @@ def setup_logging(config_path: Optional[str] = None, verbose: bool = False) -> N
                     level=logging.DEBUG if verbose else logging.INFO,
                     datefmt="[%X]",
                     handlers=[RichHandler(rich_tracebacks=True, log_time_format="[%X]")],
+                    force=True,
                 )
         except Exception as e:
             logging.basicConfig(
                 level=logging.DEBUG if verbose else logging.INFO,
                 datefmt="[%X]",
                 handlers=[RichHandler(rich_tracebacks=True, log_time_format="[%X]")],
+                force=True,
             )
             logging.warning("Failed to load logging config from %s: %s", target_path, e)
     else:
@@ -133,6 +135,7 @@ def setup_logging(config_path: Optional[str] = None, verbose: bool = False) -> N
             level=logging.DEBUG if verbose else logging.INFO,
             datefmt="[%X]",
             handlers=[RichHandler(rich_tracebacks=True, log_time_format="[%X]")],
+            force=True,
         )
 
     if verbose:
