@@ -76,7 +76,7 @@ mcp_servers:
     allow_network: false
     read_only: true
     allowed_tools:
-      - "^get-sum$"
+      - "^add$"
   wikipedia:
     image: "mcp/wikipedia-mcp"
     auto_pull: true
