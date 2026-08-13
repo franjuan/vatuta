@@ -6,7 +6,7 @@ rag:
       # max_tokens: 800
       # top_k: 4
     gemini:
-      model_id: "gemini/gemini-3-flash-preview"
+      model_id: "gemini/gemini-3.7-flash"
       # temperature: 1.0
       # max_tokens: 800
       # top_k: 4
@@ -67,5 +67,24 @@ sources:
       url: "https://your-domain.atlassian.net"
       spaces: ["SPACE1"]
       initial_lookback_days: 30
-      # Optional chunking parameters:
       # chunk_max_size_chars: 1000         # max characters per content chunk
+
+mcp_servers:
+  everything:
+    image: "mcp/everything"
+    auto_pull: true
+    allow_network: false
+    read_only: true
+    allowed_tools:
+      - "^get-sum$"
+  wikipedia:
+    image: "mcp/wikipedia-mcp"
+    auto_pull: true
+    allow_network: true
+    read_only: true
+    args:
+      - "--language"
+      - "es"
+    allowed_tools:
+      - "^search_wikipedia$"
+      - "^get_summary$"

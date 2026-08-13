@@ -58,9 +58,22 @@ Restricts the search to specific knowledge sources.
 
 - **Trigger**: Used when the user asks to search specifically in "Jira", "Confluence", or mentions precise source types/IDs.
 - **Function**:
-  - Translates natural language requests into a list of source types or source IDs.
   - Returns a Qdrant filter structure using "OR" logic (matches *any* of the specified sources).
 - **Application**: Applied to the semantic search phase, filtering documents by their `source` (type) or `source_instance_id`.
+
+### Model Context Protocol (MCP) Tools
+
+Dynamically wraps and exposes tools provided by configured external MCP servers.
+
+- **Trigger**: Used when the user's query maps to a capability exposed by an active MCP server
+  (e.g., executing a script, looking up live external data).
+- **Function**:
+  - Dynamically fetches available tools from the MCP server at startup.
+  - Exposes each tool's JSON schema to the DSPy ReAct router.
+  - When called, bridges the synchronous agent execution to an asynchronous background loop
+    to run the tool via Docker.
+- **Application**: Expands the agent's capabilities to include arbitrary external code execution, data retrieval,
+  and integrations seamlessly.
 
 ## CLI Features
 

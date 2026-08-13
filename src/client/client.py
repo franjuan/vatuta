@@ -17,6 +17,7 @@ from rich.table import Table
 
 from src.entities.manager import EntityManager
 from src.models.config import ConfigLoader, VatutaConfig
+from src.rag.agent import RAGAgent
 from src.rag.qdrant_manager import QdrantDocumentManager
 from src.sources.confluence import ConfluenceSource
 from src.sources.jira_source import JiraSource
@@ -24,7 +25,7 @@ from src.sources.slack import SlackSource
 
 # Configure logging to stay quiet by default, will be adjusted by verbose flag
 logging.basicConfig(
-    level=logging.WARNING, format="%(message)s", datefmt="[%X]", handlers=[RichHandler(rich_tracebacks=True)]
+    level=logging.ERROR, format="%(message)s", datefmt="[%X]", handlers=[RichHandler(rich_tracebacks=True)]
 )
 
 app = typer.Typer(help="Vatuta - Virtual Assistant for Task Understanding, Tracking & Automation")
@@ -504,13 +505,12 @@ def ask(
         # Initialize Sources
         active_sources = _init_sources(state, entity_manager)
 
-        from src.rag.agent import RAGAgent
-
         agent = RAGAgent(config=state.config, sources=active_sources, doc_manager=dm, retrieval_k=k)
 
-        with Progress(SpinnerColumn(), TextColumn("[bold green]Thinking..."), transient=True) as progress:
-            progress.add_task("think", total=None)
-            result = agent.run(question)
+        with agent:
+            with Progress(SpinnerColumn(), TextColumn("[bold green]Thinking..."), transient=True) as progress:
+                progress.add_task("think", total=None)
+                result = agent.run(question)
 
         # Display Chain of Thought if requested
         _display_cot(result, show_cot, state.verbose)

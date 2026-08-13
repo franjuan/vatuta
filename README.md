@@ -75,6 +75,7 @@ to version 0.2.0, including hybrid search, ingestion metrics, and dependency upd
 - 🗂️ Metadata filtering and selection of sources
 - 🔀 Dynamic routing for applying filtering or collecting documents as interpreted from query
 - 🧠 LangGraph-powered RAG agent with tool-based retrieval
+- 🔌 **MCP Integration** dynamically expands agent capabilities with Model Context Protocol servers
 - 🌐 Multiple LLM backends: **AWS Bedrock**, **Google Gemini**, **Anthropic Claude**
 - 📊 Configurable `k` parameter and source-display for transparent answers
 
@@ -312,7 +313,7 @@ rag:
       max_tokens: 800
       top_k: 4
     gemini:
-      model_id: "gemini/gemini-3-flash-preview"
+      model_id: "gemini/gemini-3.7-flash"
       temperature: 1.0
       max_tokens: 800
       top_k: 4

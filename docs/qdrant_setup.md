@@ -110,6 +110,23 @@ Qdrant comes with a built-in web UI dashboard.
 **Fix**: Ensure `QDRANT_API_KEY` is set in your `.env` file and that you have restarted the Qdrant container
 (`just qdrant-restart`) after changing the key.
 
+### Permission Denied on Storage
+
+**Error**: `PermissionDenied ... path: "./storage/collections/vatuta_documents/0/wal/..."`
+**Cause**: Files in `data/qdrant/` were previously created with `root` ownership (e.g., standard Qdrant
+container image), so `qdrant/qdrant:latest-unprivileged` cannot write to them.
+**Fix**: Fix file ownership with:
+
+```bash
+sudo chown -R $USER:$USER data/qdrant
+```
+
+Or reset the storage directory if data can be re-indexed:
+
+```bash
+sudo rm -rf data/qdrant
+```
+
 ### Data Persistence
 
 **Note**: Data is mounted to `$(pwd)/data/qdrant` (or `{{justfile_directory()}}/data/qdrant`).

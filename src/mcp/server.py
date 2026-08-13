@@ -7,6 +7,7 @@ import docker
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.types import ClientCapabilities
+from pydantic import AnyUrl
 
 from src.mcp.config import MCPContainerConfig, is_item_allowed
 
@@ -123,6 +124,8 @@ def build_docker_mcp_params(config: MCPContainerConfig, resolved_image: str) -> 
         args.append(f"--mount=type=bind,src={src},dst={dst},readonly={'true' if mode == 'ro' else 'false'}")
 
     args.append(resolved_image)
+    if config.args:
+        args.extend(config.args)
 
     return StdioServerParameters(command="docker", args=args, env=None)
 
@@ -175,16 +178,22 @@ class MCPServer:
     async def stop(self) -> None:
         """Stop the server and cleanup."""
         if self._session_cm is not None:
-            await self._session_cm.__aexit__(None, None, None)
+            try:
+                await asyncio.wait_for(self._session_cm.__aexit__(None, None, None), timeout=2.0)
+            except Exception:
+                pass
             self._session_cm = None
             self.session = None
 
-        if self._stdio_cm is not None:
-            await self._stdio_cm.__aexit__(None, None, None)
-            self._stdio_cm = None
-
-        # Ensure leftover container with this instance name is removed
+        # Ensure leftover container is removed FIRST so stdio_client doesn't hang waiting for it
         await asyncio.to_thread(cleanup_existing_container, f"vatuta-mcp-{self.config.name}")
+
+        if self._stdio_cm is not None:
+            try:
+                await asyncio.wait_for(self._stdio_cm.__aexit__(None, None, None), timeout=2.0)
+            except Exception:
+                pass
+            self._stdio_cm = None
 
     async def list_tools(self) -> Any:
         """List available tools from the MCP server, filtered by whitelist configuration."""
@@ -240,4 +249,4 @@ class MCPServer:
             raise RuntimeError("MCP session not started.")
         if not is_item_allowed(uri, self.config.allowed_resources):
             raise ValueError(f"Resource URI '{uri}' is not allowed by security whitelist configuration.")
-        return await self.session.read_resource(uri)
+        return await self.session.read_resource(AnyUrl(uri))

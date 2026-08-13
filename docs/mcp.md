@@ -289,3 +289,24 @@ allowed_resources:
 The configuration is seamlessly parsed into the `MCPContainerConfig` Pydantic model (`src/mcp/config.py`),
 ensuring that multiple concurrent instances (differentiated by `name`) run securely according to the established
 policies and whitelist rules.
+
+---
+
+## 8. LangGraph RAG Agent Integration
+
+Vatuta integrates MCP servers directly into its LangGraph-based `RAGAgent`.
+The integration automatically starts the configured MCP servers, discovers their available tools,
+and exposes them dynamically to the LLM (using a ReAct router node powered by DSPy).
+
+### Lifecycle and Execution Model
+
+1. **Configuration Loading**: MCP servers defined under `mcp_servers` in `vatuta.yaml` are loaded upon application startup.
+2. **Async/Sync Bridging**: Since `RAGAgent` and DSPy operate synchronously while `MCPServer` relies
+   on `asyncio` to manage Docker processes, a dedicated background thread (`AsyncLoopThread`) is used
+   to maintain the asyncio event loop for the MCP servers.
+3. **Dynamic Tool Generation**: During agent initialization, the agent fetches the tools exposed by the MCP server
+   (`list_tools`). Each tool is dynamically wrapped into an `MCPToolWrapper` (inheriting from `AgentTool`),
+   converting its JSON schema into a Pydantic model (`args_schema`) and making it available for the ReAct router.
+4. **Execution**: When the LLM decides to use an MCP tool, the `MCPToolWrapper` bridges the synchronous call
+   to the asynchronous background loop, executes the tool on the container, and returns the formatted response
+   back to the LLM trajectory.

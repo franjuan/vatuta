@@ -9,6 +9,7 @@ from typing import Dict, Optional
 import yaml
 from pydantic import BaseModel, Field
 
+from src.mcp.config import MCPContainerConfig
 from src.sources.confluence import ConfluenceConfig
 from src.sources.jira_source import JiraConfig
 from src.sources.slack import SlackConfig
@@ -89,6 +90,7 @@ class VatutaConfig(BaseModel):
     qdrant: QdrantConfig
     sources: SourcesConfig
     entities_manager: EntityManagerConfig = Field(default_factory=EntityManagerConfig)
+    mcp_servers: Dict[str, MCPContainerConfig] = Field(default_factory=dict)
 
 
 class ConfigLoader:
@@ -124,5 +126,14 @@ class ConfigLoader:
                             # Inject the dictionary key as 'id' if not provided
                             if "id" not in source_config:
                                 source_config["id"] = source_id
+
+        # Inject names into mcp server configs if they are missing
+        if "mcp_servers" in raw_data:
+            servers = raw_data["mcp_servers"]
+            for server_name, server_config in servers.items():
+                if isinstance(server_config, dict):
+                    # Inject the dictionary key as 'name' if not provided
+                    if "name" not in server_config:
+                        server_config["name"] = server_name
 
         return VatutaConfig(**raw_data)

@@ -126,6 +126,9 @@ class MCPContainerConfig(BaseModel):
     # Mount configuration: list of (host_path, container_path, mode)
     mounts: list[tuple[str, str, str]] = Field(default_factory=list, description="Volume bind mounts.")
 
+    # Command line arguments to pass to the container
+    args: list[str] = Field(default_factory=list, description="Command line arguments passed to the container.")
+
     # Security configuration
     forbidden_exact_paths: set[str] = Field(
         default_factory=lambda: DEFAULT_FORBIDDEN_EXACT_PATHS.copy(),
