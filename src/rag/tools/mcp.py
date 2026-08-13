@@ -1,5 +1,6 @@
 """Model Context Protocol (MCP) tool wrappers for RAG Agent."""
 
+import logging
 from typing import Any, Dict, Optional, Type, cast
 
 from langchain_core.documents import Document
@@ -8,6 +9,8 @@ from pydantic import BaseModel, Field, create_model
 from src.mcp.server import MCPServer
 from src.rag.tools.base import AgentTool
 from src.utils.async_runner import AsyncLoopThread
+
+logger = logging.getLogger(__name__)
 
 
 def _create_pydantic_model_from_json_schema(schema: Dict[str, Any], model_name: str) -> Type[BaseModel]:
@@ -130,4 +133,5 @@ class MCPToolWrapper(AgentTool):
 
             return f"Tool '{self._tool_name}' returned:\n{output_text}"
         except Exception as e:
+            logger.error("Error executing tool '%s': %s", self._tool_name, e, exc_info=True)
             return f"Error executing tool '{self._tool_name}': {e}"

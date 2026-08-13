@@ -128,7 +128,7 @@ class RAGAgent:
                     # Fetch available tools
                     tools_result = self.async_runner.run_coroutine(server.list_tools())
                     for tool in tools_result.tools:
-                        logger.info(f"Loading MCP tool: {tool.name} from server {name}")
+                        logger.info("Loading MCP tool: %s from server %s", tool.name, name)
                         wrapper = MCPToolWrapper(
                             server=server,
                             async_runner=self.async_runner,
@@ -138,7 +138,7 @@ class RAGAgent:
                         )
                         self._tools.append(wrapper)
                 except Exception as e:
-                    logger.error(f"Failed to start MCP server {name} or load tools: {e}")
+                    logger.error("Failed to start MCP server %s or load tools: %s", name, e, exc_info=True)
 
         return self
 
@@ -151,7 +151,7 @@ class RAGAgent:
             try:
                 self.async_runner.run_coroutine(server.stop())
             except Exception as e:
-                logger.error(f"Error stopping MCP server {server.config.name}: {e}")
+                logger.error("Error stopping MCP server %s: %s", server.config.name, e, exc_info=True)
 
         self.mcp_servers.clear()
         self.async_runner.stop()
@@ -221,7 +221,7 @@ class RAGAgent:
                     }
 
             except Exception as e:
-                logger.error(f"Router failed: {e}")
+                logger.error("Router failed: %s", e, exc_info=True)
                 summary = f"Routing failed: {e}"
                 router_cot = {"error": str(e)}
 

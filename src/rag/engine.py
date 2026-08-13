@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, List, TypedDict, Union
 
@@ -12,6 +13,8 @@ from langgraph.graph import END, StateGraph
 from src.models.config import RagConfig
 from src.rag.document_manager import DocumentManager
 from src.rag.qdrant_manager import QdrantDocumentManager
+
+logger = logging.getLogger(__name__)
 
 
 class RAGState(TypedDict, total=False):
@@ -78,7 +81,7 @@ def build_dspy_lm(config: RagConfig, backend_name: str) -> dspy.LM:
         raise ValueError(f"Backend '{backend_name}' not found. Available: {available}")
     selection = backend_name
 
-    print(f"Initializing LLM backend: {selection}")
+    logger.info("Initializing LLM backend: %s", selection)
 
     llm_conf = config.llm_backends[selection]
 

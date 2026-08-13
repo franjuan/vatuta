@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Optional
 
 import typer
 from rich.console import Console
-from rich.logging import RichHandler
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
@@ -22,11 +21,9 @@ from src.rag.qdrant_manager import QdrantDocumentManager
 from src.sources.confluence import ConfluenceSource
 from src.sources.jira_source import JiraSource
 from src.sources.slack import SlackSource
+from src.utils.logging_config import setup_logging
 
-# Configure logging to stay quiet by default, will be adjusted by verbose flag
-logging.basicConfig(
-    level=logging.ERROR, format="%(message)s", datefmt="[%X]", handlers=[RichHandler(rich_tracebacks=True)]
-)
+logger = logging.getLogger(__name__)
 
 app = typer.Typer(help="Vatuta - Virtual Assistant for Task Understanding, Tracking & Automation")
 console = Console()
@@ -76,16 +73,12 @@ def get_ids_help() -> str:
 def main(
     ctx: typer.Context,
     config: str = typer.Option("config/vatuta.yaml", "--config", help="Path to configuration file"),
+    log_config: str = typer.Option("config/logging.yaml", "--log-config", help="Path to logging configuration file"),
     data: str = typer.Option("data", "--data", help="Path to data directory"),
     verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging (DEBUG level)"),
 ) -> None:
     """Vatuta - Virtual Assistant for Task Understanding, Tracking & Automation."""
-    if verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
-        logging.getLogger("src").setLevel(logging.DEBUG)
-    else:
-        logging.getLogger().setLevel(logging.INFO)
-        logging.getLogger("src").setLevel(logging.INFO)
+    setup_logging(config_path=log_config, verbose=verbose)
 
     # Load config
     cfg = ConfigLoader.load(config)
@@ -237,7 +230,7 @@ def load(
         except Exception as e:
             console.print(f"[red]Error loading {stype}: {e}[/red]")
             if state.verbose:
-                logging.exception("Load error")
+                logger.exception("Load error")
 
 
 @app.command()
@@ -311,7 +304,7 @@ def update(
         except Exception as e:
             console.print(f"[red]Error updating {stype}: {e}[/red]")
             if state.verbose:
-                logging.exception("Update error")
+                logger.exception("Update error")
 
 
 def _display_stats(dm: QdrantDocumentManager) -> None:
@@ -524,7 +517,7 @@ def ask(
     except Exception as e:
         console.print(f"[red]Error answering question: {e}[/red]")
         if state.verbose:
-            logging.exception("RAG Error")
+            logger.exception("RAG Error")
 
 
 @app.command()

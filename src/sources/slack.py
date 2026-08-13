@@ -58,6 +58,7 @@ from src.models.source_config import BaseSourceConfig
 from src.sources.checkpoint import Checkpoint
 from src.sources.ratelimiter import AdaptiveRateLimiter
 from src.sources.source import Source
+from src.utils.logging_config import setup_logging
 from src.utils.persistent_cache import PersistentCache
 
 
@@ -231,7 +232,7 @@ class SlackSource(Source[SlackConfig]):
                 try:
                     parent.mkdir(parents=True, exist_ok=True)
                 except Exception as e:
-                    logger.warning(f"Could not create user cache directory {parent}: {e}")
+                    logger.warning("Could not create user cache directory %s: %s", parent, e, exc_info=True)
 
             self._user_cache = PersistentCache(
                 path=str(path),
@@ -349,7 +350,7 @@ class SlackSource(Source[SlackConfig]):
 
                 raise
             except Exception as e:
-                logger.error(f"Unexpected error in {method}: {e}")
+                logger.error("Unexpected error in %s: %s", method, e, exc_info=True)
                 consecutive_errors += 1
                 if consecutive_errors <= self.config.api_retries:
                     wait_seconds = 2**consecutive_errors
@@ -430,9 +431,9 @@ class SlackSource(Source[SlackConfig]):
         try:
             with meta_path.open("w", encoding="utf-8") as handle:
                 json.dump(channel, handle, ensure_ascii=False, indent=2)
-            logger.debug(f"Stored channel metadata at {meta_path}")
+            logger.debug("Stored channel metadata at %s", meta_path)
         except Exception as err:
-            logger.error(f"Failed to write channel metadata {meta_path}: {err}")
+            logger.error("Failed to write channel metadata %s: %s", meta_path, err, exc_info=True)
 
     def _load_channel_metadata(self, channel_dir: Path, channel_id: str) -> dict:
         """Load channel metadata from metadata.json, falling back to basic info.
@@ -452,8 +453,8 @@ class SlackSource(Source[SlackConfig]):
                     if isinstance(data, dict):
                         return data
             except Exception as err:
-                logger.warning(f"Failed to read metadata for {channel_id}: {err}")
-        logger.warning(f"Using fallback metadata for channel {channel_id}")
+                logger.warning("Failed to read metadata for %s: %s", channel_id, err, exc_info=True)
+        logger.warning("Using fallback metadata for channel %s", channel_id)
         return {"id": channel_id, "name": channel_id}
 
     def _get_channel_metadata(self, channel_id: str, use_cache: bool = True) -> dict:
@@ -484,7 +485,7 @@ class SlackSource(Source[SlackConfig]):
             self._persist_channel_metadata(channel_dir, channel)
             return channel
         except Exception:
-            logger.warning(f"Using fallback metadata for channel {channel_id} due to persistent errors")
+            logger.warning("Using fallback metadata for channel %s due to persistent errors", channel_id)
             return {"id": channel_id, "name": channel_id}
 
     def _list_messages(
@@ -509,7 +510,7 @@ class SlackSource(Source[SlackConfig]):
         """
         op_start = perf_counter()
         op_items = 0
-        logger.debug(f"list_messages: start channel={channel_id}")
+        logger.debug("list_messages: start channel=%s", channel_id)
         messages: list[dict] = []
         cursor = None
         while True:
@@ -530,7 +531,7 @@ class SlackSource(Source[SlackConfig]):
             page_msgs: List[Dict[str, Any]] = resp.get("messages", [])
             messages.extend(page_msgs)
             page_items = len(page_msgs)
-            logger.debug(f"list_messages: page channel={channel_id} messages={page_items}")
+            logger.debug("list_messages: page channel=%s messages=%d", channel_id, page_items)
             op_items += page_items
             resp_metadata: dict = resp.get("response_metadata", {})
             cursor = resp_metadata.get("next_cursor")
@@ -538,7 +539,7 @@ class SlackSource(Source[SlackConfig]):
                 break
         # Collect metrics
         op_elapsed = perf_counter() - op_start
-        logger.info(f"list_messages: done channel={channel_id} items={op_items} elapsed={op_elapsed:.3f}s")
+        logger.info("list_messages: done channel=%s items=%d elapsed=%.3fs", channel_id, op_items, op_elapsed)
         OP_LATENCY.labels(source="slack", source_id=self.source_id, operation="list_messages").observe(op_elapsed)
         OP_ITEMS.labels(source="slack", source_id=self.source_id, operation="list_messages").observe(op_items)
         return messages
@@ -559,11 +560,11 @@ class SlackSource(Source[SlackConfig]):
 
         if entry and isinstance(entry, dict):
             USER_CACHE_HITS.inc()
-            logger.debug(f"user cache HIT for {user_id}")
+            logger.debug("user cache HIT for %s", user_id)
             compact = cast(Dict[str, Any], entry)
         else:
             USER_CACHE_MISSES.inc()
-            logger.debug(f"user cache MISS for {user_id}")
+            logger.debug("user cache MISS for %s", user_id)
 
             resp = self._api_call("users.info", self.client.users_info, user=user_id)
 
@@ -605,7 +606,7 @@ class SlackSource(Source[SlackConfig]):
                     compact["global_entity_id"] = entity.global_id
                     updated_entity = True
             except Exception as e:
-                logger.error(f"Failed to register user {user_id} with EntityManager: {e}")
+                logger.error("Failed to register user %s with EntityManager: %s", user_id, e, exc_info=True)
 
         if fetched_from_api or updated_entity:
             self._user_cache.set(user_id, compact)
@@ -671,7 +672,7 @@ class SlackSource(Source[SlackConfig]):
                         # Non-thread messages go to channel container (channel container)
                         threads_local[channel["id"]]["messages"].insert(0, message)
                 except Exception as e:
-                    logger.error(f"Error extracting threads: {e} for message {message}")
+                    logger.error("Error extracting threads: %s for message %s", e, message, exc_info=True)
         return threads_local
 
     def _extract_document_from_thread(
@@ -857,8 +858,11 @@ class SlackSource(Source[SlackConfig]):
             model_max_chars = getattr(self._embedding_model, "max_seq_length", 0) * 4
             if self.config.chunk_max_size_chars > model_max_chars:
                 logger.warning(
-                    f"Configured chunk_max_size_chars ({self.config.chunk_max_size_chars}) is larger than the "
-                    f"embedding model's capacity ({model_max_chars} chars). Using {model_max_chars} instead."
+                    "Configured chunk_max_size_chars (%d) is larger than the "
+                    "embedding model's capacity (%d chars). Using %d instead.",
+                    self.config.chunk_max_size_chars,
+                    model_max_chars,
+                    model_max_chars,
                 )
                 self.config.chunk_max_size_chars = model_max_chars
         return self._embedding_model
@@ -1105,18 +1109,20 @@ class SlackSource(Source[SlackConfig]):
                 for msg in api_messages:
                     handle.write(json.dumps(msg, separators=(",", ":"), ensure_ascii=False))
                     handle.write("\n")
-            logger.info(f"Persisted {len(api_messages)} messages to {out_path}")
+            logger.info("Persisted %d messages to %s", len(api_messages), out_path)
         except Exception as io_err:
-            logger.error(f"Failed to persist messages for channel {channel_id} to {out_path}: {io_err}")
+            logger.error(
+                "Failed to persist messages for channel %s to %s: %s", channel_id, out_path, io_err, exc_info=True
+            )
             return
 
         if update_checkpoint:
             checkpoint.update_channel_ts(channel_id, newest_ts=ts_end, oldest_ts=ts_start)
             try:
                 checkpoint.save(base_dir / "checkpoint.json")
-                logger.debug(f"Checkpoint persisted for channel {channel_id}")
+                logger.debug("Checkpoint persisted for channel %s", channel_id)
             except Exception as save_err:
-                logger.error(f"Failed to persist checkpoint after channel {channel_id}: {save_err}")
+                logger.error("Failed to persist checkpoint after channel %s: %s", channel_id, save_err, exc_info=True)
 
     def __load_cached_messages_for_channel(
         self,
@@ -1188,7 +1194,7 @@ class SlackSource(Source[SlackConfig]):
                     f"Loaded cached file {gz_path} covering {start_ts}..{end_ts} (messages={len(loaded_messages)})"
                 )
             except Exception as read_err:
-                logger.error(f"Failed to read cached file {gz_path}: {read_err}")
+                logger.error("Failed to read cached file %s: %s", gz_path, read_err, exc_info=True)
 
         return loaded_messages, max_seen_ts
 
@@ -1527,7 +1533,7 @@ class SlackSource(Source[SlackConfig]):
                 try:
                     checkpoint.save(base_dir / "checkpoint.json")
                 except Exception as e:
-                    logger.error(f"Failed to write checkpoint at end of run: {e}")
+                    logger.error("Failed to write checkpoint at end of run: %s", e, exc_info=True)
 
             return all_documents, all_chunks
         finally:
@@ -1595,27 +1601,10 @@ class SlackSource(Source[SlackConfig]):
         return all_documents, all_chunks
 
 
-log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
-log_level = getattr(logging, log_level_str, logging.INFO)
-logging.basicConfig(level=log_level)
 logger = logging.getLogger(__name__)
-logger.setLevel(log_level)
 
 if __name__ == "__main__":
-    # Enable console logging at DEBUG level
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
-    has_stream = False
-    for h in root_logger.handlers:
-        if isinstance(h, logging.StreamHandler):
-            h.setLevel(logging.DEBUG)
-            has_stream = True
-    if not has_stream:
-        sh = logging.StreamHandler()
-        sh.setLevel(logging.DEBUG)
-        formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s - %(message)s")
-        sh.setFormatter(formatter)
-        root_logger.addHandler(sh)
+    setup_logging(verbose=True)
 
     slack_config = SlackConfig(
         id="slack-main",

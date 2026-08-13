@@ -28,12 +28,23 @@ All notable changes to the Vatuta project are documented in this file.
   standards (`[project]` table format) and added `mcp` (`^1.28.1`) and `docker` (`^7.2.0`) dependencies. Configured
   `isort` and `ruff` (`known_third_party = ["mcp"]`) to prevent import shadowing between PyPI `mcp` and local
   project modules.
+- **Logging Hygiene & Architecture**: Replaced ad-hoc `print()` and f-string logging across data sources
+  (`slack.py`, `qdrant_manager.py`) with centralized `setup_logging` and lazy string formatting, adhering strictly to
+  new code quality guidelines.
+- **Python Version Pinning**: Restricted max Python version to `<3.14` in `pyproject.toml` and documentation due to
+  compatibility considerations.
 - **Default LLM & MCP Image Configurations**: Updated default Gemini LLM model identifier in configuration
   templates to `gemini/gemini-3.7-flash` and updated the default Wikipedia MCP server image reference to
   `mcp/wikipedia-mcp`.
 - **Documentation & Operational Troubleshooting**: Added comprehensive MCP architecture and security documentation
   (`docs/mcp.md`), and updated `docs/qdrant_setup.md` with troubleshooting steps for Docker container storage
   permission issues (`data/qdrant` ownership) and API key configuration.
+
+### Fixed
+
+- **Agent Tool Calling Heuristics**: Adjusted DSPy ReAct routing prompt to explicitly emphasize the usage of
+  external tools, preventing the LLM from aggressively skipping tool execution when no internal RAG filters were
+  needed.
 
 ---
 

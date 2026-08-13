@@ -1,6 +1,7 @@
 """MCP Server lifecycle and execution management."""
 
 import asyncio
+import logging
 from typing import Any, Optional
 
 import docker
@@ -10,6 +11,9 @@ from mcp.types import ClientCapabilities
 from pydantic import AnyUrl
 
 from src.mcp.config import MCPContainerConfig, is_item_allowed
+from src.utils.logging_config import LoggerWriter
+
+logger = logging.getLogger(__name__)
 
 
 def check_image_exists(image: str) -> bool:
@@ -28,7 +32,7 @@ def pull_docker_image(image: str) -> None:
     """Pull the specified Docker image from the registry."""
     try:
         client = docker.from_env()
-        print(f"Pulling image {image}...")
+        logger.info("Pulling image %s...", image)
         client.images.pull(image)
     except docker.errors.APIError as e:
         raise RuntimeError(f"Docker API error while pulling image '{image}': {e}") from e
@@ -148,6 +152,7 @@ class MCPServer:
         # Internally manage the stdio context managers
         self._stdio_cm: Optional[Any] = None
         self._session_cm: Optional[Any] = None
+        self._errlog: Optional[Any] = None
 
     async def __aenter__(self) -> "MCPServer":
         """Start the MCP server and initialize the session."""
@@ -167,7 +172,11 @@ class MCPServer:
         resolved_image = await asyncio.to_thread(ensure_image_available, self.config)
         server_params = build_docker_mcp_params(self.config, resolved_image)
 
-        self._stdio_cm = stdio_client(server_params)
+        # Redirect container stderr stream to a dedicated logger for this MCP server instance
+        mcp_logger = logging.getLogger(f"external.mcp.{self.config.name}")
+        self._errlog = LoggerWriter(mcp_logger, level=logging.INFO)
+
+        self._stdio_cm = stdio_client(server_params, errlog=self._errlog)
         read_stream, write_stream = await self._stdio_cm.__aenter__()
 
         self._session_cm = ClientSession(read_stream, write_stream)
@@ -194,6 +203,10 @@ class MCPServer:
             except Exception:
                 pass
             self._stdio_cm = None
+
+        if hasattr(self, "_errlog") and self._errlog is not None:
+            self._errlog.close()
+            self._errlog = None
 
     async def list_tools(self) -> Any:
         """List available tools from the MCP server, filtered by whitelist configuration."""

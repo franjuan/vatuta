@@ -158,6 +158,7 @@ Three main layers:
 | AI Framework | [LangChain](https://github.com/langchain-ai/langchain), [LangGraph](https://github.com/langchain-ai/langgraph) | Agent orchestration and RAG chains |
 | Prompt Engineering | [DSPy](https://github.com/stanfordnlp/dspy) | Prompt formalization and optimization |
 | LLM Providers | AWS Bedrock, Google Gemini, Anthropic Claude | Language model backends |
+| Tool Integrations | [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) | Dynamic external tool discovery and execution |
 | Vector Database | [Qdrant](https://qdrant.tech/qdrant-vector-database/) | Semantic document storage and search |
 | Embeddings | [Sentence Transformers](https://sbert.net/) | Local embedding generation (no API cost) |
 | NLP | [spaCy](https://spacy.io/) | Intelligent text chunking |
@@ -386,6 +387,15 @@ Vatuta ingests data from multiple sources into a shared Qdrant vector collection
 | Google Calendar | 🚧 In Progress | — |
 
 For full setup and usage instructions, see [docs/integrations.md](docs/integrations.md).
+
+### Model Context Protocol (MCP)
+
+Vatuta acts as a fully-featured MCP Client, allowing it to seamlessly integrate with any external Model Context
+Protocol server via isolated Docker containers. This enables the RAG agent to dynamically discover and execute
+external tools (e.g., web search, database querying, calculations, GitHub integration) during the routing phase
+without requiring custom code.
+
+See [docs/mcp.md](docs/mcp.md) for full setup instructions, configuration details, and the security architecture.
 
 ### Qdrant Vector Database
 
