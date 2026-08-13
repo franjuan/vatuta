@@ -6,7 +6,7 @@
   <p><em>Virtual Assistant for Task Understanding, Tracking &amp; Automation</em></p>
 
   [![CI](https://github.com/franjuan/vatuta/actions/workflows/ci.yml/badge.svg)](https://github.com/franjuan/vatuta/actions/workflows/ci.yml)
-  [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue)](https://www.python.org/)
+  [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://www.python.org/)
   [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
   [![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-orange)](https://github.com/astral-sh/ruff)
   [![Checked with mypy](https://www.mypy-lang.org/static/mypy_badge.svg)](https://mypy-lang.org/)
@@ -181,7 +181,7 @@ Three main layers:
 
 | Tool | Version | Notes |
 | ---- | ------- | ----- |
-| [Python](https://www.python.org/) | >= 3.12 | Tested up to 3.14 |
+| [Python](https://www.python.org/) | >= 3.12 | Tested up to 3.13 |
 | [Poetry](https://python-poetry.org/) | >= 1.8 | Dependency and virtualenv management |
 | [Just](https://github.com/casey/just) | any | Task runner |
 | [Docker](https://www.docker.com/) | any | Optional — only needed to run Qdrant locally (see [qdrant_setup.md](docs/qdrant_setup.md)) |

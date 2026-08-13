@@ -12,7 +12,7 @@ license = "Apache-2.0"
 packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
-python = ">=3.12,<3.15"
+python = ">=3.12,<3.14"
 jira = "^3.10.5"
 atlassian-python-api = "^4.0.7"
 langchain = "^1.2.0"
