@@ -137,6 +137,7 @@ data/
 logs/
 config/*
 !config/*.example
+!config/logging.yaml
 *.db
 *.sqlite
 config/local.py

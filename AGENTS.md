@@ -214,7 +214,6 @@ except Exception as e:
 - `.secrets.baseline` - detect-secrets baseline file
 - `config/vatuta.yaml.example` - Vatuta configuration file example
 - `config/vatuta.yaml` - Vatuta configuration file (not version controlled)
-- `config/logging.yaml.example` - Logging configuration file example
 - `config/logging.yaml` - Logging configuration file
 
 ## Testing Guidelines
