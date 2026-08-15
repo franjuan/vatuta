@@ -129,6 +129,12 @@ class MCPContainerConfig(BaseModel):
     # Command line arguments to pass to the container
     args: list[str] = Field(default_factory=list, description="Command line arguments passed to the container.")
 
+    # Environment variables to pass through from host environment
+    env_passthrough: list[str] = Field(
+        default_factory=list,
+        description="Host environment variable names passed through to the container.",
+    )
+
     # Security configuration
     forbidden_exact_paths: set[str] = Field(
         default_factory=lambda: DEFAULT_FORBIDDEN_EXACT_PATHS.copy(),

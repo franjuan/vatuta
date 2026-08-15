@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from typing import Any, Optional
 
 import docker
@@ -127,9 +128,14 @@ def build_docker_mcp_params(config: MCPContainerConfig, resolved_image: str) -> 
     for src, dst, mode in config.mounts:
         args.append(f"--mount=type=bind,src={src},dst={dst},readonly={'true' if mode == 'ro' else 'false'}")
 
+    # Environment variables passthrough from host
+    for env_var in config.env_passthrough:
+        if env_var in os.environ:
+            args.extend(["-e", env_var])
+
     args.append(resolved_image)
     if config.args:
-        args.extend(config.args)
+        args.extend([os.path.expandvars(a) for a in config.args])
 
     return StdioServerParameters(command="docker", args=args, env=None)
 
@@ -246,7 +252,11 @@ class MCPServer:
             raise RuntimeError("MCP session not started.")
         if not is_item_allowed(name, self.config.allowed_tools):
             raise ValueError(f"Tool '{name}' is not allowed by security whitelist configuration.")
-        return await self.session.call_tool(name, arguments or {})
+        try:
+            # Add a 60 second timeout to prevent infinite hangs if the container gets stuck (e.g. DNS issues)
+            return await asyncio.wait_for(self.session.call_tool(name, arguments or {}), timeout=60.0)
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"Tool '{name}' execution timed out after 60 seconds.") from None
 
     async def get_prompt(self, name: str, arguments: Optional[dict[str, str]] = None) -> Any:
         """Get a specific prompt from the MCP server if authorized by whitelist configuration."""

@@ -1,58 +1,16 @@
 """Model Context Protocol (MCP) tool wrappers for RAG Agent."""
 
 import logging
-from typing import Any, Dict, Optional, Type, cast
+from typing import Any, Dict
 
+from json_schema_to_pydantic import create_model as create_model_from_schema
 from langchain_core.documents import Document
-from pydantic import BaseModel, Field, create_model
 
 from src.mcp.server import MCPServer
 from src.rag.tools.base import AgentTool
 from src.utils.async_runner import AsyncLoopThread
 
 logger = logging.getLogger(__name__)
-
-
-def _create_pydantic_model_from_json_schema(schema: Dict[str, Any], model_name: str) -> Type[BaseModel]:
-    """Create a Pydantic model from a JSON schema.
-
-    Args:
-        schema: JSON schema dictionary.
-        model_name: Name of the generated Pydantic model.
-
-    Returns:
-        Type[BaseModel]: Generated Pydantic model.
-    """
-    fields = {}
-    properties = schema.get("properties", {})
-    required = schema.get("required", [])
-
-    for prop_name, prop_details in properties.items():
-        prop_type: Any = Any
-        prop_type_str = prop_details.get("type", "any")
-
-        if prop_type_str == "string":
-            prop_type = str
-        elif prop_type_str == "integer":
-            prop_type = int
-        elif prop_type_str == "number":
-            prop_type = float
-        elif prop_type_str == "boolean":
-            prop_type = bool
-        elif prop_type_str == "array":
-            prop_type = list
-        elif prop_type_str == "object":
-            prop_type = dict
-
-        if prop_name not in required:
-            prop_type = Optional[prop_type]
-            default = None
-        else:
-            default = ...
-
-        fields[prop_name] = (prop_type, Field(default=default, description=prop_details.get("description", "")))
-
-    return cast(Type[BaseModel], create_model(model_name, **fields))  # type: ignore[call-overload]
 
 
 class MCPToolWrapper(AgentTool):
@@ -83,7 +41,12 @@ class MCPToolWrapper(AgentTool):
         # Create args_schema dynamically based on input_schema
         # Ensure name is a valid Python identifier
         safe_name = "".join(c if c.isalnum() else "_" for c in tool_name)
-        schema_model = _create_pydantic_model_from_json_schema(input_schema, f"MCP_{safe_name}_Schema")
+
+        # Inject the title so the generated Pydantic model has a clear class name
+        input_schema_copy = dict(input_schema)
+        input_schema_copy["title"] = f"MCP_{safe_name}_Schema"
+
+        schema_model = create_model_from_schema(input_schema_copy)
 
         super().__init__(name=tool_name, description=description, args_schema=schema_model)
         self._server = server

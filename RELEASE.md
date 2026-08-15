@@ -8,8 +8,9 @@ All notable changes to the Vatuta project are documented in this file.
 
 - **Model Context Protocol (MCP) Client Integration**: Enables the `RAGAgent` to dynamically discover, register, and
   invoke external tools provided by MCP servers within the DSPy ReAct routing loop. Input argument schemas are
-  generated at runtime directly from server JSON Schema metadata. Includes end-to-end unit test coverage for
-  container lifecycle and tool wrappers.
+  generated at runtime directly from server JSON Schema metadata using the `json-schema-to-pydantic` library to
+  safely support complex nested structures. Includes end-to-end unit test coverage for container lifecycle and
+  tool wrappers.
 - **MCP Tool Filtering (Whitelisting)**: Added regex-based tool whitelisting (`allowed_tools`) per MCP server
   configuration, allowing fine-grained restriction of which server tools are exposed to the agent.
 - **Hardened Docker Container Execution**: Implemented an isolated stdio container runner for MCP servers using the
@@ -18,6 +19,11 @@ All notable changes to the Vatuta project are documented in this file.
 - **Sync/Async Execution Bridge**: Introduced a background event loop manager (`AsyncLoopThread`) to safely bridge
   synchronous LangGraph nodes and DSPy ReAct routing loops with asynchronous MCP container stdio sessions without
   blocking or corrupting event loops.
+- **MCP Environment Variable Passthrough (`env_passthrough`)**: Added support for forwarding host environment
+  variables (such as API tokens from `.env`) securely to MCP Docker containers via `-e VAR_NAME` without exposing
+  secrets in YAML files. Supports `${VAR}` expansion in container `args`.
+- **MCP Tool Execution Timeout & Exception Protection**: Enforced a 60-second execution timeout on MCP tool calls to
+  prevent infinite hangs when external containers encounter network or DNS failures.
 - **Agent Lifecycle & CLI Context Management**: Extended `RAGAgent` with context manager support (`__enter__` /
   `__exit__`) for automatic container initialization, dynamic tool discovery, and graceful resource teardown,
   integrated directly into the `vatuta ask` CLI workflow.

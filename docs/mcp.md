@@ -317,11 +317,13 @@ wikipedia:
   image: "mcp/wikipedia-mcp"
   args:
     - "--language"
-    - "es"
+    - "en"
+    - "--transport"
+    - "stdio"
 ```
 
 When Vatuta builds the container execution command, `args` are appended immediately after the image reference:
-`docker run <hardened_flags> mcp/wikipedia-mcp --language es`.
+`docker run <hardened_flags> mcp/wikipedia-mcp --language en --transport stdio`.
 
 ### 7.3. Volume Bind Mounts (`mounts`)
 
@@ -340,7 +342,21 @@ mounts:
   - ["/home/user/docs", "/workspace", "ro"]
 ```
 
-### 7.4. Complete Field Reference Table (`MCPContainerConfig`)
+### 7.4. Host Environment Passthrough (`env_passthrough`)
+
+To pass host environment variables (such as API tokens or User-Agent headers loaded from `.env`) securely into the
+container without hardcoding secrets in YAML, use `env_passthrough`.
+
+```yaml
+wikipedia:
+  image: "mcp/wikipedia-mcp"
+  env_passthrough:
+    - WIKIPEDIA_ACCESS_TOKEN
+```
+
+Vatuta inspects `os.environ` for each listed variable name and forwards it safely via `docker run -e VAR_NAME`.
+
+### 7.5. Complete Field Reference Table (`MCPContainerConfig`)
 
 | Field | Type | Default | Description |
 | ----- | ---- | ------- | ----------- |
@@ -350,6 +366,7 @@ mounts:
 | `allow_network` | `bool` | `false` | Enable network access (`--network=none` when `false`). |
 | `read_only` | `bool` | `true` | Mount root filesystem as read-only (`--read-only`). |
 | `args` | `list[str]` | `[]` | Command-line arguments passed directly to container executable. |
+| `env_passthrough` | `list[str]` | `[]` | List of host environment variable names passed through to the container. |
 | `mounts` | `list[tuple]` | `[]` | List of `[host_path, container_path, "ro"]` volume bind mounts. |
 | `allowed_tools` | `list[str]` | `null` | Regex patterns to whitelist allowed tools exposed to the agent. |
 | `allowed_prompts` | `list[str]` | `null` | Regex patterns to whitelist allowed prompts exposed to the agent. |
@@ -381,7 +398,9 @@ and exposes them dynamically to the LLM (using a ReAct router node powered by DS
    to maintain the asyncio event loop for the MCP servers.
 3. **Dynamic Tool Generation**: During agent initialization, the agent fetches the tools exposed by the MCP server
    (`list_tools`). Each tool is dynamically wrapped into an `MCPToolWrapper` (inheriting from `AgentTool`),
-   converting its JSON schema into a Pydantic model (`args_schema`) and making it available for the ReAct router.
+   using the `json-schema-to-pydantic` library to robustly convert its JSON schema into a Pydantic model
+   (`args_schema`). This allows the agent to safely parse complex structures (like nested objects and references)
+   without executing dynamic code, making it available for the ReAct router.
 4. **Execution**: When the LLM decides to use an MCP tool, the `MCPToolWrapper` bridges the synchronous call
    to the asynchronous background loop, executes the tool on the container, and returns the formatted response
    back to the LLM trajectory.

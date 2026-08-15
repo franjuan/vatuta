@@ -90,7 +90,12 @@ mcp_servers:
     # Command-line arguments passed directly to the container executable binary
     args:
       - "--language"
-      - "es"
+      - "en"
+      - "--transport"
+      - "stdio"
+    # Host environment variables passed through from host .env/environment
+    env_passthrough:
+      - WIKIPEDIA_ACCESS_TOKEN
     # Whitelist specific tools exposed by the server
     allowed_tools:
       - "^search_wikipedia$"

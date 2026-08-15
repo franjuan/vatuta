@@ -2077,7 +2077,7 @@ description = "Lightweight in-process concurrent programming"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "(python_version == \"3.12\" or python_version == \"3.13\") and (platform_machine == \"x86_64\" or platform_machine == \"aarch64\" or platform_machine == \"ppc64le\" or platform_machine == \"amd64\" or platform_machine == \"AMD64\" or platform_machine == \"win32\" or platform_machine == \"WIN32\")"
+markers = "(python_version == \"3.12\" or python_version == \"3.13\") and (platform_machine == \"aarch64\" or platform_machine == \"x86_64\" or platform_machine == \"ppc64le\" or platform_machine == \"amd64\" or platform_machine == \"AMD64\" or platform_machine == \"win32\" or platform_machine == \"WIN32\")"
 files = [
     {file = "greenlet-3.5.5-cp310-cp310-macosx_11_0_universal2.whl", hash = "sha256:816230f469381ad0a43abc9fa8dda5a699e32fb78958dde32ded93213b70a667"},
     {file = "greenlet-3.5.5-cp310-cp310-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:a5433cf291e0ef9114bd14d0d824db6e5e4a43033234bca48181a9597acca07b"},
@@ -2746,6 +2746,25 @@ files = [
 
 [package.extras]
 schema = ["jsonschema (>=4.21)", "pydantic (>=2)"]
+
+[[package]]
+name = "json-schema-to-pydantic"
+version = "0.4.11"
+description = "A Python library for automatically generating Pydantic v2 models from JSON Schema definitions"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+markers = "python_version == \"3.12\" or python_version == \"3.13\""
+files = [
+    {file = "json_schema_to_pydantic-0.4.11-py3-none-any.whl", hash = "sha256:da2ccc39d070ee03dbcf0517d16720e3e33f7aa8d61257ace09af8c51bd46348"},
+    {file = "json_schema_to_pydantic-0.4.11.tar.gz", hash = "sha256:35448ed711a28dd33396b095c8492939b4925aa30eb31942e9b8e08d04279465"},
+]
+
+[package.dependencies]
+pydantic = ">=2.10.4"
+
+[package.extras]
+dev = ["pytest (>=8.3.4)", "pytest-cov (>=6.0.0)"]
 
 [[package]]
 name = "jsonpatch"
@@ -8833,4 +8852,4 @@ cffi = ["cffi (>=1.17,<2.0)", "cffi (>=2.0.0b)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.14"
-content-hash = "46b77db2d8efc8b10bef77c639bbe0ef5a91e9b7e5a57442b6f7bd83027acf35"
+content-hash = "367ce3550693ea6f74d6e3962fa2979d372d5fdfdd2592ff715ca894f8744fef"

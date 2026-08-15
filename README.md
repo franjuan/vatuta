@@ -158,7 +158,7 @@ Three main layers:
 | AI Framework | [LangChain](https://github.com/langchain-ai/langchain), [LangGraph](https://github.com/langchain-ai/langgraph) | Agent orchestration and RAG chains |
 | Prompt Engineering | [DSPy](https://github.com/stanfordnlp/dspy) | Prompt formalization and optimization |
 | LLM Providers | AWS Bedrock, Google Gemini, Anthropic Claude | Language model backends |
-| Tool Integrations | [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) | Dynamic external tool discovery and execution |
+| Tool Integrations | [Model Context Protocol (MCP)](https://modelcontextprotocol.io/), [json-schema-to-pydantic](https://pypi.org/project/json-schema-to-pydantic/) | Dynamic external tool discovery and safe schema parsing |
 | Vector Database | [Qdrant](https://qdrant.tech/qdrant-vector-database/) | Semantic document storage and search |
 | Embeddings | [Sentence Transformers](https://sbert.net/) | Local embedding generation (no API cost) |
 | NLP | [spaCy](https://spacy.io/) | Intelligent text chunking |
@@ -379,7 +379,11 @@ mcp_servers:
     read_only: true
     args:
       - "--language"
-      - "es"
+      - "en"
+      - "--transport"
+      - "stdio"
+    env_passthrough:
+      - WIKIPEDIA_ACCESS_TOKEN
     allowed_tools:
       - "^search_wikipedia$"
       - "^get_summary$"
