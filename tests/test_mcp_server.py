@@ -194,3 +194,37 @@ def test_mcp_server_whitelist_enforcement() -> None:
 
     with pytest.raises(ValueError, match="Resource URI 'http://forbidden' is not allowed"):
         asyncio.run(server.read_resource("http://forbidden"))
+
+
+def test_build_docker_mcp_params_env_passthrough(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that env_passthrough correctly adds -e flags for variables present in os.environ."""
+    monkeypatch.setenv("TEST_PASSTHROUGH_VAR", "secret_token_val")
+    config = MCPContainerConfig(
+        name="test-env-passthrough",
+        image="mcp/test:latest",
+        env_passthrough=["TEST_PASSTHROUGH_VAR", "NON_EXISTENT_VAR"],
+    )
+    params = build_docker_mcp_params(config, "mcp/test@sha256:12345")
+    args = params.args
+
+    assert "-e" in args
+    idx = args.index("-e")
+    assert args[idx + 1] == "TEST_PASSTHROUGH_VAR"
+    assert "NON_EXISTENT_VAR" not in args
+
+
+def test_build_docker_mcp_params_args_env_expansion(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that config.args correctly expands ${VAR} variables from os.environ."""
+    monkeypatch.setenv("MY_SECRET_TOKEN", "supersecret123")
+    config = MCPContainerConfig(
+        name="test-args-expansion",
+        image="mcp/test:latest",
+        args=["--access-token", "${MY_SECRET_TOKEN}", "--language", "en"],
+    )
+    params = build_docker_mcp_params(config, "mcp/test@sha256:12345")
+    args = params.args
+
+    assert "--access-token" in args
+    token_idx = args.index("--access-token")
+    assert args[token_idx + 1] == "supersecret123"
+    assert "${MY_SECRET_TOKEN}" not in args
