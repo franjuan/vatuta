@@ -253,42 +253,117 @@ Prohibited parameters include:
 
 ## 7. Configuration Schema
 
-Example Pydantic/YAML configuration for an MCP server in Vatuta (`config/vatuta.yaml`):
+MCP servers are configured in `config/vatuta.yaml` under the top-level `mcp_servers` key. Each server entry is
+parsed into the `MCPContainerConfig` Pydantic model (`src/mcp/config.py`), which defines security policies,
+resource constraints, container arguments, volume mounts, and tool whitelists.
+
+### 7.1. YAML Configuration Example
 
 ```yaml
-name: "everything-poc"
-image: "mcp/everything@sha256:4f85...a612"
-auto_pull: true
-allow_network: false
-read_only: true
-tmpfs_options: "rw,noexec,nosuid,nodev,size=64m"
-user: "1000:1000"
-cap_drop:
-  - "ALL"
-pids_limit: 64
-memory: "128m"
-memory_swap: "128m"
-cpus: "0.25"
-nofile: "128:128"
-mounts: []
-# Optional: Override default forbidden paths
-# forbidden_exact_paths:
-#   - "/"
-#   - "/etc"
+mcp_servers:
+  everything:
+    image: "mcp/everything@sha256:4f85...a612"
+    auto_pull: true
+    allow_network: false
+    read_only: true
+    tmpfs_options: "rw,noexec,nosuid,nodev,size=64m"
+    user: "1000:1000"
+    cap_drop:
+      - "ALL"
+    pids_limit: 64
+    memory: "128m"
+    memory_swap: "128m"
+    cpus: "0.25"
+    nofile: "128:128"
+    mounts: []
+    allowed_tools:
+      - "^echo$"
+      - "^add$"
 
-# Optional: Whitelist filtering regex patterns for tools, prompts, and resources
-allowed_tools:
-  - "^echo$"
-  - "^add$"
-allowed_prompts:
-  - ".*_prompt"
-allowed_resources:
-  - "test://static/.*"
+  wikipedia:
+    image: "mcp/wikipedia-mcp"
+    auto_pull: true
+    allow_network: true
+    read_only: true
+    # Command-line arguments passed directly to the container entrypoint/binary
+    args:
+      - "--language"
+      - "es"
+    allowed_tools:
+      - "^search_wikipedia$"
+      - "^get_summary$"
+
+  custom_filesystem:
+    image: "mcp/filesystem"
+    auto_pull: true
+    allow_network: false
+    read_only: true
+    # Volume mounts: list of [host_path, container_path, mode] 3-tuples (must be 'ro')
+    mounts:
+      - ["/tmp/vatuta-mcp-data", "/workspace", "ro"]
+    args:
+      - "/workspace"
 ```
 
-The configuration is seamlessly parsed into the `MCPContainerConfig` Pydantic model (`src/mcp/config.py`),
-ensuring that multiple concurrent instances (differentiated by `name`) run securely according to the established
-policies and whitelist rules.
+### 7.2. Passing Arguments to Container Entrypoints (`args`)
+
+Many MCP server Docker images require runtime command-line flags or arguments passed directly to their executable
+binary (e.g. specifying language codes, root search paths, or API server targets).
+
+Use the `args` field (a YAML list of strings) to pass arguments to the container entrypoint:
+
+```yaml
+wikipedia:
+  image: "mcp/wikipedia-mcp"
+  args:
+    - "--language"
+    - "es"
+```
+
+When Vatuta builds the container execution command, `args` are appended immediately after the image reference:
+`docker run <hardened_flags> mcp/wikipedia-mcp --language es`.
+
+### 7.3. Volume Bind Mounts (`mounts`)
+
+To allow an MCP server container to inspect host files, use the `mounts` field. Each mount is specified as a 3-element
+list: `[host_path, container_path, mode]`.
+
+- **Strict Mode Policy**: `mode` MUST strictly be `"ro"` (read-only). Read-write mounts (`"rw"`) are rejected by schema
+  validation.
+- **Path Security Rules**: `host_path` is validated against `forbidden_exact_paths` and `forbidden_path_prefixes` to
+  prevent mounting host system directories (e.g., `/`, `/etc`, `/root`, `/var/run/docker.sock`).
+
+Example YAML syntax:
+
+```yaml
+mounts:
+  - ["/home/user/docs", "/workspace", "ro"]
+```
+
+### 7.4. Complete Field Reference Table (`MCPContainerConfig`)
+
+| Field | Type | Default | Description |
+| ----- | ---- | ------- | ----------- |
+| `name` | `str` | Dict key | Unique identifier for the server instance (injected from YAML dict key). |
+| `image` | `str` | *Required* | Docker image reference (tag or pinned `@sha256:hash`). |
+| `auto_pull` | `bool` | `true` | Automatically inspect and pull missing images or digests. |
+| `allow_network` | `bool` | `false` | Enable network access (`--network=none` when `false`). |
+| `read_only` | `bool` | `true` | Mount root filesystem as read-only (`--read-only`). |
+| `args` | `list[str]` | `[]` | Command-line arguments passed directly to container executable. |
+| `mounts` | `list[tuple]` | `[]` | List of `[host_path, container_path, "ro"]` volume bind mounts. |
+| `allowed_tools` | `list[str]` | `null` | Regex patterns to whitelist allowed tools exposed to the agent. |
+| `allowed_prompts` | `list[str]` | `null` | Regex patterns to whitelist allowed prompts exposed to the agent. |
+| `allowed_resources` | `list[str]` | `null` | Regex patterns to whitelist allowed resources exposed to the agent. |
+| `tmpfs_options` | `str` | `"rw,noexec,nosuid,nodev,size=64m"` | Options for in-memory `/tmp` filesystem. |
+| `user` | `str` | `"1000:1000"` | `UID:GID` for unprivileged container process execution. |
+| `cap_drop` | `list[str]` | `["ALL"]` | Linux kernel capabilities dropped. |
+| `pids_limit` | `int` | `64` | Maximum concurrent PIDs allowed inside container. |
+| `memory` | `str` | `"128m"` | Memory limit (e.g. `"128m"`, `"256m"`). |
+| `memory_swap` | `str` | `"128m"` | Swap memory limit (should equal `memory`). |
+| `cpus` | `str` | `"0.25"` | CPU quota limit (e.g. `"0.25"`, `"0.5"`). |
+| `nofile` | `str` | `"128:128"` | File descriptor ulimit configuration. |
+| `forbidden_exact_paths` | `set[str]` | Default set | Exact host paths forbidden from volume mounting. |
+| `forbidden_path_prefixes` | `tuple[str]` | Default tuple | Host path prefixes forbidden from volume mounting. |
 
 ---
 

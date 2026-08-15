@@ -362,9 +362,31 @@ sources:
       url: "https://your-domain.atlassian.net"
       spaces: ["SPACE1"]
       initial_lookback_days: 30
+
+# Model Context Protocol (MCP) servers (tools for RAG agent)
+mcp_servers:
+  everything:
+    image: "mcp/everything"
+    auto_pull: true
+    allow_network: false
+    read_only: true
+    allowed_tools:
+      - "^add$"
+  wikipedia:
+    image: "mcp/wikipedia-mcp"
+    auto_pull: true
+    allow_network: true
+    read_only: true
+    args:
+      - "--language"
+      - "es"
+    allowed_tools:
+      - "^search_wikipedia$"
+      - "^get_summary$"
 ```
 
 For detailed per-source configuration, see [docs/integrations.md](docs/integrations.md).
+For MCP server security policy and architecture, see [docs/mcp.md](docs/mcp.md).
 
 ---
 

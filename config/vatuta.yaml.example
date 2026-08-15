@@ -69,22 +69,32 @@ sources:
       initial_lookback_days: 30
       # chunk_max_size_chars: 1000         # max characters per content chunk
 
+# Model Context Protocol (MCP) servers configuration
+# Each entry is executed in an isolated, hardened Docker stdio container.
+# For full security and architecture docs, see docs/mcp.md.
 mcp_servers:
   everything:
     image: "mcp/everything"
     auto_pull: true
     allow_network: false
     read_only: true
+    # Regex patterns to whitelist tools exposed to the agent
     allowed_tools:
       - "^add$"
+
   wikipedia:
     image: "mcp/wikipedia-mcp"
     auto_pull: true
     allow_network: true
     read_only: true
+    # Command-line arguments passed directly to the container executable binary
     args:
       - "--language"
       - "es"
+    # Whitelist specific tools exposed by the server
     allowed_tools:
       - "^search_wikipedia$"
       - "^get_summary$"
+    # Optional volume bind mounts (list of [host_path, container_path, "ro"]):
+    # mounts:
+    #   - ["/tmp/vatuta-mcp-data", "/workspace", "ro"]

@@ -172,3 +172,4 @@ For detailed configuration options for each source, refer to:
 - [JIRA Configuration](sources/jira.md)
 - [Confluence Configuration](sources/confluence.md)
 - [Slack Configuration](sources/slack.md)
+- [Model Context Protocol (MCP) Architecture & Setup](mcp.md)
