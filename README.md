@@ -247,7 +247,7 @@ On top of the [Quick Start prerequisites](#prerequisites):
 | ---- | ------- | ----- |
 | [direnv](https://direnv.net/) | any | Optional — auto-activates the Poetry virtualenv on `cd` |
 | [pre-commit](https://pre-commit.com/) | any | Optional — required to contribute |
-| [RTK](https://github.com/rtk-ai/rtk) | >= 0.1 | Required for AI assistant workflows — CLI proxy to reduce tokens |
+| [RTK](https://github.com/rtk-ai/rtk) | >= 0.1 | Optional (Recommended) — CLI proxy to reduce AI agent context tokens |
 
 ### Development setup
 
@@ -267,12 +267,12 @@ just setup
 #    Runs linters, type checks, and security scans automatically before each commit
 just pre-commit-install
 
-# Install and initialize RTK (Rust Token Killer) for AI assistant workflows
+# (Optional) Install and initialize RTK (Rust Token Killer) for AI assistant workflows
 # Quick install (Linux/macOS):
 curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh
 # Or via Cargo: cargo install --git https://github.com/rtk-ai/rtk
-# Initialize configuration for AI agent (e.g. Antigravity):
-rtk init --agent antigravity
+# Initialize configuration for your preferred AI agent / IDE:
+rtk init
 ```
 
 ---
@@ -472,7 +472,6 @@ vatuta/
 ├── data/              # Local data storage (Qdrant, JSONL cache, entities)
 ├── logs/              # Application logs
 ├── .specify/          # Spec-Kit templates, scripts, and specification workflows (SDD/BDD)
-├── .agents/           # AI Assistant skills (Speckit feature lifecycle) and rules (RTK)
 ├── .github/workflows/ # GitHub Actions CI pipeline
 ├── justfile           # Task automation commands
 ├── pyproject.toml     # Poetry configuration, tool settings

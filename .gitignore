@@ -163,3 +163,14 @@ ruff-report.txt
 data*.zip
 
 local.md
+
+# AI coding-agent local configuration
+.agents/
+.claude/
+.cursor/
+.gemini/
+.clinerules/
+
+# Spec-Kit agent-specific local state
+.specify/integration.json
+.specify/integrations/

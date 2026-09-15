@@ -41,24 +41,23 @@ You **MUST** always invoke Python tools (pytest, mypy, ruff, black, python scrip
 - **Quality**: Documentation is checked by **pydocstyle** (Google convention) and **markdownlint** (MD013 line
   length limit: **120** characters, configured in `.markdownlint.json`).
 
-### 3. RTK Command Prefix Rule
+### 3. RTK Command Prefix (Recommended)
 
-**Crucial**: To reduce LLM token consumption, prefix terminal commands with `rtk`:
-`rtk git status`, `rtk poetry run pytest`, `rtk poetry run mypy src`.
+**Recommended**: When working with AI assistants, prefix terminal commands with `rtk` (if installed) to reduce LLM
+token consumption: `rtk git status`, `rtk poetry run pytest`, `rtk poetry run mypy src`.
 
 - RTK transparently condenses noisy command outputs while preserving exit codes and critical signals.
-- In command chains, include the prefix on each command: `rtk git add . && rtk git commit -s -m "..."`.
+- In command chains, include the prefix on each command if RTK is available:
+  `rtk git add . && rtk git commit -s -m "..."`.
 - If raw output is strictly needed, run `rtk proxy <cmd>`.
-- Rules and command reference are defined in `.agents/rules/antigravity-rtk-rules.md`.
 
-### 4. Spec-Kit Workflow Rule
+### 4. Spec-Kit Workflow (Recommended)
 
-**Crucial**: Feature design and implementation should follow the Spec-Kit methodology:
+**Recommended**: Feature design and implementation can follow the Spec-Kit methodology:
 
 - Uses Specification-Driven Development (SDD / BDD-style user stories and acceptance criteria).
 - Feature specifications, plans, and task breakdowns are defined under `.specify/`.
-- Use the installed skills in `.agents/skills/` (`speckit-specify`, `speckit-clarify`, `speckit-plan`,
-  `speckit-tasks`, `speckit-implement`, `speckit-analyze`, `speckit-converge`).
+- Contributors and AI coding agents may use their agent/IDE-specific Spec-Kit skills or CLI workflow.
 
 ## Code Style Guidelines
 
@@ -208,7 +207,6 @@ except Exception as e:
 - `docs/` - Project documentation
 - `logs/` - Application logs
 - `.specify/` - Spec-Kit templates, scripts, workflows, and specifications (SDD/BDD)
-- `.agents/` - AI Assistant skills (Speckit feature lifecycle) and rules (RTK)
 
 ### Core Modules
 
