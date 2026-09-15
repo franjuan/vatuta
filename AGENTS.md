@@ -15,6 +15,8 @@ You are working on **Vatuta** (Virtual Assistant for Task Understanding, Trackin
 - **pytest**: For testing
 - **Just**: For task automation (replaces Make)
 - **Ruff**: Fast Python linter and formatter (replaces flake8)
+- **Spec-Kit**: For Specification-Driven Development (SDD / BDD-style specs and task tracking)
+- **RTK**: Rust Token Killer CLI proxy for condensing command outputs and saving AI context tokens
 
 ## Agent Behavioral Rules
 
@@ -38,6 +40,25 @@ You **MUST** always invoke Python tools (pytest, mypy, ruff, black, python scrip
 - **Verification**: If documentation was not updated when functionality changed, the task is incomplete.
 - **Quality**: Documentation is checked by **pydocstyle** (Google convention) and **markdownlint** (MD013 line
   length limit: **120** characters, configured in `.markdownlint.json`).
+
+### 3. RTK Command Prefix Rule
+
+**Crucial**: To reduce LLM token consumption, prefix terminal commands with `rtk`:
+`rtk git status`, `rtk poetry run pytest`, `rtk poetry run mypy src`.
+
+- RTK transparently condenses noisy command outputs while preserving exit codes and critical signals.
+- In command chains, include the prefix on each command: `rtk git add . && rtk git commit -s -m "..."`.
+- If raw output is strictly needed, run `rtk proxy <cmd>`.
+- Rules and command reference are defined in `.agents/rules/antigravity-rtk-rules.md`.
+
+### 4. Spec-Kit Workflow Rule
+
+**Crucial**: Feature design and implementation should follow the Spec-Kit methodology:
+
+- Uses Specification-Driven Development (SDD / BDD-style user stories and acceptance criteria).
+- Feature specifications, plans, and task breakdowns are defined under `.specify/`.
+- Use the installed skills in `.agents/skills/` (`speckit-specify`, `speckit-clarify`, `speckit-plan`,
+  `speckit-tasks`, `speckit-implement`, `speckit-analyze`, `speckit-converge`).
 
 ## Code Style Guidelines
 
@@ -186,6 +207,8 @@ except Exception as e:
 - `data/` - Local data storage and checkpoints
 - `docs/` - Project documentation
 - `logs/` - Application logs
+- `.specify/` - Spec-Kit templates, scripts, workflows, and specifications (SDD/BDD)
+- `.agents/` - AI Assistant skills (Speckit feature lifecycle) and rules (RTK)
 
 ### Core Modules
 
@@ -199,7 +222,7 @@ except Exception as e:
   - `documents.py` - Document and chunk definitions
   - `config.py` - Configuration models
 - `src/metrics/` - Observability and metrics
-- `src/utils/` - Utility functions
+- `src/utils/` - Shared utility functions
 - `src/client/` - Client implementations
 
 ### Configuration Files
@@ -212,6 +235,7 @@ except Exception as e:
 - `pyrefly.toml` - Pyrefly LSP configuration
 - `.pre-commit-config.yaml` - Pre-commit hooks configuration
 - `.secrets.baseline` - detect-secrets baseline file
+- `.markdownlintignore` - Exclusions for markdown style validation
 - `config/vatuta.yaml.example` - Vatuta configuration file example
 - `config/vatuta.yaml` - Vatuta configuration file (not version controlled)
 - `config/logging.yaml` - Logging configuration file
@@ -313,6 +337,10 @@ just push           # Push to remote repository
 just direnv-allow   # Allow direnv to load environment
 just env            # Show environment info
 just packages       # Show installed packages
+
+# AI Agent & RTK Optimization
+rtk gain                      # Display token savings dashboard
+rtk gain --history            # View token savings per command history
 ```
 
 ## When Making Changes
