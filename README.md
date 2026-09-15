@@ -467,6 +467,7 @@ vatuta/
 ├── .secrets.baseline  # Baseline for detect-secrets
 ├── .pip-audit-ignore  # Ignored vulnerabilities for pip-audit
 ├── .markdownlint.json # Markdown style rules
+├── .markdownlintignore # Markdown lint exclusions
 ├── .envrc             # direnv environment loading script
 ├── pyrefly.toml       # LSP settings
 ├── AGENTS.md          # AI Assistant coding instructions

@@ -91,13 +91,15 @@ exclude = '''
   | build
   | dist
   | pocs
+  | \.specify
+  | \.agents
 )/
 '''
 
 [tool.isort]
 profile = "black"
 line_length = 120
-skip_glob = ["pocs/*", "tests/*"]
+skip_glob = ["pocs/*", "tests/*", ".specify/*", ".agents/*"]
 # Force 'mcp' PyPI package as third-party to prevent conflict with local 'src/mcp' directory shadowing
 known_third_party = ["mcp"]
 # Explicitly declare first-party root modules for consistent classification across tools
@@ -106,6 +108,7 @@ src_paths = ["src"]
 
 [tool.mypy]
 python_version = "3.12"
+exclude = ["pocs", "^\\.specify", "^\\.agents"]
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -157,7 +160,7 @@ addopts = "-v --tb=short"
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-exclude = ["pocs"]
+exclude = ["pocs", ".specify", ".agents"]
 
 [tool.ruff.lint]
 select = [
