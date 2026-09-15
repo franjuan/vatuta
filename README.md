@@ -271,8 +271,8 @@ just pre-commit-install
 # Quick install (Linux/macOS):
 curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh
 # Or via Cargo: cargo install --git https://github.com/rtk-ai/rtk
-# Initialize configuration for your preferred AI agent / IDE:
-rtk init
+# Initialize configuration for your preferred AI agent / IDE (e.g. Antigravity):
+rtk init --agent antigravity
 ```
 
 ---
