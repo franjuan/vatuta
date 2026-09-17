@@ -2,6 +2,39 @@
 
 All notable changes to the Vatuta project are documented in this file.
 
+## [0.4.0] - 2026-09-17
+
+### Added
+
+- **Spec-Kit & Specification-Driven Development (SDD)**: Integrated Spec-Kit scaffolding, templates (spec, plan,
+  tasks, checklist, constitution), CLI scripts (Bash and Python), and workflow registry under `.specify/`. Enables
+  rigorous SDD/BDD-style feature planning, specification, and task decomposition.
+- **Vatuta Project Constitution**: Codified the project's formal constitution (`.specify/memory/constitution.md`,
+  v1.14.0) establishing 11 core principles: Library-First, Clean Architecture, Strict Type Safety, Code Quality &
+  Complexity Limits, Centralized Config, Comprehensive Observability, Secret Hygiene & Least Privilege, Test-Driven
+  Mocked Boundaries, Documentation as Code, AI Agent Efficiency, and Coordinated Security.
+- **Security Policy & Vulnerability Reporting**: Introduced `SECURITY.md` establishing supported versions, private
+  vulnerability reporting via GitHub Private Vulnerability Reporting, a 7-day initial response SLA, coordinated
+  disclosure guidelines, and reference templates.
+- **Rust Token Killer (RTK) Integration**: Integrated RTK proxy recommendations and agent behavioral rules into
+  `AGENTS.md` and `README.md`, optimizing terminal command execution with 60-90% LLM context token savings.
+- **Centralized Logging Configuration**: Added versioned `config/logging.yaml` configuring RichHandler with rich
+  tracebacks and formatted timestamps, accompanied by `.gitignore` adjustments.
+
+### Changed & Refactored
+
+- **CI/CD & Quality Tooling Exclusions**: Excluded `.specify/` and `.agents/` directories across pre-commit hooks,
+  static analysis, secret scanning, and CI pipelines.
+- **Agent Behavioral Guidelines (`AGENTS.md`)**: Expanded AI coding assistant instructions with Poetry command
+  invocation rules, RTK command prefix patterns, Spec-Kit workflows, and strict 120-character line length limits.
+
+### Documentation
+
+- **README Architecture & Tooling Updates**: Updated `README.md` with Spec-Kit, RTK setup guides, Project
+  Constitution governance details, and links to `SECURITY.md`.
+
+---
+
 ## [0.3.0] - 2026-08-13
 
 ### Added

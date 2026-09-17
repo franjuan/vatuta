@@ -90,6 +90,8 @@ to version 0.2.0, including hybrid search, ingestion metrics, and dependency upd
 - 🪝 Pre-commit hooks and GitHub Actions CI pipeline
 - 📐 **Spec-Kit** — Specification-Driven Development (SDD / BDD-style user stories and acceptance criteria)
 - ✂️ **RTK (Rust Token Killer)** — CLI proxy filtering terminal outputs to reduce AI agent context tokens
+- 📜 **Project Constitution** — Formally codified principles, architecture boundaries, and security standards
+- 🛡️ **Security Policy** — Private vulnerability reporting via GitHub Advisories with a 7-day response SLA
 
 ---
 
@@ -485,6 +487,7 @@ vatuta/
 ├── pyrefly.toml       # LSP settings
 ├── AGENTS.md          # AI Assistant coding instructions
 ├── CONTRIBUTING.md    # Contribution guidelines
+├── SECURITY.md        # Security policy and vulnerability reporting
 ├── LICENSE            # Open source license
 ├── THIRD_PARTY.md     # Third-party licenses
 └── env.example        # Environment variables template
@@ -558,6 +561,16 @@ just test -v             # Verbose
 just test-coverage       # With HTML coverage report (htmlcov/)
 ```
 
+### Specification-Driven Development (Spec-Kit)
+
+Feature development in Vatuta follows Specification-Driven Development (SDD / BDD):
+
+- Feature specifications, acceptance criteria, and task checklists are managed under `.specify/`.
+- Architectural decisions, technical boundaries, and security standards are governed by the
+  [Vatuta Constitution](.specify/memory/constitution.md).
+- AI coding agents execute structured workflows via specialized skills (`speckit-specify`, `speckit-plan`,
+  `speckit-tasks`, `speckit-implement`).
+
 ---
 
 ## Future Improvements
@@ -613,8 +626,19 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) before
 
 ---
 
+## Security
+
+We take the security of Vatuta seriously. For details on supported versions and instructions on how to privately report
+vulnerabilities via GitHub Private Vulnerability Reporting, please consult our [Security Policy](SECURITY.md).
+Project security principles, technical boundaries, and cryptographic standards are codified in the
+[Vatuta Constitution](.specify/memory/constitution.md).
+
+---
+
 ## License
 
 - **Code** is licensed under the **Apache License 2.0**. See [LICENSE](LICENSE).
-- **Documentation & content** (docs, diagrams, and original images) are licensed under **CC BY 4.0**. See [LICENSE-docs](LICENSE-docs).
-- **Third-party materials** (dependencies, icons, fonts) may have their own licenses. See [THIRD_PARTY.md](THIRD_PARTY.md).
+- **Documentation & content** (docs, diagrams, and original images) are licensed under **CC BY 4.0**.
+  See [LICENSE-docs](LICENSE-docs).
+- **Third-party materials** (dependencies, icons, fonts) may have their own licenses.
+  See [THIRD_PARTY.md](THIRD_PARTY.md).
