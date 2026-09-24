@@ -174,3 +174,5 @@ local.md
 # Spec-Kit agent-specific local state
 .specify/integration.json
 .specify/integrations/
+.specify/extensions/
+.specify/extensions.yml
