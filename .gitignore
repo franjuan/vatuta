@@ -143,6 +143,8 @@ config/*
 config/local.py
 .env.local
 .env.production
+justfile.local
+
 
 # IDE
 .vscode/

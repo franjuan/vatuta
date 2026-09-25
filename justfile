@@ -4,6 +4,10 @@
 # Load .env file automatically (makes direnv optional)
 set dotenv-load
 
+# Optional local overrides / custom recipes (not tracked in Git)
+import? 'justfile.local'
+
+
 # Default recipe
 default:
     @just --list
