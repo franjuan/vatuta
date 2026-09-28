@@ -109,28 +109,27 @@ Fields per backend:
 
 ### Context
 
-FR-005 mandates delegating credential discovery directly to LiteLLM from environment variables without maintaining custom per-provider key registries or storing secrets in YAML files.
+FR-005 mandates delegating credential discovery directly to LiteLLM from environment variables without maintaining custom per-provider key registries, hardcoded provider logic, or storing secrets in YAML files.
 
 ### Decision
 
-LiteLLM automatically checks standard environment variables:
+Credential discovery and validation are delegated entirely to LiteLLM's dynamic introspection:
 
-- Gemini: `GEMINI_API_KEY` or `GOOGLE_API_KEY`
-- (Future) Anthropic: `ANTHROPIC_API_KEY`
-- (Future) OpenAI: `OPENAI_API_KEY`
-
-Vatuta does not store, parse, or validate API key strings manually. During startup pre-flight checks, Vatuta invokes LiteLLM environment checks to ensure the required variables are present before starting operations.
+- Vatuta relies on `litellm.validate_environment(model=...)` to dynamically inspect whether the environment variables required for any configured model string (`provider/model_name`) are present.
+- Vatuta contains **zero** hardcoded provider names, **zero** provider-specific conditionals (`if provider == "gemini"`), and **zero** hardcoded environment variable names in application source code (`src/`).
+- LiteLLM maintains the definitive, battle-tested registry of required environment variables across 100+ providers (e.g. `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, AWS credentials, etc.).
+- Google Gemini is utilized solely as the live validation target for this release; application code remains 100% generic and provider-agnostic.
 
 ### Rationale
 
-- Complies with Constitution Principle VI (Zero-Trust, Credential Hygiene).
-- Avoids custom secret-loading logic that could drift from upstream provider SDK updates.
-- Enables deployment in containerized environments (Kubernetes secrets, Docker env) without configuration changes.
+- Complies with Constitution Principle III (LLM Provider Independence) and Principle VI (Zero-Trust, Credential Hygiene).
+- Avoids custom secret-loading or provider-specific branching logic that could drift from upstream provider SDK updates.
+- Allows operators to switch to any provider (Gemini, Claude, OpenAI, Bedrock, etc.) simply by setting configuration in `config/vatuta.yaml` and providing the standard environment variables, with zero application code modifications.
 
 ### Alternatives Considered
 
 - **Configuring API keys in `config/vatuta.yaml`**: Strictly prohibited by Constitution Principle VI.
-- **Custom dictionary of environment variable names per provider in Vatuta**: Rejected because LiteLLM already maintains the definitive mapping for over 100 providers.
+- **Custom dictionary of environment variable names per provider in Vatuta**: Rejected because it introduces vendor coupling in domain code and duplicates LiteLLM's native `validate_environment` functionality.
 
 ---
 
@@ -149,14 +148,14 @@ FR-006, FR-009, and User Story 3 require:
    - `LLMProviderManager.validate_backends(config: RagConfig)` executes a broad, general, and non-intrusive evaluation of configured backends.
    - It validates:
      a) Backend existence in `config.llm_backends`.
-     b) Model name syntax conforming to `provider/model` pattern.
-     c) Presence of provider credential environment variables via LiteLLM's standard provider environment mapping (e.g. `GEMINI_API_KEY`).
+     b) Model name syntax conforming to generic `provider/model` pattern.
+     c) Presence of required environment variables using LiteLLM's dynamic `validate_environment(model)` without vendor-specific branching.
    - Strictly avoids live network probes, dummy test completion prompts, or provider-specific deep pinging during startup.
-    - Raises `LLMConfigurationError` if any check fails, halting cleanly with an actionable diagnostic and exiting with code 1.
+   - Raises `LLMConfigurationError` if any check fails, reporting missing keys dynamically from LiteLLM's check, halting cleanly with an actionable diagnostic, and exiting with code 1.
 2. **Runtime Error Handling**:
    - Any runtime LLM failure that cannot be remediated during execution is treated as a fatal, unrecoverable execution event.
    - Wrap LM execution points and catch `litellm.exceptions.LiteLLMError`:
-     - `AuthenticationError`: Report invalid/expired credentials.
+     - `AuthenticationError`: Report invalid/expired credentials for the target provider.
      - `RateLimitError`: Report provider quota/rate limit exhaustion (HTTP 429).
      - `APIConnectionError`: Report upstream network unreachable / DNS failure.
      - `BadRequestError`: Report parameter or model constraint violations.

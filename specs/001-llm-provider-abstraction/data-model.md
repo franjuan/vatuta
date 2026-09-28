@@ -88,7 +88,7 @@ class RagConfig(BaseModel):
 
 ### 1.3 `LLMProviderManager` (Factory / Lifecycle Service)
 
-Manages initialization, caching, and lifecycle for DSPy language model instances (`dspy.LM`).
+Manages initialization, caching, and lifecycle for DSPy language model instances (`dspy.LM`). The implementation is strictly provider-agnostic: `validate_backends()` dynamically checks credentials for any configured model string via `litellm.validate_environment(model)` with zero vendor-specific logic.
 
 ```python
 class LLMProviderManager:

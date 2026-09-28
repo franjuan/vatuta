@@ -32,7 +32,8 @@ class LLMProviderManager:
 
         Validates:
         1. Model format conforms to 'provider/model_name' without making network calls.
-        2. Required provider environment variables are present (e.g. GEMINI_API_KEY) via LiteLLM.
+        2. Required provider environment variables are present via dynamic LiteLLM inspection
+           (`litellm.validate_environment(model)`) without hardcoding provider or variable names.
 
         Does NOT make active network probes, ping calls, or test completion prompts.
 
@@ -94,7 +95,7 @@ All entry points (`client.py`, `agent.py`) must adhere to this failure contract:
        raise typer.Exit(code=1)
    ```
 2. **Standard Diagnostic Messages**:
-   - Authentication: `"Authentication failed for provider '{provider}'. Check that GEMINI_API_KEY is properly set."`
+   - Authentication: `"Authentication failed for model '{model}'. Check that required credentials ({missing_keys}) are properly set in your environment."`
    - Rate Limit: `"Provider '{provider}' rate limit exceeded (HTTP 429). Please wait before retrying."`
    - Connection: `"Network error connecting to provider '{provider}'. Please verify your internet connection."`
    - Configuration: `"Invalid model configuration for backend '{backend}': {reason}."`

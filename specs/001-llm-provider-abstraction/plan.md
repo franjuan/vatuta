@@ -6,7 +6,19 @@
 
 ## Summary
 
-Implement a provider-independent LLM abstraction using LiteLLM as the unified backend for DSPy (`dspy.LM`), using Gemini as the active validation target for this release. The feature replaces the existing `rag.llm_backends` configuration in-place in `config/vatuta.yaml`, allowing independent model assignment for query routing (e.g., Gemini Flash) and answer generation (e.g., Gemini Pro). Credential discovery is delegated entirely to LiteLLM from environment variables (`GEMINI_API_KEY`). The system performs a broad, general, and non-intrusive pre-flight validation on startup using LiteLLM's native mechanisms (syntax check and credential presence, without live network probes or dummy test prompts), catches runtime provider failures as fatal unrecoverable errors logged at ERROR/CRITICAL level to cleanly abort execution with actionable diagnostics and exit code 1, and exposes Prometheus metrics (call latency, token usage distinguishing input/prompt vs output/completion tokens for pricing analysis, error rates) via LiteLLM callbacks.
+Implement a provider-independent LLM abstraction using LiteLLM as the unified backend for DSPy (`dspy.LM`). The core
+implementation (`src/llm/`, `src/models/`, `src/rag/`, `src/client/`) is strictly provider-agnostic with zero
+vendor-specific branching, logic, or hardcoded credential environment variable names. Credential discovery and
+environment validation are delegated entirely to LiteLLM's dynamic introspection (`litellm.validate_environment(model)`),
+seamlessly supporting any provider. As a practical operational consideration, Google Gemini is used solely as the
+concrete live validation target and example in `config/vatuta.yaml.example` for this release, without coupling application
+code to it. The feature replaces the existing `rag.llm_backends` configuration in-place in `config/vatuta.yaml`, allowing
+independent model assignment for query routing and answer generation. The system performs a broad, general, and
+non-intrusive pre-flight validation on startup using LiteLLM's native mechanisms (syntax check and dynamic credential
+presence without live network probes or dummy test prompts), catches runtime provider failures as fatal unrecoverable
+errors logged at ERROR/CRITICAL level to cleanly abort execution with actionable diagnostics and exit code 1, and exposes
+Prometheus metrics (call latency, token usage distinguishing input/prompt vs output/completion tokens for pricing
+analysis, error rates) via LiteLLM callbacks.
 
 ## Technical Context
 
@@ -24,7 +36,7 @@ Implement a provider-independent LLM abstraction using LiteLLM as the unified ba
 
 **Performance Goals**: Immediate synchronous startup pre-flight validation; runtime telemetry overhead < 5ms per call
 
-**Constraints**: Strict mypy compliance; Xenon cyclomatic complexity <= 30 per function, <= 10 average; functions <= 30 lines; PEP 8 line length <= 120 characters; lazy logging formatting (`logger.info("...", arg)`); DCO `Signed-off-by` trailers; zero hardcoded credentials
+**Constraints**: Strict mypy compliance; Xenon cyclomatic complexity <= 30 per function, <= 10 average; functions <= 30 lines; PEP 8 line length <= 120 characters; lazy logging formatting (`logger.info("...", arg)`); DCO `Signed-off-by` trailers; zero hardcoded credentials; zero provider-specific conditionals in application code
 
 **Scale/Scope**: Centralized global LLM provider factory (`src/llm/provider.py`), error definitions (`src/llm/errors.py`), telemetry handler (`src/metrics/llm_metrics.py`), updated configuration models (`src/models/config.py`), updated RAG engine (`src/rag/engine.py`), updated RAG agent (`src/rag/agent.py`), and CLI client integration (`src/client/client.py`)
 
@@ -33,13 +45,13 @@ Implement a provider-independent LLM abstraction using LiteLLM as the unified ba
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
 | Principle / Rule | Compliance Status | Analysis & Verification |
-|---|---|---|
+| --- | --- | --- |
 | **I. Python 3.12 & Poetry Standard Environment** | PASS | All dependencies managed via Poetry, targeting Python 3.12. |
 | **II. Mandatory Quality Gates & Static Verification** | PASS | Code complies with Black (120 chars), isort, Ruff, pydocstyle Google convention, strict Mypy, and Xenon CC <= 30. |
-| **III. LLM Provider Independence & Isolation** | PASS | Core requirement. Centralizes LLM access through LiteLLM and DSPy structured signatures, completely decoupled from domain logic. |
+| **III. LLM Provider Independence & Isolation** | PASS | Core requirement. Codebase contains zero vendor-specific branching or hardcoded provider keys. Centralizes LLM access through LiteLLM and DSPy structured signatures; Gemini is used solely as an external validation target. |
 | **IV. Determinism & Simplicity** | PASS | Strict Pydantic models for configuration; simple, focused provider factory without unnecessary abstraction layers. |
 | **V. Provenance & Fact-Conclusion Separation** | PASS | Preserves RAG retrieval citations and Chain of Thought trace capture from Router and Generator. |
-| **VI. Zero-Trust & Credential Hygiene** | PASS | Zero secrets stored in configuration; credentials discovered from environment variables by LiteLLM. |
+| **VI. Zero-Trust & Credential Hygiene** | PASS | Zero secrets stored in configuration; dynamic credential discovery for any provider delegated entirely to LiteLLM environment introspection without hardcoded variable names in code. |
 | **VII. Safeguards for Side-Effecting Operations** | PASS | Read-only model interactions; graceful, clean termination on provider errors with exit code 1. |
 | **VIII. Behavioral Preservation & Stability** | PASS | In-place configuration replacement documented in `RELEASE.md` with clear migration guide. |
 | **IX. Comprehensive Test Coverage** | PASS | Unit tests covering configuration parsing, provider instantiation, error mapping, and metrics. |
@@ -65,6 +77,18 @@ specs/001-llm-provider-abstraction/
     ├── requirements.md              # Requirements verification checklist
     └── integration.md               # Integration verification checklist
 ```
+
+### Release & Project Documentation Deliverables (to update during implementation)
+
+The following documentation and release files MUST be updated in lockstep during the implementation phase (not beforehand), adhering to Constitution Section 5 (Release Requirements):
+
+- `RELEASE.md`: Document in-place configuration migration from legacy `rag.llm_backends` to LiteLLM-native backend
+  schema, and Prometheus metrics telemetry under version header `## [0.5.0]`.
+- `docs/models.md`: Create dedicated documentation covering model configuration, provider-agnostic abstraction,
+  LiteLLM integration, role assignment (`router_backend`, `generator_backend`), dynamic credential discovery, and
+  pre-flight verification (leaving `docs/integrations.md` dedicated exclusively to vector data sources).
+- `README.md`: Reflect provider-independent architecture and Gemini defaults.
+- `pyproject.toml`: Bump project version to `0.5.0` (`[project] version = "0.5.0"`) to align with `RELEASE.md`.
 
 ### Source Code (repository root)
 
