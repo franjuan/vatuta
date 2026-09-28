@@ -2,6 +2,33 @@
 
 All notable changes to the Vatuta project are documented in this file.
 
+## [0.5.0] - 2026-09-28
+
+### Added
+
+- **Security Policy & Vulnerability Reporting**: Introduced `SECURITY.md` establishing supported versions, private
+  vulnerability reporting via GitHub Private Vulnerability Reporting, a 7-day initial response SLA, coordinated
+  disclosure guidelines, and reference templates.
+- **Rust Token Killer (RTK) Integration**: Integrated RTK proxy recommendations and agent behavioral rules into
+  `AGENTS.md` and `README.md`, optimizing terminal command execution with 60-90% LLM context token savings.
+- **Local Justfile Support (`justfile.local`)**: Added optional local recipe imports (`import? 'justfile.local'`) in
+  `justfile` and added `justfile.local` to `.gitignore`. Enables developer-specific recipes and workflow overrides
+  without modifying version-controlled configuration.
+- **Local AI Agent Workspace Ignores**: Added ignore patterns in `.gitignore` for local AI coding assistant directories
+  (`.agents/`, `.claude/`, `.cursor/`, `.gemini/`, `.clinerules/`) to prevent leaking local agent configuration state.
+
+### Changed & Refactored
+
+- **Agent Behavioral Guidelines (`AGENTS.md`)**: Added RTK command prefix patterns (`rtk git`, `rtk poetry run`) and
+  optimization commands (`rtk gain`, `rtk gain --history`).
+
+### Documentation
+
+- **README Security & Tooling Updates**: Updated `README.md` with RTK setup guides, developer workflow prerequisites,
+  and links to `SECURITY.md`.
+
+---
+
 ## [0.4.0] - 2026-09-17
 
 ### Added
@@ -13,11 +40,6 @@ All notable changes to the Vatuta project are documented in this file.
   v1.14.0) establishing 11 core principles: Library-First, Clean Architecture, Strict Type Safety, Code Quality &
   Complexity Limits, Centralized Config, Comprehensive Observability, Secret Hygiene & Least Privilege, Test-Driven
   Mocked Boundaries, Documentation as Code, AI Agent Efficiency, and Coordinated Security.
-- **Security Policy & Vulnerability Reporting**: Introduced `SECURITY.md` establishing supported versions, private
-  vulnerability reporting via GitHub Private Vulnerability Reporting, a 7-day initial response SLA, coordinated
-  disclosure guidelines, and reference templates.
-- **Rust Token Killer (RTK) Integration**: Integrated RTK proxy recommendations and agent behavioral rules into
-  `AGENTS.md` and `README.md`, optimizing terminal command execution with 60-90% LLM context token savings.
 - **Centralized Logging Configuration**: Added versioned `config/logging.yaml` configuring RichHandler with rich
   tracebacks and formatted timestamps, accompanied by `.gitignore` adjustments.
 
@@ -26,12 +48,12 @@ All notable changes to the Vatuta project are documented in this file.
 - **CI/CD & Quality Tooling Exclusions**: Excluded `.specify/` and `.agents/` directories across pre-commit hooks,
   static analysis, secret scanning, and CI pipelines.
 - **Agent Behavioral Guidelines (`AGENTS.md`)**: Expanded AI coding assistant instructions with Poetry command
-  invocation rules, RTK command prefix patterns, Spec-Kit workflows, and strict 120-character line length limits.
+  invocation rules, Spec-Kit workflows, and strict 120-character line length limits.
 
 ### Documentation
 
-- **README Architecture & Tooling Updates**: Updated `README.md` with Spec-Kit, RTK setup guides, Project
-  Constitution governance details, and links to `SECURITY.md`.
+- **README Architecture & Tooling Updates**: Updated `README.md` with Spec-Kit setup guides and Project
+  Constitution governance details.
 
 ---
 
