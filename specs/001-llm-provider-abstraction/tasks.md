@@ -22,8 +22,8 @@ description: "Task list template for feature implementation"
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Initialize domain module `src/llm/__init__.py` and matching test structure `tests/llm/`
-- [ ] T002 [P] Add/update dependencies `litellm` (v1.96.2+), `dspy-ai` (v3.1.3+ / 3.3.0), `pydantic` (v2.12.4), `prometheus-client` (v0.23.1) in `pyproject.toml`
+- [ ] T001 Initialize domain module `src/llm/__init__.py` and matching test directories (`tests/llm/`, `tests/models/`, `tests/client/`)
+- [ ] T002 [P] Add/update dependencies `litellm` (v1.96.2+), `dspy-ai` (v3.3.0+ / v3.4.0, latest stable available), `pydantic` (v2.12.4), `prometheus-client` (v0.23.1) in `pyproject.toml`
 - [ ] T003 Update configuration schema file `config/vatuta.yaml.example` with the new LiteLLM backend structure
 
 ---
@@ -95,12 +95,12 @@ description: "Task list template for feature implementation"
 ### Tests for User Story 3
 
 - [ ] T017 [US3] Unit test for LiteLLM exception mapping to domain errors in `tests/llm/test_errors.py`
-- [ ] T018 [US3] Unit test for CLI client catching `LLMError` and terminating with exit code 1 in `tests/client/test_client.py`
+- [ ] T018 [US3] Unit test for CLI client startup pre-flight failure (catching `LLMConfigurationError`) and runtime failure (catching `LLMError`) terminating with exit code 1 in `tests/client/test_client.py`
 
 ### Implementation for User Story 3
 
 - [ ] T019 [US3] Implement generic translation mapping from `litellm.exceptions.*` to domain `LLMError` classes in `src/llm/provider.py` (applicable to any provider without hardcoding)
-- [ ] T020 [US3] Update CLI entry points to wrap agent executions in `try/except LLMError`, log at CRITICAL, and `raise typer.Exit(code=1)` with user-friendly formatting via Rich in `src/client/client.py`
+- [ ] T020 [US3] Update CLI entry points in `src/client/client.py` to execute startup pre-flight backend and credential validation via `provider_manager.validate_backends()`, wrap agent executions in `try/except LLMError`, log at CRITICAL, and `raise typer.Exit(code=1)` with user-friendly formatting via Rich
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -112,7 +112,7 @@ description: "Task list template for feature implementation"
 
 - [ ] T021 [P] Ensure cyclomatic complexity constraints (Xenon <= 30) are maintained and code passes all linters (`just lint`).
 - [ ] T022 [P] Create dedicated documentation in `docs/models.md` covering model configuration, provider abstraction, and role assignment (leaving `docs/integrations.md` dedicated to vector sources).
-- [ ] T023 [P] Update `RELEASE.md` under `## [0.5.0]` with in-place configuration migration steps (`rag.llm_backends`), dynamic credential discovery via LiteLLM, Prometheus metrics, and clean error handling.
+- [ ] T023 [P] Add feature changes into the existing `## [0.5.0]` release section in `RELEASE.md` (documenting in-place configuration migration from legacy `rag.llm_backends` to LiteLLM-native backend schema, LiteLLM provider abstraction, and Prometheus metrics telemetry under `## [0.5.0]`).
 - [ ] T024 [P] Update `README.md` to reflect the new provider-independent architecture, Gemini defaults, and 0.5.0 release updates.
 - [ ] T025 [P] Review and update all remaining project documentation in `docs/` and repository root to ensure consistency with the new LLM abstraction.
 - [ ] T026 Verify lazy printf-style logging (`logger.info("...", arg)`) is used throughout `src/llm/provider.py` and `src/metrics/llm_metrics.py`.

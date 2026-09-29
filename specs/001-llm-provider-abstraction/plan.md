@@ -24,7 +24,7 @@ analysis, error rates) via LiteLLM callbacks.
 
 **Language/Version**: Python 3.12 (`>=3.12,<3.14`), managed exclusively with Poetry
 
-**Primary Dependencies**: `litellm` (v1.96.2+), `dspy-ai` (v3.1.3+ / 3.3.0), `pydantic` (v2.12.4), `prometheus-client` (v0.23.1)
+**Primary Dependencies**: `litellm` (v1.96.2+), `dspy-ai` (v3.3.0+ / v3.4.0, latest stable available), `pydantic` (v2.12.4), `prometheus-client` (v0.23.1)
 
 **Storage**: File configuration (`config/vatuta.yaml`); no persistent database changes
 
@@ -38,7 +38,7 @@ analysis, error rates) via LiteLLM callbacks.
 
 **Constraints**: Strict mypy compliance; Xenon cyclomatic complexity <= 30 per function, <= 10 average; functions <= 30 lines; PEP 8 line length <= 120 characters; lazy logging formatting (`logger.info("...", arg)`); DCO `Signed-off-by` trailers; zero hardcoded credentials; zero provider-specific conditionals in application code
 
-**Scale/Scope**: Centralized global LLM provider factory (`src/llm/provider.py`), error definitions (`src/llm/errors.py`), telemetry handler (`src/metrics/llm_metrics.py`), updated configuration models (`src/models/config.py`), updated RAG engine (`src/rag/engine.py`), updated RAG agent (`src/rag/agent.py`), and CLI client integration (`src/client/client.py`)
+**Scale/Scope**: Centralized global LLM provider factory (`src/llm/provider.py`), error definitions (`src/llm/errors.py`), telemetry handler (`src/metrics/llm_metrics.py`), updated configuration models (`src/models/config.py`), updated RAG engine (`src/rag/engine.py`), updated RAG agent (`src/rag/agent.py`), and CLI client integration (`src/client/client.py`, invoking `provider_manager.validate_backends()` during startup)
 
 ## Constitution Check
 
@@ -82,8 +82,9 @@ specs/001-llm-provider-abstraction/
 
 The following documentation and release files MUST be updated in lockstep during the implementation phase (not beforehand), adhering to Constitution Section 5 (Release Requirements):
 
-- `RELEASE.md`: Document in-place configuration migration from legacy `rag.llm_backends` to LiteLLM-native backend
-  schema, and Prometheus metrics telemetry under version header `## [0.5.0]`.
+- `RELEASE.md`: Add feature changes into the existing `## [0.5.0]` release section (documenting in-place
+  configuration migration from legacy `rag.llm_backends` to LiteLLM-native backend schema, LiteLLM provider
+  abstraction, and Prometheus metrics telemetry under `## [0.5.0]`).
 - `docs/models.md`: Create dedicated documentation covering model configuration, provider-agnostic abstraction,
   LiteLLM integration, role assignment (`router_backend`, `generator_backend`), dynamic credential discovery, and
   pre-flight verification (leaving `docs/integrations.md` dedicated exclusively to vector data sources).
@@ -107,7 +108,7 @@ src/
 │   ├── metrics.py                   # Existing source metrics
 │   └── llm_metrics.py               # Prometheus metrics (latency, tokens, calls) & VatutaMetricsLogger
 └── client/
-    └── client.py                    # Startup pre-flight checks and clean exit code 1 handling
+    └── client.py                    # Startup pre-flight checks (validate_backends()) and clean exit code 1 handling
 
 tests/
 ├── models/
@@ -117,11 +118,13 @@ tests/
 │   └── test_errors.py               # Error hierarchy and exception mapping tests
 ├── metrics/
 │   └── test_llm_metrics.py          # Prometheus metrics and logger callback tests
-└── rag/
-    └── test_engine.py               # Engine LM initialization tests delegating to LLMProviderManager
+├── rag/
+│   └── test_engine.py               # Engine LM initialization tests delegating to LLMProviderManager
+└── client/
+    └── test_client.py               # CLI client startup pre-flight and LLMError exit code 1 tests
 ```
 
-**Structure Decision**: Global modular layout introducing `src/llm/` as a top-level domain module alongside `src/rag/`, `src/sources/`, `src/entities/`, and `src/models/`, making the LLM provider reusable across RAG, future agents, MCP tools, and autonomous tasks. Test suite follows the mirror package structure (`tests/llm/`, `tests/models/`, `tests/metrics/`, `tests/rag/`), strictly adhering to the repository testing guidelines.
+**Structure Decision**: Global modular layout introducing `src/llm/` as a top-level domain module alongside `src/rag/`, `src/sources/`, `src/entities/`, and `src/models/`, making the LLM provider reusable across RAG, future agents, MCP tools, and autonomous tasks. Test suite follows the mirror package structure (`tests/llm/`, `tests/models/`, `tests/metrics/`, `tests/rag/`, `tests/client/`), strictly adhering to the repository testing guidelines.
 
 ## Complexity Tracking
 
