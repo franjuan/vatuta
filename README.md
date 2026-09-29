@@ -35,9 +35,7 @@ language from a single CLI.
 detailing the motivation, implementation, and challenges of the project.
 - [Vatuta 0.2.0, some improvements](https://bytesandchips.com/2026/07/03/vatuta-0-2-0-some-improvements/): Updates
 to version 0.2.0, including hybrid search, ingestion metrics, and dependency updates.
-- [Vatuta 0.3.0, supercharging RAG with MCP tools and hardening with container sandboxing]
-(<https://bytesandchips.com/2026/08/20/vatuta-0-3-0-supercharging-rag-with-mcp-tools-and-hardening-with-container-sandboxing/>)
-: Updates to version 0.3.0, introducing Model Context Protocol (MCP) tools and container sandboxing.
+- [Vatuta 0.3.0, supercharging RAG with MCP tools and hardening with container sandboxing](https://bytesandchips.com/2026/08/20/vatuta-0-3-0-supercharging-rag-with-mcp-tools-and-hardening-with-container-sandboxing/): Updates <!-- markdownlint-disable-line MD013 -->
 
 ---
 
