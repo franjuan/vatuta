@@ -1,14 +1,14 @@
 rag:
   llm_backends:
     gemini_flash:
-      model: "gemini/gemini-2.5-flash"
+      model: "gemini/gemini-3.8-flash"
       temperature: 0.2
       max_tokens: 800
       # top_p: 0.95
       # api_base: null
       # extra_kwargs: {}
     gemini_pro:
-      model: "gemini/gemini-1.5-pro"
+      model: "gemini/gemini-3.1-pro-preview"
       temperature: 0.2
       max_tokens: 2000
       # top_p: 0.95

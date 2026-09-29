@@ -325,11 +325,11 @@ cp config/vatuta.yaml.example config/vatuta.yaml
 rag:
   llm_backends:
     gemini_fast:
-      model: "google/gemini-2.5-flash"
+      model: "gemini/gemini-3.8-flash"
       temperature: 0.1
       max_tokens: 1024
     gemini_pro:
-      model: "google/gemini-2.5-pro"
+      model: "gemini/gemini-3.1-pro-preview"
       temperature: 0.7
       max_tokens: 4096
 
