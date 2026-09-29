@@ -22,9 +22,9 @@ description: "Task list template for feature implementation"
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Initialize domain module `src/llm/__init__.py` and matching test directories (`tests/llm/`, `tests/models/`, `tests/client/`)
-- [ ] T002 [P] Add/update dependencies `litellm` (v1.96.2+), `dspy-ai` (v3.3.0+ / v3.4.0, latest stable available), `pydantic` (v2.12.4), `prometheus-client` (v0.23.1) in `pyproject.toml`
-- [ ] T003 Update configuration schema file `config/vatuta.yaml.example` with the new LiteLLM backend structure
+- [X] T001 Initialize domain module `src/llm/__init__.py` and matching test directories (`tests/llm/`, `tests/models/`, `tests/client/`)
+- [X] T002 [P] Add/update dependencies `litellm` (v1.96.2+), `dspy-ai` (v3.3.0+ / v3.4.0, latest stable available), `pydantic` (v2.12.4), `prometheus-client` (v0.23.1) in `pyproject.toml`
+- [X] T003 Update configuration schema file `config/vatuta.yaml.example` with the new LiteLLM backend structure
 
 ---
 
@@ -34,10 +34,10 @@ description: "Task list template for feature implementation"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 [P] Define `VatutaError`, `LLMError`, and specific error subclasses (`LLMConfigurationError`, `LLMAuthenticationError`, `LLMRateLimitError`, `LLMConnectionError`, `LLMBadRequestError`) in `src/llm/errors.py`
-- [ ] T005 [P] Create Prometheus metrics definitions (histograms for latency, counters for tokens and errors) and `VatutaMetricsLogger` in `src/metrics/llm_metrics.py`
-- [ ] T006 Write tests for error mapping logic in `tests/llm/test_errors.py`
-- [ ] T007 Write tests for metrics callbacks in `tests/metrics/test_llm_metrics.py`
+- [X] T004 [P] Define `VatutaError`, `LLMError`, and specific error subclasses (`LLMConfigurationError`, `LLMAuthenticationError`, `LLMRateLimitError`, `LLMConnectionError`, `LLMBadRequestError`) in `src/llm/errors.py`
+- [X] T005 [P] Create Prometheus metrics definitions (histograms for latency, counters for tokens and errors) and `VatutaMetricsLogger` in `src/metrics/llm_metrics.py`
+- [X] T006 Write tests for error mapping logic in `tests/llm/test_errors.py`
+- [X] T007 Write tests for metrics callbacks in `tests/metrics/test_llm_metrics.py`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -53,15 +53,15 @@ description: "Task list template for feature implementation"
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T008 [P] [US1] Unit test for configuration validation (`LLMBackendConfig`, `RagConfig`) in `tests/models/test_llm_config.py`
-- [ ] T009 [P] [US1] Unit test for `LLMProviderManager` instantiation and `get_dspy_lm` caching in `tests/llm/test_provider.py`
-- [ ] T010 [P] [US1] Unit test for Engine LM initialization delegating to `LLMProviderManager` in `tests/rag/test_engine.py`
+- [X] T008 [P] [US1] Unit test for configuration validation (`LLMBackendConfig`, `RagConfig`) in `tests/models/test_llm_config.py`
+- [X] T009 [P] [US1] Unit test for `LLMProviderManager` instantiation and `get_dspy_lm` caching in `tests/llm/test_provider.py`
+- [X] T010 [P] [US1] Unit test for Engine LM initialization delegating to `LLMProviderManager` in `tests/rag/test_engine.py`
 
 ### Implementation for User Story 1
 
-- [ ] T011 [P] [US1] Implement `LLMBackendConfig` and `RagConfig` (incorporating `llm_backends`, `router_backend`, `generator_backend`) in `src/models/config.py`. Enforce constraints: model must be 'provider/model_name', temperature [0.0, 2.0], max_tokens > 0.
-- [ ] T012 [US1] Implement provider-agnostic `LLMProviderManager` with dynamic `litellm.validate_environment` and `get_dspy_lm` in `src/llm/provider.py` (zero vendor-specific branching or hardcoded keys)
-- [ ] T013 [US1] Update RAG engine configuration loading and LLM instantiation to use `LLMProviderManager` in `src/rag/engine.py`
+- [X] T011 [P] [US1] Implement `LLMBackendConfig` and `RagConfig` (incorporating `llm_backends`, `router_backend`, `generator_backend`) in `src/models/config.py`. Enforce constraints: model must be 'provider/model_name', temperature [0.0, 2.0], max_tokens > 0.
+- [X] T012 [US1] Implement provider-agnostic `LLMProviderManager` with dynamic `litellm.validate_environment` and `get_dspy_lm` in `src/llm/provider.py` (zero vendor-specific branching or hardcoded keys)
+- [X] T013 [US1] Update RAG engine configuration loading and LLM instantiation to use `LLMProviderManager` in `src/rag/engine.py`
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -75,12 +75,12 @@ description: "Task list template for feature implementation"
 
 ### Tests for User Story 2
 
-- [ ] T014 [US2] Extend integration/engine tests to verify correct model selection per role in `tests/rag/test_engine.py`
+- [X] T014 [US2] Extend integration/engine tests to verify correct model selection per role in `tests/rag/test_engine.py`
 
 ### Implementation for User Story 2
 
-- [ ] T015 [US2] Update `RagConfig` validation logic in `src/models/config.py` to ensure `router_backend` and `generator_backend` strictly resolve against existing keys in `llm_backends`.
-- [ ] T016 [US2] Update RAG agent workflow to invoke router with `role="router"` and generator with `role="generator"` using `dspy.context` in `src/rag/agent.py`
+- [X] T015 [US2] Update `RagConfig` validation logic in `src/models/config.py` to ensure `router_backend` and `generator_backend` strictly resolve against existing keys in `llm_backends`.
+- [X] T016 [US2] Update RAG agent workflow to invoke router with `role="router"` and generator with `role="generator"` using `dspy.context` in `src/rag/agent.py`
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
@@ -94,13 +94,13 @@ description: "Task list template for feature implementation"
 
 ### Tests for User Story 3
 
-- [ ] T017 [US3] Unit test for LiteLLM exception mapping to domain errors in `tests/llm/test_errors.py`
-- [ ] T018 [US3] Unit test for CLI client startup pre-flight failure (catching `LLMConfigurationError`) and runtime failure (catching `LLMError`) terminating with exit code 1 in `tests/client/test_client.py`
+- [X] T017 [US3] Unit test for LiteLLM exception mapping to domain errors in `tests/llm/test_errors.py`
+- [X] T018 [US3] Unit test for CLI client startup pre-flight failure (catching `LLMConfigurationError`) and runtime failure (catching `LLMError`) terminating with exit code 1 in `tests/client/test_client.py`
 
 ### Implementation for User Story 3
 
-- [ ] T019 [US3] Implement generic translation mapping from `litellm.exceptions.*` to domain `LLMError` classes in `src/llm/provider.py` (applicable to any provider without hardcoding)
-- [ ] T020 [US3] Update CLI entry points in `src/client/client.py` to execute startup pre-flight backend and credential validation via `provider_manager.validate_backends()`, wrap agent executions in `try/except LLMError`, log at CRITICAL, and `raise typer.Exit(code=1)` with user-friendly formatting via Rich
+- [X] T019 [US3] Implement generic translation mapping from `litellm.exceptions.*` to domain `LLMError` classes in `src/llm/provider.py` (applicable to any provider without hardcoding)
+- [X] T020 [US3] Update CLI entry points in `src/client/client.py` to execute startup pre-flight backend and credential validation via `provider_manager.validate_backends()`, wrap agent executions in `try/except LLMError`, log at CRITICAL, and `raise typer.Exit(code=1)` with user-friendly formatting via Rich
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -110,14 +110,14 @@ description: "Task list template for feature implementation"
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T021 [P] Ensure cyclomatic complexity constraints (Xenon <= 30) are maintained and code passes all linters (`just lint`).
-- [ ] T022 [P] Create dedicated documentation in `docs/models.md` covering model configuration, provider abstraction, and role assignment (leaving `docs/integrations.md` dedicated to vector sources).
-- [ ] T023 [P] Add feature changes into the existing `## [0.5.0]` release section in `RELEASE.md` (documenting in-place configuration migration from legacy `rag.llm_backends` to LiteLLM-native backend schema, LiteLLM provider abstraction, and Prometheus metrics telemetry under `## [0.5.0]`).
-- [ ] T024 [P] Update `README.md` to reflect the new provider-independent architecture, Gemini defaults, and 0.5.0 release updates.
-- [ ] T025 [P] Review and update all remaining project documentation in `docs/` and repository root to ensure consistency with the new LLM abstraction.
-- [ ] T026 Verify lazy printf-style logging (`logger.info("...", arg)`) is used throughout `src/llm/provider.py` and `src/metrics/llm_metrics.py`.
-- [ ] T027 Run `quickstart.md` validation locally.
-- [ ] T028 [P] Bump project version to `0.5.0` in `pyproject.toml` (`[project] version = "0.5.0"`) to maintain lockstep release alignment with `RELEASE.md` and `README.md`.
+- [X] T021 [P] Ensure cyclomatic complexity constraints (Xenon <= 30) are maintained and code passes all linters (`just lint`).
+- [X] T022 [P] Create dedicated documentation in `docs/models.md` covering model configuration, provider abstraction, and role assignment (leaving `docs/integrations.md` dedicated to vector sources).
+- [X] T023 [P] Add feature changes into the existing `## [0.5.0]` release section in `RELEASE.md` (documenting in-place configuration migration from legacy `rag.llm_backends` to LiteLLM-native backend schema, LiteLLM provider abstraction, and Prometheus metrics telemetry under `## [0.5.0]`).
+- [X] T024 [P] Update `README.md` to reflect the new provider-independent architecture, Gemini defaults, and 0.5.0 release updates.
+- [X] T025 [P] Review and update all remaining project documentation in `docs/` and repository root to ensure consistency with the new LLM abstraction.
+- [X] T026 Verify lazy printf-style logging (`logger.info("...", arg)`) is used throughout `src/llm/provider.py` and `src/metrics/llm_metrics.py`.
+- [X] T027 Run `quickstart.md` validation locally.
+- [X] T028 [P] Bump project version to `0.5.0` in `pyproject.toml` (`[project] version = "0.5.0"`) to maintain lockstep release alignment with `RELEASE.md` and `README.md`.
 
 ---
 

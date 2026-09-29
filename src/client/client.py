@@ -15,6 +15,8 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from src.entities.manager import EntityManager
+from src.llm.errors import LLMError
+from src.llm.provider import LLMProviderManager
 from src.models.config import ConfigLoader, VatutaConfig
 from src.rag.agent import RAGAgent
 from src.rag.qdrant_manager import QdrantDocumentManager
@@ -32,11 +34,18 @@ console = Console()
 class State:
     """Application state container."""
 
-    def __init__(self, config: VatutaConfig, data_dir: str = "data", verbose: bool = False) -> None:
+    def __init__(
+        self,
+        config: VatutaConfig,
+        data_dir: str = "data",
+        verbose: bool = False,
+        provider_manager: Optional[LLMProviderManager] = None,
+    ) -> None:
         """Initialize application state."""
         self.config = config
         self.data_dir = data_dir
         self.verbose = verbose
+        self.provider_manager = provider_manager
 
 
 class SourceType(str, Enum):
@@ -69,6 +78,34 @@ def get_ids_help() -> str:
     return "Filter by source ID (e.g. slack-main)"
 
 
+def _run_preflight_validation(cfg: VatutaConfig) -> LLMProviderManager:
+    """Run startup pre-flight validation on configured LLM backends.
+
+    Args:
+        cfg: Loaded Vatuta configuration.
+
+    Returns:
+        Validated LLMProviderManager instance.
+
+    Raises:
+        typer.Exit: With code 1 if pre-flight validation fails.
+    """
+    try:
+        provider_manager = LLMProviderManager(cfg.rag)
+        provider_manager.validate_backends()
+        return provider_manager
+    except LLMError as e:
+        logger.critical("Startup pre-flight validation failed: %s", e)
+        console.print(
+            Panel(
+                f"[bold red]Configuration/Authentication Error:[/bold red]\n{e}",
+                title="[bold red]Startup Pre-flight Check Failed[/bold red]",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1) from e
+
+
 @app.callback()
 def main(
     ctx: typer.Context,
@@ -86,8 +123,10 @@ def main(
     # Ensure data directory exists
     Path(data).mkdir(parents=True, exist_ok=True)
 
+    provider_manager = _run_preflight_validation(cfg)
+
     # Initialize state in context
-    ctx.obj = State(config=cfg, data_dir=data, verbose=verbose)
+    ctx.obj = State(config=cfg, data_dir=data, verbose=verbose, provider_manager=provider_manager)
 
 
 @app.command()
@@ -514,6 +553,16 @@ def ask(
         if show_sources:
             _display_sources(result)
 
+    except LLMError as e:
+        logger.critical("LLM runtime failure during execution: %s", e)
+        console.print(
+            Panel(
+                f"[bold red]LLM Runtime Error:[/bold red]\n{e}",
+                title="[bold red]Query Execution Failed[/bold red]",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1) from e
     except Exception as e:
         console.print(f"[red]Error answering question: {e}[/red]")
         if state.verbose:

@@ -76,7 +76,9 @@ to version 0.2.0, including hybrid search, ingestion metrics, and dependency upd
 - 🔀 Dynamic routing for applying filtering or collecting documents as interpreted from query
 - 🧠 LangGraph-powered RAG agent with tool-based retrieval
 - 🔌 **MCP Integration** dynamically expands agent capabilities with Model Context Protocol servers
-- 🌐 Multiple LLM backends: **AWS Bedrock**, **Google Gemini**, **Anthropic Claude**
+- 🌐 Provider-independent LLM abstraction powered by **LiteLLM** and **DSPy** (Google Gemini, Anthropic, OpenAI, etc.)
+- 🔀 Independent model assignment for query routing (`router_backend`) vs response generation (`generator_backend`)
+- 🛡️ Startup pre-flight validation preventing runtime failures on missing credentials or malformed model identifiers
 - 📊 Configurable `k` parameter and source-display for transparent answers
 
 ### Observability
@@ -106,7 +108,7 @@ graph TB
 
     subgraph Agent["RAG Agent (LangGraph)"]
         AG[Agent Router]
-        LLM[LLM Backend<br>Bedrock · Gemini · Anthropic]
+        LLM[Unified LLM Abstraction (LiteLLM)<br>Gemini · Claude · GPT · Bedrock · Local]
         AG --> LLM
     end
 
@@ -161,7 +163,7 @@ Three main layers:
 | -------- | ---------- | ---- |
 | AI Framework | [LangChain](https://github.com/langchain-ai/langchain), [LangGraph](https://github.com/langchain-ai/langgraph) | Agent orchestration and RAG chains |
 | Prompt Engineering | [DSPy](https://github.com/stanfordnlp/dspy) | Prompt formalization and optimization |
-| LLM Providers | AWS Bedrock, Google Gemini, Anthropic Claude | Language model backends |
+| LLM Abstraction | [LiteLLM](https://litellm.ai/) | Provider-agnostic gateway (Gemini, Claude, GPT, Bedrock, Ollama) |
 | Tool Integrations | [Model Context Protocol (MCP)](https://modelcontextprotocol.io/), [json-schema-to-pydantic](https://pypi.org/project/json-schema-to-pydantic/) | Dynamic external tool discovery and safe schema parsing |
 | Vector Database | [Qdrant](https://qdrant.tech/qdrant-vector-database/) | Semantic document storage and search |
 | Embeddings | [Sentence Transformers](https://sbert.net/) | Local embedding generation (no API cost) |
@@ -319,22 +321,20 @@ cp config/vatuta.yaml.example config/vatuta.yaml
 ```
 
 ```yaml
-# LLM backend selection
+# LLM backend selection (see docs/models.md for full configuration reference)
 rag:
   llm_backends:
-    bedrock:
-      model_id: "bedrock/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
-      temperature: 0.2
-      max_tokens: 800
-      top_k: 4
-    gemini:
-      model_id: "gemini/gemini-3.7-flash"
-      temperature: 1.0
-      max_tokens: 800
-      top_k: 4
+    gemini_fast:
+      model: "google/gemini-2.5-flash"
+      temperature: 0.1
+      max_tokens: 1024
+    gemini_pro:
+      model: "google/gemini-2.5-pro"
+      temperature: 0.7
+      max_tokens: 4096
 
-  router_backend: "gemini"
-  generator_backend: "bedrock"
+  router_backend: "gemini_fast"
+  generator_backend: "gemini_pro"
 
 # Cross-source identity resolution storage
 entities_manager:

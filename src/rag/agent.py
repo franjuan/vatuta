@@ -75,8 +75,8 @@ class RAGAgent:
         rag_conf = config.rag
 
         # 1) Initialize LMs (Router vs Generator)
-        self.router_lm = build_dspy_lm(rag_conf, rag_conf.router_backend)
-        self.generator_lm = build_dspy_lm(rag_conf, rag_conf.generator_backend)
+        self.router_lm = build_dspy_lm(rag_conf, rag_conf.router_backend, role="router")
+        self.generator_lm = build_dspy_lm(rag_conf, rag_conf.generator_backend, role="generator")
 
         # 2) DSPy module for Generation
         self.dspy_module = DSPyRAGModule()
@@ -117,7 +117,7 @@ class RAGAgent:
             self.async_runner.start()
 
             for name, mcp_config in self.mcp_configs.items():
-                logger.info(f"Initializing MCP server: {name}")
+                logger.info("Initializing MCP server: %s", name)
                 server = MCPServer(mcp_config)
                 self.mcp_servers.append(server)
 
@@ -237,7 +237,7 @@ class RAGAgent:
         question = state["question"]
         dynamic_query = state.get("dynamic_query") or None
 
-        logger.info(f"Retrieving with filter: {dynamic_query}")
+        logger.info("Retrieving with filter: %s", dynamic_query)
 
         vector_docs = self.doc_manager.search(query=question, k=self.retrieval_k, filter=dynamic_query)
 
@@ -278,7 +278,7 @@ class RAGAgent:
 
             answer = getattr(pred, "answer", str(pred))
         except Exception as e:
-            logger.error(f"Generation failed: {e}", exc_info=True)
+            logger.error("Generation failed: %s", e, exc_info=True)
             answer = f"I encountered an error generating the answer. Details: {e}"
             generator_cot = f"Error: {e}"
 

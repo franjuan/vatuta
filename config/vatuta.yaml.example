@@ -1,18 +1,22 @@
 rag:
   llm_backends:
-    bedrock:
-      model_id: "bedrock/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
-      # temperature: 0.2
-      # max_tokens: 800
-      # top_k: 4
-    gemini:
-      model_id: "gemini/gemini-3.7-flash"
-      # temperature: 1.0
-      # max_tokens: 800
-      # top_k: 4
+    gemini_flash:
+      model: "gemini/gemini-2.5-flash"
+      temperature: 0.2
+      max_tokens: 800
+      # top_p: 0.95
+      # api_base: null
+      # extra_kwargs: {}
+    gemini_pro:
+      model: "gemini/gemini-1.5-pro"
+      temperature: 0.2
+      max_tokens: 2000
+      # top_p: 0.95
+      # api_base: null
+      # extra_kwargs: {}
 
-  router_backend: "gemini"
-  generator_backend: "bedrock"
+  router_backend: "gemini_flash"
+  generator_backend: "gemini_pro"
 
 entities_manager:
   storage_path: "data/entities.json"

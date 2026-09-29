@@ -6,6 +6,20 @@ All notable changes to the Vatuta project are documented in this file.
 
 ### Added
 
+- **Provider-Independent LLM Abstraction**: Integrated LiteLLM as the unified language model interface for DSPy
+  (`dspy.LM`), decoupling model execution from vendor-specific libraries with dynamic backend instantiation and caching
+  via `LLMProviderManager`.
+- **Role-Based Model Assignment**: Added independent configuration for query routing (`rag.router_backend`) and
+  response synthesis (`rag.generator_backend`), enabling granular optimization of model tier, latency, and cost.
+- **Startup Pre-Flight Validation**: Implemented broad, non-intrusive pre-flight validation on startup via
+  `validate_backends()` checking model syntax and dynamic environment credential presence via
+  `litellm.validate_environment()`, halting cleanly on defects with exit code 1.
+- **Prometheus LLM Telemetry**: Added `VatutaMetricsLogger` recording `vatuta_llm_call_latency_seconds`,
+  `vatuta_llm_tokens_total`, and `vatuta_llm_calls_total` labeled by `provider`, `role`, `model`, and `status`.
+- **Domain LLM Error Hierarchy**: Introduced domain-specific exception hierarchy (`LLMError`, `LLMConfigurationError`,
+  `LLMAuthenticationError`, `LLMRateLimitError`, `LLMConnectionError`, `LLMBadRequestError`) in `src/llm/errors.py`.
+- **Dedicated Model Documentation**: Created `docs/models.md` detailing provider configuration, role routing, and
+  telemetry setup.
 - **Security Policy & Vulnerability Reporting**: Introduced `SECURITY.md` establishing supported versions, private
   vulnerability reporting via GitHub Private Vulnerability Reporting, a 7-day initial response SLA, coordinated
   disclosure guidelines, and reference templates.
@@ -19,6 +33,12 @@ All notable changes to the Vatuta project are documented in this file.
 
 ### Changed & Refactored
 
+- **Configuration Schema Migration**: Migrated `config/vatuta.yaml` from legacy `rag.llm_backends` format to
+  LiteLLM-native backend schema with strict Pydantic validation (`provider/model_name` syntax, temperature, max tokens).
+- **RAG Engine & Agent Integration**: Updated `src/rag/engine.py` and `src/rag/agent.py` to route DSPy contexts
+  through `LLMProviderManager.get_dspy_lm(role=...)`.
+- **CLI Startup & Runtime Error Handling**: Updated `src/client/client.py` to perform startup pre-flight validation
+  and catch runtime `LLMError` failures cleanly with Rich panel output and exit code 1.
 - **Agent Behavioral Guidelines (`AGENTS.md`)**: Added RTK command prefix patterns (`rtk git`, `rtk poetry run`) and
   optimization commands (`rtk gain`, `rtk gain --history`).
 
