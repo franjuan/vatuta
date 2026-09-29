@@ -296,10 +296,7 @@ cp env.example .env
 | Variable | Required | Description |
 | -------- | -------- | ----------- |
 | **LLM backends** | | |
-| `GEMINI_API_KEY` | For Gemini | Google AI API key |
-| `AWS_REGION` | For Bedrock | AWS region (e.g. `us-east-1`) |
-| `AWS_PROFILE` | For Bedrock | AWS named profile — used when no bearer token is set |
-| `AWS_BEARER_TOKEN_BEDROCK` | For Bedrock | Bearer token — alternative to profile auth |
+| `*_API_KEY` etc. | Required | API keys and config for your chosen provider(s) as required by LiteLLM (e.g., `OPENAI_API_KEY`, `GEMINI_API_KEY`). |
 | **Data sources** | | |
 | `JIRA_USER` | For Jira/Confluence | Atlassian account email |
 | `JIRA_API_TOKEN` | For Jira/Confluence | Atlassian API token |
