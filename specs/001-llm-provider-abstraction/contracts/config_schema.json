@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VatutaRagConfigSchema",
+  "description": "Validation schema for the RAG LLM configuration section in config/vatuta.yaml",
+  "type": "object",
+  "required": [
+    "rag"
+  ],
+  "properties": {
+    "rag": {
+      "type": "object",
+      "required": [
+        "llm_backends",
+        "router_backend",
+        "generator_backend"
+      ],
+      "properties": {
+        "llm_backends": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "Dictionary of named LLM backend configurations",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "model"
+            ],
+            "properties": {
+              "model": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9_-]+/[a-zA-Z0-9_.:-]+$",
+                "description": "LiteLLM model string in 'provider/model_name' format (e.g., 'gemini/gemini-2.5-flash')"
+              },
+              "temperature": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 2.0,
+                "default": 0.2,
+                "description": "Sampling temperature"
+              },
+              "max_tokens": {
+                "type": "integer",
+                "minimum": 1,
+                "default": 800,
+                "description": "Maximum tokens to generate"
+              },
+              "top_p": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "description": "Top-p sampling parameter"
+              },
+              "api_base": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uri",
+                "description": "Optional API endpoint base URL"
+              },
+              "extra_kwargs": {
+                "type": "object",
+                "description": "Optional provider-specific parameters passed directly to LiteLLM"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "router_backend": {
+          "type": "string",
+          "description": "Name of the backend in llm_backends used for tool routing"
+        },
+        "generator_backend": {
+          "type": "string",
+          "description": "Name of the backend in llm_backends used for answer synthesis"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

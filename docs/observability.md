@@ -22,7 +22,8 @@ All data sources (Slack, Jira, Confluence) report the following standard metrics
 
 - **`source_operation_latency_seconds`** (Histogram)
   - **Description**: Total duration of logical data collection operations.
-  - **Labels**: `source`, `source_id`, `operation` (e.g., `collect_project`, `collect_space`, `collect_documents_and_chunks`)
+  - **Labels**: `source`, `source_id`, `operation`
+    (e.g., `collect_project`, `collect_space`, `collect_documents_and_chunks`)
 - **`source_operation_items`** (Histogram)
   - **Description**: Number of items processed during a specific bulk operation.
   - **Labels**: `source`, `source_id`, `operation`
@@ -65,7 +66,7 @@ optimally sized for embeddings, Vatuta tracks these metrics:
   - **Description**: Latency for executing local embedding models during ingestion (e.g., semantic splitting).
   - **Labels**: `source`, `source_id`
 - **`ingest_chunk_split_reason_total`** (Counter)
-  - **Description**: Tracks the internal trigger that caused a chunk to be split, useful for tuning the chunking strategies.
+  - **Description**: Tracks internal trigger causing a chunk split, useful for tuning chunking strategies.
   - **Labels**: `source`, `source_id`, `reason` (`time`, `size_chars`, `size_count`, `semantic`)
 
 ## Source-Specific Metrics
@@ -75,6 +76,20 @@ optimally sized for embeddings, Vatuta tracks these metrics:
 - **`slack_user_cache_hits_total`** (Counter)
 - **`slack_user_cache_misses_total`** (Counter)
   - Tracks the hit rate of the persistent user ID resolution cache.
+
+## LLM Telemetry Metrics
+
+Vatuta captures standardized Prometheus metrics across all configured LLM provider backends:
+
+- **`vatuta_llm_call_latency_seconds`** (Histogram)
+  - **Description**: Invocation duration in seconds for LLM calls across providers and roles.
+  - **Labels**: `provider`, `role`, `model`, `status` (`success`, `failure`)
+- **`vatuta_llm_tokens_total`** (Counter)
+  - **Description**: Total token consumption across prompt inputs and model completions.
+  - **Labels**: `provider`, `role`, `model`, `token_type` (`prompt`, `completion`)
+- **`vatuta_llm_calls_total`** (Counter)
+  - **Description**: Cumulative count of executed LLM calls.
+  - **Labels**: `provider`, `role`, `model`, `status` (`success`, `failure`)
 
 ## Usage & Best Practices
 
@@ -87,7 +102,8 @@ optimally sized for embeddings, Vatuta tracks these metrics:
 
 ## Logging Architecture
 
-Vatuta uses Python's standard `logging` library configured via `logging.config.dictConfig` from YAML configuration files.
+Vatuta uses Python's standard `logging` library configured via `logging.config.dictConfig`
+from YAML configuration files.
 
 ### Configuration (`config/logging.yaml`)
 

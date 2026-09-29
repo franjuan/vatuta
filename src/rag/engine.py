@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any, List, TypedDict, Union
 
 import dspy
 from langchain_core.documents import Document
 from langgraph.graph import END, StateGraph
 
+from src.llm.provider import LLMProviderManager
 from src.models.config import RagConfig
 from src.rag.document_manager import DocumentManager
 from src.rag.qdrant_manager import QdrantDocumentManager
@@ -62,68 +62,19 @@ class DSPyRAGModule(dspy.Module):
         return dspy.Prediction(answer=getattr(pred, "answer", ""), rationale=getattr(pred, "rationale", ""))
 
 
-def build_dspy_lm(config: RagConfig, backend_name: str) -> dspy.LM:
-    """Build and return a DSPy language model instance.
+def build_dspy_lm(config: RagConfig, backend_name: str, role: str = "general") -> dspy.LM:
+    """Build and return a DSPy language model instance via LLMProviderManager.
 
     Args:
         config: RAG configuration object.
-        backend_name: Name of the backend to use
+        backend_name: Name of the backend to use.
+        role: Pipeline role label ('router', 'generator', etc.) for telemetry.
 
     Returns:
         dspy.LM: Configured LM instance.
     """
-    if not config.llm_backends:
-        raise ValueError("No LLM backends configured in config.rag.llm_backends")
-
-    # Select backend
-    if backend_name not in config.llm_backends:
-        available = ", ".join(config.llm_backends.keys())
-        raise ValueError(f"Backend '{backend_name}' not found. Available: {available}")
-    selection = backend_name
-
-    logger.info("Initializing LLM backend: %s", selection)
-
-    llm_conf = config.llm_backends[selection]
-
-    # Configure based on selection or model_id characteristics
-    # TODO: We can infer provider from backend name (e.g. 'gemini', 'bedrock') or model_id
-
-    is_gemini = "gemini" == selection.lower()
-    is_bedrock = "bedrock" == selection.lower()
-
-    if is_gemini:
-        # Gemini Configuration
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise RuntimeError("GEMINI_API_KEY environment variable not set.")
-
-        return dspy.LM(
-            llm_conf.model_id,
-            api_key=api_key,
-            max_tokens=llm_conf.max_tokens,
-            temperature=llm_conf.temperature,
-        )
-
-    elif is_bedrock:
-        # Default / Bedrock Configuration
-        # Region is required for Bedrock
-        region = os.getenv("AWS_REGION", "us-east-1")
-        os.environ["AWS_REGION"] = region
-
-        if os.getenv("AWS_BEARER_TOKEN_BEDROCK"):
-            os.environ.pop("AWS_PROFILE", None)
-        else:
-            profile = os.getenv("AWS_PROFILE")
-            if not profile:
-                raise RuntimeError("Set AWS_BEARER_TOKEN_BEDROCK (bearer) or AWS_PROFILE (profile).")
-            os.environ["AWS_PROFILE"] = profile
-
-        return dspy.LM(model=llm_conf.model_id, temperature=llm_conf.temperature, max_tokens=llm_conf.max_tokens)
-
-    else:
-        raise ValueError(
-            f"Backend '{selection}' with model '{llm_conf.model_id}' is not supported. Must be 'bedrock' or 'gemini'."
-        )
+    manager = LLMProviderManager(config)
+    return manager.get_dspy_lm(backend_name, role=role)
 
 
 def build_graph(

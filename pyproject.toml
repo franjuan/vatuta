@@ -1,6 +1,6 @@
 [project]
 name = "vatuta"
-version = "0.3.0"
+version = "0.5.0"
 description = "Personal AI Assistant"
 authors = [
     { name = "JuanFran Adame", email = "juanfran.adame@gmail.com" }
@@ -27,7 +27,8 @@ sentence-transformers = "^5.1.2"
 spacy = "^3.8.7"
 slack-sdk = "^3.37.0"
 python-gitlab = "^6.5.0"
-dspy-ai = "^3.1.3"
+dspy-ai = "^3.3.0"
+litellm = "^1.96.2"
 anthropic = "^0.71.0"
 langgraph = "^1.0.2"
 #Google
@@ -91,13 +92,15 @@ exclude = '''
   | build
   | dist
   | pocs
+  | \.specify
+  | \.agents
 )/
 '''
 
 [tool.isort]
 profile = "black"
 line_length = 120
-skip_glob = ["pocs/*", "tests/*"]
+skip_glob = ["pocs/*", "tests/*", ".specify/*", ".agents/*"]
 # Force 'mcp' PyPI package as third-party to prevent conflict with local 'src/mcp' directory shadowing
 known_third_party = ["mcp"]
 # Explicitly declare first-party root modules for consistent classification across tools
@@ -106,6 +109,7 @@ src_paths = ["src"]
 
 [tool.mypy]
 python_version = "3.12"
+exclude = ["pocs", "^\\.specify", "^\\.agents"]
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -157,7 +161,7 @@ addopts = "-v --tb=short"
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-exclude = ["pocs"]
+exclude = ["pocs", ".specify", ".agents"]
 
 [tool.ruff.lint]
 select = [

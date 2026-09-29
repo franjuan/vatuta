@@ -137,11 +137,14 @@ data/
 logs/
 config/*
 !config/*.example
+!config/logging.yaml
 *.db
 *.sqlite
 config/local.py
 .env.local
 .env.production
+justfile.local
+
 
 # IDE
 .vscode/
@@ -162,3 +165,16 @@ ruff-report.txt
 data*.zip
 
 local.md
+
+# AI coding-agent local configuration
+.agents/
+.claude/
+.cursor/
+.gemini/
+.clinerules/
+
+# Spec-Kit agent-specific local state
+.specify/integration.json
+.specify/integrations/
+.specify/extensions/
+.specify/extensions.yml

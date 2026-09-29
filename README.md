@@ -76,7 +76,9 @@ to version 0.2.0, including hybrid search, ingestion metrics, and dependency upd
 - 🔀 Dynamic routing for applying filtering or collecting documents as interpreted from query
 - 🧠 LangGraph-powered RAG agent with tool-based retrieval
 - 🔌 **MCP Integration** dynamically expands agent capabilities with Model Context Protocol servers
-- 🌐 Multiple LLM backends: **AWS Bedrock**, **Google Gemini**, **Anthropic Claude**
+- 🌐 Provider-independent LLM abstraction powered by **LiteLLM** and **DSPy** (Google Gemini, Anthropic, OpenAI, etc.)
+- 🔀 Independent model assignment for query routing (`router_backend`) vs response generation (`generator_backend`)
+- 🛡️ Startup pre-flight validation preventing runtime failures on missing credentials or malformed model identifiers
 - 📊 Configurable `k` parameter and source-display for transparent answers
 
 ### Observability
@@ -88,6 +90,10 @@ to version 0.2.0, including hybrid search, ingestion metrics, and dependency upd
 - 🏗️ Typed codebase with strict mypy, Ruff, and Black enforcement
 - 🔒 Security checks: Bandit, Semgrep, pip-audit, detect-secrets
 - 🪝 Pre-commit hooks and GitHub Actions CI pipeline
+- 📐 **Spec-Kit** — Specification-Driven Development (SDD / BDD-style user stories and acceptance criteria)
+- ✂️ **RTK (Rust Token Killer)** — CLI proxy filtering terminal outputs to reduce AI agent context tokens
+- 📜 **Project Constitution** — Formally codified principles, architecture boundaries, and security standards
+- 🛡️ **Security Policy** — Private vulnerability reporting via GitHub Advisories with a 7-day response SLA
 
 ---
 
@@ -102,7 +108,7 @@ graph TB
 
     subgraph Agent["RAG Agent (LangGraph)"]
         AG[Agent Router]
-        LLM[LLM Backend<br>Bedrock · Gemini · Anthropic]
+        LLM[Unified LLM Abstraction (LiteLLM)<br>Gemini · Claude · GPT · Bedrock · Local]
         AG --> LLM
     end
 
@@ -157,7 +163,7 @@ Three main layers:
 | -------- | ---------- | ---- |
 | AI Framework | [LangChain](https://github.com/langchain-ai/langchain), [LangGraph](https://github.com/langchain-ai/langgraph) | Agent orchestration and RAG chains |
 | Prompt Engineering | [DSPy](https://github.com/stanfordnlp/dspy) | Prompt formalization and optimization |
-| LLM Providers | AWS Bedrock, Google Gemini, Anthropic Claude | Language model backends |
+| LLM Abstraction | [LiteLLM](https://litellm.ai/) | Provider-agnostic gateway (Gemini, Claude, GPT, Bedrock, Ollama) |
 | Tool Integrations | [Model Context Protocol (MCP)](https://modelcontextprotocol.io/), [json-schema-to-pydantic](https://pypi.org/project/json-schema-to-pydantic/) | Dynamic external tool discovery and safe schema parsing |
 | Vector Database | [Qdrant](https://qdrant.tech/qdrant-vector-database/) | Semantic document storage and search |
 | Embeddings | [Sentence Transformers](https://sbert.net/) | Local embedding generation (no API cost) |
@@ -170,6 +176,8 @@ Three main layers:
 | Linting | [Ruff](https://github.com/astral-sh/ruff), [mypy](https://mypy-lang.org/) | Code quality and type checking |
 | Security | [Bandit](https://github.com/PyCQA/bandit), [Semgrep](https://github.com/semgrep/semgrep), [pip-audit](https://github.com/pypa/pip-audit), [detect-secrets](https://github.com/Yelp/detect-secrets) | Static analysis and vulnerability scanning |
 | CI/CD | [GitHub Actions](https://github.com/features/actions) | Automated testing, linting, and SBOM generation |
+| Spec-Driven Dev | [Spec-Kit](https://github.com/github/spec-kit) | Specification-driven development (SDD/BDD) and task breakdown |
+| Token Optimization | [RTK](https://github.com/rtk-ai/rtk) | CLI proxy for 60-90% token savings with AI coding assistants |
 
 ---
 
@@ -243,6 +251,7 @@ On top of the [Quick Start prerequisites](#prerequisites):
 | ---- | ------- | ----- |
 | [direnv](https://direnv.net/) | any | Optional — auto-activates the Poetry virtualenv on `cd` |
 | [pre-commit](https://pre-commit.com/) | any | Optional — required to contribute |
+| [RTK](https://github.com/rtk-ai/rtk) | >= 0.1 | Optional (Recommended) — CLI proxy to reduce AI agent context tokens |
 
 ### Development setup
 
@@ -261,6 +270,13 @@ just setup
 # (Optional) Install pre-commit hooks
 #    Runs linters, type checks, and security scans automatically before each commit
 just pre-commit-install
+
+# (Optional) Install and initialize RTK (Rust Token Killer) for AI assistant workflows
+# Quick install (Linux/macOS):
+curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh
+# Or via Cargo: cargo install --git https://github.com/rtk-ai/rtk
+# Initialize configuration for your preferred AI agent / IDE (e.g. Antigravity):
+rtk init --agent antigravity
 ```
 
 ---
@@ -305,22 +321,20 @@ cp config/vatuta.yaml.example config/vatuta.yaml
 ```
 
 ```yaml
-# LLM backend selection
+# LLM backend selection (see docs/models.md for full configuration reference)
 rag:
   llm_backends:
-    bedrock:
-      model_id: "bedrock/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
-      temperature: 0.2
-      max_tokens: 800
-      top_k: 4
-    gemini:
-      model_id: "gemini/gemini-3.7-flash"
-      temperature: 1.0
-      max_tokens: 800
-      top_k: 4
+    gemini_fast:
+      model: "gemini/gemini-3.8-flash"
+      temperature: 0.1
+      max_tokens: 1024
+    gemini_pro:
+      model: "gemini/gemini-3.1-pro-preview"
+      temperature: 0.7
+      max_tokens: 4096
 
-  router_backend: "gemini"
-  generator_backend: "bedrock"
+  router_backend: "gemini_fast"
+  generator_backend: "gemini_pro"
 
 # Cross-source identity resolution storage
 entities_manager:
@@ -459,6 +473,7 @@ vatuta/
 ├── pocs/              # Proof-of-concept and experimental scripts
 ├── data/              # Local data storage (Qdrant, JSONL cache, entities)
 ├── logs/              # Application logs
+├── .specify/          # Spec-Kit templates, scripts, and specification workflows (SDD/BDD)
 ├── .github/workflows/ # GitHub Actions CI pipeline
 ├── justfile           # Task automation commands
 ├── pyproject.toml     # Poetry configuration, tool settings
@@ -467,10 +482,12 @@ vatuta/
 ├── .secrets.baseline  # Baseline for detect-secrets
 ├── .pip-audit-ignore  # Ignored vulnerabilities for pip-audit
 ├── .markdownlint.json # Markdown style rules
+├── .markdownlintignore # Markdown lint exclusions
 ├── .envrc             # direnv environment loading script
 ├── pyrefly.toml       # LSP settings
 ├── AGENTS.md          # AI Assistant coding instructions
 ├── CONTRIBUTING.md    # Contribution guidelines
+├── SECURITY.md        # Security policy and vulnerability reporting
 ├── LICENSE            # Open source license
 ├── THIRD_PARTY.md     # Third-party licenses
 └── env.example        # Environment variables template
@@ -544,6 +561,16 @@ just test -v             # Verbose
 just test-coverage       # With HTML coverage report (htmlcov/)
 ```
 
+### Specification-Driven Development (Spec-Kit)
+
+Feature development in Vatuta follows Specification-Driven Development (SDD / BDD):
+
+- Feature specifications, acceptance criteria, and task checklists are managed under `.specify/`.
+- Architectural decisions, technical boundaries, and security standards are governed by the
+  [Vatuta Constitution](.specify/memory/constitution.md).
+- AI coding agents execute structured workflows via specialized skills (`speckit-specify`, `speckit-plan`,
+  `speckit-tasks`, `speckit-implement`).
+
 ---
 
 ## Future Improvements
@@ -599,8 +626,19 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) before
 
 ---
 
+## Security
+
+We take the security of Vatuta seriously. For details on supported versions and instructions on how to privately report
+vulnerabilities via GitHub Private Vulnerability Reporting, please consult our [Security Policy](SECURITY.md).
+Project security principles, technical boundaries, and cryptographic standards are codified in the
+[Vatuta Constitution](.specify/memory/constitution.md).
+
+---
+
 ## License
 
 - **Code** is licensed under the **Apache License 2.0**. See [LICENSE](LICENSE).
-- **Documentation & content** (docs, diagrams, and original images) are licensed under **CC BY 4.0**. See [LICENSE-docs](LICENSE-docs).
-- **Third-party materials** (dependencies, icons, fonts) may have their own licenses. See [THIRD_PARTY.md](THIRD_PARTY.md).
+- **Documentation & content** (docs, diagrams, and original images) are licensed under **CC BY 4.0**.
+  See [LICENSE-docs](LICENSE-docs).
+- **Third-party materials** (dependencies, icons, fonts) may have their own licenses.
+  See [THIRD_PARTY.md](THIRD_PARTY.md).

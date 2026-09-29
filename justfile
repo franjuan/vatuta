@@ -4,6 +4,10 @@
 # Load .env file automatically (makes direnv optional)
 set dotenv-load
 
+# Optional local overrides / custom recipes (not tracked in Git)
+import? 'justfile.local'
+
+
 # Default recipe
 default:
     @just --list
@@ -30,7 +34,7 @@ lint:
     poetry run ruff check src tests
     poetry run mypy src
     poetry run pydocstyle src tests --convention=google
-    poetry run detect-secrets scan
+    poetry run detect-secrets scan --exclude-files '^(pocs|\.specify|\.agents)/'
 
 # Format code
 format:
@@ -116,7 +120,7 @@ pre-commit-install:
 
 # Show project structure
 tree:
-    tree -I '__pycache__|*.pyc|.git|.pytest_cache|.mypy_cache|htmlcov|build|dist'
+    tree -I '__pycache__|*.pyc|.git|.pytest_cache|.mypy_cache|htmlcov|build|dist|.specify|.agents'
 
 # Show environment info
 env:

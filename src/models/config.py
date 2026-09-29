@@ -4,10 +4,10 @@ This module defines the configuration structure for RAG settings and data source
 """
 
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.mcp.config import MCPContainerConfig
 from src.sources.confluence import ConfluenceConfig
@@ -15,23 +15,95 @@ from src.sources.jira_source import JiraConfig
 from src.sources.slack import SlackConfig
 
 
-class LLMConfig(BaseModel):
-    """Configuration for a specific LLM backend."""
+class LLMBackendConfig(BaseModel):
+    """Configuration definition for a single LLM backend."""
 
-    model_id: str
-    temperature: float = 0.2
-    max_tokens: int = 800
-    top_k: int = 4
+    model: str = Field(
+        ...,
+        description="LiteLLM model identifier in 'provider/model_name' format (e.g. 'gemini/gemini-2.5-flash')",
+    )
+    temperature: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=2.0,
+        description="Sampling temperature for text generation",
+    )
+    max_tokens: Optional[int] = Field(
+        default=800,
+        gt=0,
+        description="Maximum token generation limit",
+    )
+    top_p: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Nucleus sampling probability threshold",
+    )
+    api_base: Optional[str] = Field(
+        default=None,
+        description="Custom API base URL endpoint if proxying or using enterprise endpoints",
+    )
+    extra_kwargs: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Provider-specific passthrough kwargs for LiteLLM completion calls",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def handle_legacy_model_id(cls, data: Any) -> Any:
+        """Support legacy model_id parameter during deserialization."""
+        if isinstance(data, dict):
+            if "model" not in data and "model_id" in data:
+                data = dict(data)
+                data["model"] = data.pop("model_id")
+        return data
+
+    @field_validator("model")
+    @classmethod
+    def validate_model_format(cls, v: str) -> str:
+        """Validate that model string conforms to provider/model_name format."""
+        parts = v.strip().split("/")
+        if len(parts) < 2 or not parts[0] or not parts[1]:
+            raise ValueError(
+                f"Model identifier '{v}' must be in 'provider/model_name' format (e.g., 'gemini/gemini-2.5-flash')"
+            )
+        return v.strip()
+
+
+# Backwards compatibility alias
+LLMConfig = LLMBackendConfig
 
 
 class RagConfig(BaseModel):
     """Configuration for RAG (Retrieval-Augmented Generation) system."""
 
-    llm_backends: Dict[str, LLMConfig] = Field(default_factory=dict)
+    llm_backends: Dict[str, LLMBackendConfig] = Field(
+        ...,
+        min_length=1,
+        description="Registry of configured LLM backends",
+    )
+    router_backend: str = Field(
+        ...,
+        description="Backend ID from llm_backends bound to query routing",
+    )
+    generator_backend: str = Field(
+        ...,
+        description="Backend ID from llm_backends bound to answer synthesis",
+    )
 
-    # Specific backend selection (key from llm_backend dict)
-    router_backend: str = Field(..., description="Backend ID for the routing agent (cheaper/faster)")
-    generator_backend: str = Field(..., description="Backend ID for the generator (higher quality)")
+    @model_validator(mode="after")
+    def validate_backend_bindings(self) -> "RagConfig":
+        """Validate that router_backend and generator_backend exist in llm_backends."""
+        available = list(self.llm_backends.keys())
+        if self.router_backend not in self.llm_backends:
+            raise ValueError(
+                f"router_backend '{self.router_backend}' not found in llm_backends. Available: {', '.join(available)}"
+            )
+        if self.generator_backend not in self.llm_backends:
+            raise ValueError(
+                f"generator_backend '{self.generator_backend}' not found in llm_backends. Available: {', '.join(available)}"
+            )
+        return self
 
 
 class SourcesConfig(BaseModel):

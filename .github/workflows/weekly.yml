@@ -40,10 +40,10 @@ jobs:
       - name: Check for secrets (Detect Secrets)
         run: |
           if [ -f .secrets.baseline ]; then
-            poetry run detect-secrets-hook --baseline .secrets.baseline $(git ls-files)
+            poetry run detect-secrets-hook --baseline .secrets.baseline $(git ls-files ':!:pocs' ':!:.specify' ':!:.agents')
           else
             echo "No .secrets.baseline found, skipping strict check."
-            poetry run detect-secrets scan
+            poetry run detect-secrets scan --exclude-files '^(pocs|\.specify|\.agents)/'
           fi
 
       - name: Build pip-audit ignore flags from .pip-audit-ignore

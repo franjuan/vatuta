@@ -204,11 +204,11 @@ jobs:
 
       - name: Generate Bandit HTML report
         run: |
-          bandit -r . -x ./tests,./pocs -f html -o bandit-report.html || true
+          bandit -r . -x ./tests,./pocs,./.specify,./.agents -f html -o bandit-report.html || true
 
       - name: Run Bandit (JSON report)
         run: |
-          bandit -r . -x ./tests,./pocs -f json -o bandit-report.json || true
+          bandit -r . -x ./tests,./pocs,./.specify,./.agents -f json -o bandit-report.json || true
 
 
       - name: Upload Bandit report
@@ -238,7 +238,7 @@ jobs:
 
       - name: Run Semgrep (CI rules, SARIF & Text)
         run: |
-          semgrep --config p/ci --sarif-output=semgrep.sarif --text > semgrep.txt || true
+          semgrep --config p/ci --exclude .specify --exclude .agents --sarif-output=semgrep.sarif --text > semgrep.txt || true
 
       - name: Upload Semgrep report (SARIF & Text)
         uses: actions/upload-artifact@v4
