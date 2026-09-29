@@ -108,7 +108,7 @@ graph TB
 
     subgraph Agent["RAG Agent (LangGraph)"]
         AG[Agent Router]
-        LLM[Unified LLM Abstraction (LiteLLM)<br>Gemini · Claude · GPT · Bedrock · Local]
+        LLM["Unified LLM Abstraction (LiteLLM)<br>Gemini · Claude · GPT · Bedrock · Local"]
         AG --> LLM
     end
 
