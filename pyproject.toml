@@ -1,6 +1,6 @@
 [project]
 name = "vatuta"
-version = "0.5.0"
+version = "0.5.1"
 description = "Personal AI Assistant"
 authors = [
     { name = "JuanFran Adame", email = "juanfran.adame@gmail.com" }

@@ -2,6 +2,19 @@
 
 All notable changes to the Vatuta project are documented in this file.
 
+## [0.5.1] - 2026-09-30
+
+### Fixed
+
+- **CI SBOM Generation**: Granted `contents: write` permission to the SBOM GitHub Actions job to fix failure
+  when attaching CycloneDX artifacts to GitHub releases.
+
+### Security
+
+- **Dependencies Update**: Updated `urllib3` to 2.8.0 and `virtualenv` to 21.14.1.
+
+---
+
 ## [0.5.0] - 2026-09-28
 
 ### Added
