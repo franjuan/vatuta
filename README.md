@@ -179,7 +179,8 @@ Three main layers:
 | Security | [Bandit](https://github.com/PyCQA/bandit), [Semgrep](https://github.com/semgrep/semgrep), [pip-audit](https://github.com/pypa/pip-audit), [detect-secrets](https://github.com/Yelp/detect-secrets) | Static analysis and vulnerability scanning |
 | CI/CD | [GitHub Actions](https://github.com/features/actions) | Automated testing, linting, and SBOM generation |
 | Spec-Driven Dev | [Spec-Kit](https://github.com/github/spec-kit) | Specification-driven development (SDD/BDD) and task breakdown |
-| Token Optimization | [RTK](https://github.com/rtk-ai/rtk) | CLI proxy for 60-90% token savings with AI coding assistants |
+| Token Optimization | [RTK](https://github.com/rtk-ai/rtk) | CLI proxy for token savings with AI coding assistants |
+| Token Optimization | [Headroom](https://github.com/headroomlabs-ai/headroom) | LLM proxy provider for token savings with AI coding assistants |
 
 ---
 
