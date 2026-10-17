@@ -37,6 +37,8 @@ detailing the motivation, implementation, and challenges of the project.
 to version 0.2.0, including hybrid search, ingestion metrics, and dependency updates.
 - [Vatuta 0.3.0, supercharging RAG with MCP tools and hardening with container sandboxing](https://bytesandchips.com/2026/08/20/vatuta-0-3-0-supercharging-rag-with-mcp-tools-and-hardening-with-container-sandboxing/): Updates <!-- markdownlint-disable-line MD013 -->
 to version 0.3.0, introducing Model Context Protocol (MCP) tools and container sandboxing.
+- [Vatuta 0.5.1: some technical debt improvements](https://bytesandchips.com/2026/10/17/vatuta-0-5-1-some-technical-debt-improvement/): Updates <!-- markdownlint-disable-line MD013 -->
+to version 0.5.1, introducing Spec-Kit for SDD, LiteLLM integration, and token-saving tools (RTK and Headroom).
 
 ---
 
