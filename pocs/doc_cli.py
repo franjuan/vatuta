@@ -10,7 +10,6 @@ import sys
 
 from pocs.gitlab_importer import GitLabImporter
 from pocs.jira_importer import JIRAImporter
-from pocs.rag_poc import main as rag_main
 from pocs.slack_importer import SlackImporter
 from pocs.tools_example import main as tools_main
 from src.models.config import ConfigLoader
@@ -189,33 +188,6 @@ def clear_documents(args):
         print(f"❌ Error clearing documents: {e}")
 
 
-def run_rag(args):
-    """Run the simple RAG PoC over the local vector store."""
-    # Build argv for rag_poc.main
-    argv = [args.question]
-    if args.k is not None:
-        argv.extend(["--k", str(args.k)])
-    if args.model_id:
-        argv.extend(["--model-id", args.model_id])
-    if args.profile:
-        argv.extend(["--profile", args.profile])
-    if args.region:
-        argv.extend(["--region", args.region])
-    if args.show_sources:
-        argv.append("--show-sources")
-    if getattr(args, "show_kb_stats", False):
-        argv.append("--show-kb-stats")
-    if getattr(args, "agent", False):
-        argv.append("--agent")
-
-    old_argv = sys.argv
-    try:
-        sys.argv = [old_argv[0]] + argv
-        rag_main()
-    finally:
-        sys.argv = old_argv
-
-
 def run_tools_demo(args):
     """Run the simple tools demo (kb_stats and search_kb)."""
 
@@ -293,22 +265,6 @@ def main():
     # Clear documents command
     clear_parser = subparsers.add_parser("clear", help="Clear all documents")
     clear_parser.set_defaults(func=clear_documents)
-
-    # RAG PoC query command
-    rag_parser = subparsers.add_parser("rag", help="Query the RAG PoC (uses Bedrock)")
-    rag_parser.add_argument("question", help="User question to answer")
-    rag_parser.add_argument("--k", type=int, default=4, help="Top-K documents to retrieve")
-    rag_parser.add_argument(
-        "--model-id",
-        default="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-        help="Bedrock model id",
-    )
-    rag_parser.add_argument("--profile", default=None, help="AWS profile for Bedrock")
-    rag_parser.add_argument("--region", default=None, help="AWS region for Bedrock")
-    rag_parser.add_argument("--show-sources", action="store_true", help="Show retrieved sources")
-    rag_parser.add_argument("--show-kb-stats", action="store_true", help="Show KB stats before answering")
-    rag_parser.add_argument("--agent", action="store_true", help="Enable agentic tool-calling (kb_stats)")
-    rag_parser.set_defaults(func=run_rag)
 
     # Tools demo command
     tools_parser = subparsers.add_parser("tools", help="Run tools example (kb_stats, search_kb)")

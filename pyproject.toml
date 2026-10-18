@@ -1,6 +1,6 @@
 [project]
 name = "vatuta"
-version = "0.5.1"
+version = "0.6.0"
 description = "Personal AI Assistant"
 authors = [
     { name = "JuanFran Adame", email = "juanfran.adame@gmail.com" }
@@ -16,11 +16,9 @@ python = ">=3.12,<3.14"
 jira = "^3.10.5"
 atlassian-python-api = "^4.0.7"
 langchain = "^1.2.0"
-langchain-community = "^0.4.1"
 langchain-aws = "^1.1.1"
 langchain-huggingface = "^1.2.0"
 langchain-text-splitters = "^1.1.0"
-faiss-cpu = "^1.12.0"  # TODO: Remove after Qdrant migration is complete and verified
 qdrant-client = "^1.16.2"
 langchain-qdrant = "^1.1.0"
 sentence-transformers = "^5.1.2"
@@ -125,11 +123,9 @@ warn_unreachable = true
 [[tool.mypy.overrides]]
 module = [
     "langchain.*",
-    "langchain_community.*",
     "langchain_aws.*",
     "langchain_huggingface.*",
     "langchain_text_splitters.*",
-    "faiss.*",
     "sentence_transformers.*",
     "spacy.*",
     "slack_sdk.*",

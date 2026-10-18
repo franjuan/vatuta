@@ -1,10 +1,52 @@
-"""Unit tests for RAG engine LLM initialization delegating to LLMProviderManager."""
+"""Unit tests for RAG retrieval, graph execution, and LLM initialization."""
 
 import unittest
 from unittest.mock import MagicMock, patch
 
+import pytest
+from langchain_core.documents import Document
+
 from src.models.config import LLMBackendConfig, RagConfig
-from src.rag.engine import build_dspy_lm
+from src.rag.engine import build_dspy_lm, build_graph, ensure_retriever
+from src.rag.qdrant_manager import QdrantDocumentManager
+
+
+def test_retriever_preserves_search_limit() -> None:
+    """Use the existing vector store with the requested result limit."""
+    manager = MagicMock(spec=QdrantDocumentManager)
+    manager.vectorstore = MagicMock()
+
+    retriever = ensure_retriever(manager, k=7)
+
+    manager.vectorstore.as_retriever.assert_called_once_with(search_kwargs={"k": 7})
+    assert retriever is manager.vectorstore.as_retriever.return_value
+
+
+def test_retriever_requires_vector_store() -> None:
+    """Fail clearly when retrieval has no vector store."""
+    manager = MagicMock(spec=QdrantDocumentManager)
+    manager.vectorstore = None
+
+    with pytest.raises(ValueError, match="No vector store found"):
+        ensure_retriever(manager, k=4)
+
+
+def test_graph_passes_retrieved_context_to_generation() -> None:
+    """Retrieve documents and generate an answer without external services."""
+    manager = MagicMock(spec=QdrantDocumentManager)
+    manager.vectorstore = MagicMock()
+    retriever = manager.vectorstore.as_retriever.return_value
+    documents = [Document(page_content="First fact"), Document(page_content="Second fact")]
+    retriever.invoke.return_value = documents
+    generator = MagicMock()
+    generator.return_value.answer = "Grounded answer"
+
+    result = build_graph(manager, k=2, rag_module=generator).invoke({"question": "What is known?"})
+
+    retriever.invoke.assert_called_once_with("What is known?")
+    generator.assert_called_once_with(question="What is known?", context="First fact\n\nSecond fact")
+    assert result["docs"] == documents
+    assert result["answer"] == "Grounded answer"
 
 
 class TestEngineLM(unittest.TestCase):

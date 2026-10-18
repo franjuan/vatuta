@@ -2,6 +2,44 @@
 
 All notable changes to the Vatuta project are documented in this file.
 
+## [0.6.0] - 2026-10-18
+
+### Fixed
+
+- **Semgrep on Ubuntu 26**: Set the pre-commit hook's `entry` to `env EIO_BACKEND=posix semgrep`
+  in `.pre-commit-config.yaml` to use the POSIX backend for compatibility with Ubuntu 26.
+
+### Removed
+
+- **Legacy FAISS Backend**: Removed `src.rag.document_manager.DocumentManager` and the direct
+  `langchain-community` and `faiss-cpu` dependencies, eliminating the package deprecation warning.
+- **Experimental RAG Scripts**: Removed `pocs/rag_poc.py`, `pocs/rag_poc_dspy.py`, and
+  `pocs/rag_poc_langgraph_dspy.py`, including their cache-ingestion helpers.
+- **Legacy RAG Command**: Removed `pocs.doc_cli rag`. Other commands remain available;
+  use `poetry run vatuta ask` for supported RAG queries.
+
+### Changed
+
+- **Qdrant-Only RAG Engine**: Removed legacy manager imports and type annotations. Python integrations should use
+  `QdrantDocumentManager(config.qdrant)` instead of the removed FAISS manager constructor.
+- **Dependency Cleanup**: Regenerated the Poetry lockfile and removed unused transitive dependencies while preserving
+  Qdrant and embedding package versions.
+
+### Tests
+
+- Added regression coverage for existing collection reuse, retriever configuration, missing vector stores,
+  graph execution, source-instance filtering, and stable chunk IDs and metadata across repeated ingestion.
+- Mocked sparse embeddings in Qdrant unit tests to prevent model downloads and removed FAISS-only tests.
+- Verified all 129 tests pass with the `langchain-community` deprecation warning treated as an error.
+
+### Compatibility
+
+- Existing Qdrant collections require no reindexing or data conversion. Qdrant configuration, embedding semantics,
+  and persisted data are unchanged. Historical FAISS files are left untouched and are not automatically migrated.
+- See [Qdrant compatibility notes](docs/qdrant_setup.md#compatibility-after-faiss-removal) for migration details.
+
+---
+
 ## [0.5.1] - 2026-09-30
 
 ### Fixed

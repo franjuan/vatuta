@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, List, TypedDict, Union
+from typing import Any, List, TypedDict
 
 import dspy
 from langchain_core.documents import Document
@@ -11,7 +11,6 @@ from langgraph.graph import END, StateGraph
 
 from src.llm.provider import LLMProviderManager
 from src.models.config import RagConfig
-from src.rag.document_manager import DocumentManager
 from src.rag.qdrant_manager import QdrantDocumentManager
 
 logger = logging.getLogger(__name__)
@@ -27,7 +26,7 @@ class RAGState(TypedDict, total=False):
     answer: str
 
 
-def ensure_retriever(document_manager: Union[DocumentManager, QdrantDocumentManager], k: int) -> Any:
+def ensure_retriever(document_manager: QdrantDocumentManager, k: int) -> Any:
     """Ensure vector store exists and return retriever."""
     if document_manager.vectorstore is None:
         raise ValueError("No vector store found. Import documents first (see doc_cli commands).")
@@ -77,9 +76,7 @@ def build_dspy_lm(config: RagConfig, backend_name: str, role: str = "general") -
     return manager.get_dspy_lm(backend_name, role=role)
 
 
-def build_graph(
-    document_manager: Union[DocumentManager, QdrantDocumentManager], k: int, rag_module: DSPyRAGModule
-) -> Any:
+def build_graph(document_manager: QdrantDocumentManager, k: int, rag_module: DSPyRAGModule) -> Any:
     """Build LangGraph workflow for RAG execution."""
     graph = StateGraph(RAGState)
 

@@ -2,6 +2,26 @@
 
 This guide details how to set up and manage the Qdrant vector database for Vatuta.
 
+## Compatibility after FAISS removal
+
+Vatuta uses Qdrant through `langchain-qdrant` and `qdrant-client`. The legacy FAISS backend and the direct
+`langchain-community` and `faiss-cpu` dependencies have been removed. Existing Qdrant collections require no
+reindexing or data conversion for this change. Keep the same collection, vector names, embedding models,
+normalization, and query/document prefixes to continue querying existing vectors.
+
+The legacy `src.rag.document_manager.DocumentManager` import is no longer available. Python integrations should
+use `src.rag.qdrant_manager.QdrantDocumentManager(config.qdrant)` with a `QdrantConfig`, rather than the old
+`embeddings_model` and `storage_dir` constructor arguments. Existing FAISS files are left untouched and are not
+automatically imported into Qdrant.
+
+The experimental `pocs/rag_poc.py`, `pocs/rag_poc_dspy.py`, and `pocs/rag_poc_langgraph_dspy.py` scripts,
+including their cache-ingestion helpers, have been retired. The `rag` subcommand of `pocs.doc_cli` has also
+been removed; its other commands remain available. Use the supported CLI for RAG queries:
+
+```bash
+poetry run vatuta ask "What is in my knowledge base?"
+```
+
 ## Prerequisites
 
 - **Docker**: Qdrant runs as a Docker container. Ensure Docker Desktop or Docker Engine is installed and running.
