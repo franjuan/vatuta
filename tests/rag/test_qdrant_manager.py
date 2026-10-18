@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Iterator
 from typing import List
 from unittest.mock import MagicMock, patch
 from uuid import UUID
@@ -7,12 +8,21 @@ import pytest
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_huggingface.embeddings.huggingface import HuggingFaceEmbeddings
+from langchain_qdrant import RetrievalMode
 from langchain_qdrant.qdrant import QdrantVectorStore
+from qdrant_client.models import CollectionDescription, CollectionsResponse
 from qdrant_client.qdrant_client import QdrantClient
 
 from src.models.config import QdrantConfig
 from src.models.documents import ChunkRecord, DocumentUnit
 from src.rag.qdrant_manager import QdrantDocumentManager
+
+
+@pytest.fixture(autouse=True)
+def mock_sparse_embeddings() -> Iterator[MagicMock]:
+    """Prevent sparse embedding model downloads during unit tests."""
+    with patch("src.rag.qdrant_manager.FastEmbedSparse") as mock:
+        yield mock
 
 
 class FakeEmbeddings(Embeddings):
@@ -96,6 +106,31 @@ def test_init_with_normalization(
     )
 
 
+def test_existing_collection_is_reused_without_writes(
+    mock_qdrant_config: QdrantConfig,
+    mock_qdrant_client: MagicMock,
+    mock_embedding_function: MagicMock,
+    mock_qdrant_vectorstore: MagicMock,
+) -> None:
+    """Open an existing collection without recreating or changing its points."""
+    client = mock_qdrant_client.return_value
+    client.get_collections.return_value = CollectionsResponse(
+        collections=[CollectionDescription(name=mock_qdrant_config.collection_name)]
+    )
+    manager = QdrantDocumentManager(mock_qdrant_config)
+    for operation in (client.create_collection, client.delete_collection, client.upsert, client.delete):
+        operation.assert_not_called()
+    mock_qdrant_vectorstore.assert_called_once_with(
+        client=client,
+        collection_name=mock_qdrant_config.collection_name,
+        embedding=manager.embeddings,
+        sparse_embedding=manager.sparse_embeddings,
+        retrieval_mode=RetrievalMode.HYBRID,
+        vector_name=mock_qdrant_config.dense_vector_name,
+        sparse_vector_name=mock_qdrant_config.sparse_vector_name,
+    )
+
+
 def test_generate_doc_id(manager: QdrantDocumentManager) -> None:
     valid_uuid = "123e4567-e89b-12d3-a456-426614174000"
     doc = Document(page_content="test content", metadata={"source": "test", "id": valid_uuid})
@@ -176,6 +211,9 @@ def test_add_chunk_records(manager: QdrantDocumentManager) -> None:
     assert first_doc.metadata["title"] == "Test Doc"
     assert first_doc.metadata["chunk_id"] == "chunk1"
     assert "tag1" in first_doc.metadata["system_tags"]
+    assert first_doc.metadata["source"] == "test"
+    assert first_doc.metadata["source_instance_id"] == "inst1"
+    assert first_doc.metadata["embedding_model"] == manager.config.embeddings_model
 
     # Verify generated IDs are valid UUIDs
     call_args = manager.vectorstore.add_documents.call_args
@@ -187,6 +225,28 @@ def test_add_chunk_records(manager: QdrantDocumentManager) -> None:
         uuid.UUID(passed_ids[0])
     except ValueError:
         pytest.fail("Chunk ID passed to add_documents is not a valid UUID")
+
+    assert manager.add_chunk_records(chunks, docs_by_id) is True
+    assert manager.vectorstore.add_documents.call_args.kwargs["ids"] == passed_ids
+    assert manager.vectorstore.add_documents.call_args.args[0] == added_docs
+
+
+def test_delete_documents_matches_source_and_instance(manager: QdrantDocumentManager) -> None:
+    """Restrict deletion to the selected source instance."""
+    manager.client = MagicMock()
+    manager.client.count.return_value.count = 2
+
+    assert manager.delete_documents(source="slack", source_instance_id="slack-main") == 2
+
+    selector = manager.client.delete.call_args.kwargs["points_selector"]
+    assert [(condition.key, condition.match.value) for condition in selector.must] == [
+        ("metadata.source", "slack"),
+        ("metadata.source_instance_id", "slack-main"),
+    ]
+    manager.client.count.assert_called_once_with(
+        collection_name=manager.collection_name, count_filter=selector, exact=True
+    )
+    manager.client.delete.assert_called_once_with(collection_name=manager.collection_name, points_selector=selector)
 
 
 def test_delete_documents_by_filter(manager: QdrantDocumentManager) -> None:

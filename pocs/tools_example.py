@@ -2,8 +2,8 @@
 Tools Example (LangChain 1.0)
 
 This module defines two example tools and a small agent-like loop to call them:
-- search_kb: uses the existing FAISS retriever to search the knowledge base
-- kb_stats: returns basic stats from the DocumentManager
+- search_kb: uses the existing Qdrant retriever to search the knowledge base
+- kb_stats: returns basic stats from QdrantDocumentManager
 
 Run (module):
     python -m pocs.tools_example "What are epic requirements?" --k 4
