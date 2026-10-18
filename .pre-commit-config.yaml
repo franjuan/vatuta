@@ -77,6 +77,7 @@ repos:
     hooks:
       - id: semgrep
         args: ["--config", "p/ci"]
+        entry: env EIO_BACKEND=posix semgrep
 
   # ------------------------------
   # 5) Docstring style (pydocstyle)
