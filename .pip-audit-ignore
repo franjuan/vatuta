@@ -14,3 +14,17 @@ CVE-2025-69872
 
 # CVE-2025-3000: Accepted torch vulnerability on 2026-06-10
 CVE-2025-3000
+
+# CVE-2026-112895, CVE-2026-112400, CVE-2026-112397, CVE-2026-112896, CVE-2026-112897, CVE-2026-112395,
+# CVE-2026-112404, CVE-2026-112899: Pillow vulnerabilities fixed in 13.0.0 (reviewed on 2026-10-20).
+# Blocked upstream by fastembed (pins pillow < 13.0).
+# Impact is negligible: Vatuta does not process images or use Pillow directly, only using FastEmbed for text sparse
+# embeddings. Revisit when fastembed releases support for Pillow >= 13.0.0.
+CVE-2026-112895
+CVE-2026-112400
+CVE-2026-112397
+CVE-2026-112896
+CVE-2026-112897
+CVE-2026-112395
+CVE-2026-112404
+CVE-2026-112899
