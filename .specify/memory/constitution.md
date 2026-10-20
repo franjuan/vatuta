@@ -1,18 +1,207 @@
 <!--
 Sync Impact Report
-- Version change: 1.13.0 → 1.14.0 (Minor Version Bump)
+- Version change: 1.14.0 → 1.15.0 (Minor Version Bump)
 - Modified principles & sections:
-  - Security, Isolation & Tool Constraints: Completely overhauled and expanded to include enterprise-grade security rules: Least Privilege, Supply Chain Security (7-day rule, pinning), Container Hardening, Network Exposure (TLS), Boundary Validation (Pydantic), LLM Boundaries, Rate Limiting, Auditability, and Vulnerability Disclosure.
-- Added sections: None
+  - Principles I-XI re-indexed to IX-XIX, preserving existing environment, quality, security, and runtime policies.
+  - Principle IV updated to "Determinism, Cost/Value Pragmatism & Core Validation" to integrate with Simplicity rules.
+  - Governance section updated with core governing rule, SpecKit workflow governance, and documented justification.
+- Added sections:
+  - Core Principles I-VIII added: Simplicity as a First-Class Architectural Principle, Requirements Traceability and
+    Scope Control, AI Initiative with Human Approval, Proportional Edge-Case Handling, Non-Functional Requirements
+    Must Be Justified, Incremental Development & Anti-Overengineering, Specification & Planning Discipline, and
+    Constitution Enforcement & Decision Priority.
 - Removed sections: None
 - Follow-up TODOs: None
 -->
 
 # Vatuta Constitution
 
+**Core Philosophy**: Build the simplest solution that correctly satisfies current requirements, while keeping future
+evolution reasonably possible. Complexity must be justified, not assumed.
+
+These principles govern all SpecKit phases—including specification, clarification, planning, task generation,
+implementation, and review—as well as general codebase architecture.
+
 ## Core Principles
 
-### I. Python 3.12 & Poetry Standard Environment
+### I. Simplicity as a First-Class Architectural Principle
+
+Simplicity is a fundamental quality attribute, not merely a preference for prototypes:
+
+- **Fewer Moving Parts**: Solutions MUST prefer fewer components, abstractions, dependencies, configuration options,
+  and execution paths.
+- **No Premature Generalization**: Developers and AI assistants MUST avoid premature generalization, speculative
+  extensibility, and unnecessary architectural layers.
+- **No Cargo-Culting**: Solutions MUST NOT introduce design patterns, frameworks, or infrastructure solely because
+  they represent industry best practices.
+- **Convention Reuse**: Implementations MUST prefer existing project conventions and components over introducing
+  new ones.
+- **Justified Complexity**: Every significant increase in complexity MUST have a concrete justification linked to an
+  actual, approved requirement.
+- **Pragmatic Comprehension**: Designs MUST optimize for readability, maintainability, testability, and ease of
+  understanding, not theoretical completeness.
+- **Simplicity by Default**: When multiple solutions satisfy the requirements, the simplest one MUST be chosen unless
+  a more complex alternative offers a demonstrable and relevant benefit.
+
+*Rationale: Complexity compounds over time, increasing cognitive load, bug frequency, and maintenance costs.
+Prioritizing simplicity keeps the system agile, reliable, and easily comprehensible.*
+
+### II. Requirements Traceability and Scope Control
+
+Every requirement MUST originate from an identifiable source. Requirements MUST be classified into three distinct
+categories:
+
+- **A. Explicit Requirements**: Directly expressed by the user or established in previously approved project
+  specifications. These form the authoritative, mandatory scope.
+- **B. Essential Inferred Requirements**: Not explicitly stated, but necessary for correctness, consistency,
+  security, or successful execution. The AI MUST explain their necessity and request confirmation when they materially
+  affect scope, complexity, or observable behavior.
+- **C. Optional Recommended Requirements**: Potential improvements, enhancements, optimizations, or additional
+  capabilities that are not required by the current use case. These MUST be presented strictly as proposals and
+  MUST NOT be incorporated without explicit user approval.
+- **No Silent Promotion**: The AI and contributors MUST NOT silently promote recommendations, assumptions, or
+  potential edge cases into mandatory requirements.
+
+*Rationale: Uncontrolled scope expansion dilutes core deliverables and introduces unwanted complexity. Categorizing
+requirements maintains clear boundaries and ensures the user retains full governance.*
+
+### III. AI Initiative with Human Approval
+
+The AI assistant is expected to actively identify omissions, risks, ambiguities, and improvement opportunities;
+however, identifying a potential requirement does not authorize adding it:
+
+- **Clear Distinction**: The AI MUST clearly distinguish verified requirements from advisory recommendations.
+- **Transparent Trade-offs**: The AI MUST explain the practical consequences of including or excluding significant
+  recommendations.
+- **Approval Gate**: The AI MUST request explicit user approval before introducing additional scope or substantial
+  complexity.
+- **Consolidated Queries**: Related questions MUST be consolidated into structured queries to avoid excessive,
+  burdensome clarification cycles.
+- **Trivial Details Autonomous**: The AI MUST NOT ask for confirmation of trivial implementation details that can be
+  resolved through existing project conventions.
+- **Reversible Defaults**: When uncertainty remains and no material risk is involved, the AI MUST prefer the simpler,
+  reversible alternative.
+- **Core Axiom**: *The AI recommends; the user decides on scope.*
+
+*Rationale: Proactive AI analysis provides valuable technical insight while keeping architectural and scope decisions
+strictly under human authority.*
+
+### IV. Proportional Edge-Case Handling
+
+Exhaustive edge-case coverage MUST NOT be confused with engineering quality. Edge cases MUST be classified and handled
+according to three distinct tiers:
+
+- **Essential Cases**: The primary workflows and core operating conditions necessary for correct execution. MUST be
+  fully implemented and verified.
+- **Relevant Edge Cases**: Realistic situations whose omission would cause meaningful functional errors, security
+  vulnerabilities, or data integrity issues. MUST be implemented and verified.
+- **Speculative Edge Cases**: Hypothetical or exceptionally unlikely situations without demonstrated relevance.
+  MUST NOT be implemented with elaborate handling without explicit user approval.
+- **Architecture Stability**: A single unlikely scenario MUST NOT dictate the architecture of an otherwise simple
+  solution unless its verified consequences justify doing so.
+- **Simple Error Handling**: Systems MUST favor simple, explicit error handling over generalized recovery mechanisms
+  when the latter are unnecessary.
+
+*Rationale: Defending against improbable or speculative failure modes distorts architectures and bloats codebases with
+fragile, untested recovery paths.*
+
+### V. Non-Functional Requirements Must Be Justified
+
+Quantitative non-functional requirements (NFRs) MUST NEVER be invented. Arbitrary constraints or targets MUST NOT be
+introduced without concrete, documented justification:
+
+- **No Arbitrary Limits**: Arbitrary execution time limits, latency targets, throughput goals, scalability
+  objectives, concurrency targets, availability goals, or resource consumption limits MUST NOT be assumed.
+- **No Speculative Mechanisms**: Retry queues, caching layers, or complex fault-tolerance mechanisms MUST NOT be added
+  unless specifically required by approved constraints.
+- **Justification Workflow**: When performance or another non-functional attribute is of legitimate concern:
+  1. Explain the potential concern and its operational context.
+  2. Determine whether a concrete constraint currently exists.
+  3. Propose an appropriate requirement only if technically justified.
+  4. Obtain explicit user approval before incorporating a new quantitative target into acceptance criteria.
+- **Core Safeguards Intact**: Basic correctness, necessary security safeguards, and data integrity MUST NEVER be
+  sacrificed in the name of simplicity; their implementations MUST nevertheless remain proportional to actual risks.
+
+*Rationale: Unjustified non-functional targets trigger premature optimization, complex asynchronous machinery, and
+unnecessary infrastructure dependencies.*
+
+### VI. Incremental Development and Avoidance of Overengineering
+
+Each feature increment MUST deliver the smallest coherent, useful, and verifiable increment:
+
+- **Present Needs First**: Implementations MUST deliver what is needed now, not everything that might be needed later.
+- **No Speculative Consumers**: Generalized solutions MUST NOT be built for hypothetical future consumers.
+- **No Unused Extension Points**: Configuration parameters or extension hooks MUST NOT be introduced without current,
+  verifiable justification.
+- **Evolvable Over Anticipatory**: Solutions MUST prefer designs that can evolve cleanly over architectures that
+  attempt to anticipate every future requirement.
+- **Proportional Maturity**: Functionality, architecture, and operational complexity MUST remain proportional to the
+  maturity of the feature.
+- **Deferred Improvements**: Future enhancements SHOULD be documented separately (e.g., in backlog notes) without
+  being included in the active implementation scope.
+- **Balanced Delivery**: Both overengineering and shortcuts that would make the current implementation incorrect or
+  difficult to maintain MUST be avoided.
+
+*Rationale: Iterative delivery minimizes work in progress, accelerates validation, and prevents wasted effort on
+speculative abstractions that may never be used.*
+
+### VII. Specification and Planning Discipline
+
+Every SpecKit workflow phase MUST adhere to strict scope, complexity, and verification discipline:
+
+- **During Specification and Clarification (`/speckit-specify`, `/speckit-clarify`)**:
+  - The specification MUST describe required behavior without unnecessarily prescribing implementation details.
+  - Functional scope MUST NOT be expanded to cover hypothetical scenarios.
+  - Non-functional acceptance criteria MUST NOT be added without concrete justification.
+  - Significant assumptions and optional recommendations MUST be surfaced separately.
+  - The specification MUST make explicit which requirements have been approved by the user.
+  - Acceptance criteria MUST be concise, precise, and verifiable.
+- **During Planning and Task Generation (`/speckit-plan`, `/speckit-tasks`)**:
+  - Architecture plans MUST select the least complex solution that satisfies approved specifications.
+  - Plans MUST NOT introduce implementation mechanisms that solve unapproved requirements.
+  - Unnecessary interfaces, adapters, orchestration layers, and configuration options MUST be avoided.
+  - Task breakdowns MUST remain strictly focused on delivering approved behavior.
+  - Scope MUST NOT be silently expanded to achieve theoretical completeness.
+- **During Implementation and Review (`/speckit-implement`, `/speckit-analyze`)**:
+  - Implementation correctness MUST be validated strictly against approved requirements.
+  - Test suites MUST cover primary workflows, relevant edge cases, and meaningful failure conditions.
+  - Tests MUST NOT effectively introduce new, unapproved requirements.
+  - Scope expansion or unnecessary complexity MUST be flagged during review rather than implemented automatically.
+  - Obsolete or redundant complexity MUST be removed when reasonably possible.
+
+*Rationale: Enforces quality, simplicity, and scope discipline at every milestone from initial specification to code
+review.*
+
+### VIII. Constitution Enforcement and Decision Priority
+
+The principles of this Constitution are binding architectural and specification constraints. Every design and
+requirement decision MUST be evaluated against six questions:
+
+1. Is this required by an explicit, approved requirement?
+2. Is it essential for correctness, security, or data integrity?
+3. Does it solve a realistic problem in the current scope?
+4. Is there a simpler alternative?
+5. Does it introduce complexity disproportionate to its benefit?
+6. If it adds new scope, has the user approved it?
+
+If a requirement or design decision cannot be justified through these questions, it MUST be omitted or presented as
+an optional proposal.
+
+When constitutional principles appear to conflict, the following priority order MUST strictly govern:
+
+1. **Correctness, essential security, and data integrity**.
+2. **Explicit user-approved requirements**.
+3. **Simplicity and long-term maintainability**.
+4. **Reasonable extensibility backed by current needs**.
+5. **Optional enhancements and speculative future capabilities**.
+
+Simplicity MUST NOT be used to excuse incorrectness, nor MAY hypothetical correctness concerns be used as an excuse
+for unnecessary complexity.
+
+*Rationale: Explicit decision questions and a clear hierarchy resolve ambiguity, ensuring consistent architectural
+trade-offs across the team.*
+
+### IX. Python 3.12 & Poetry Standard Environment
 
 The project environment MUST be managed exclusively using Poetry with Python 3.12 as the primary target runtime
 (`>=3.12,<3.14`). All tool invocations (testing, linting, formatting, type checking, and development scripts) MUST
@@ -22,7 +211,7 @@ untracked dependencies are strictly prohibited.
 *Rationale: Ensures identical, hermetic runtime and development environments across developer machines and automated
 CI pipelines, eliminating dependency drift and environment contamination.*
 
-### II. Mandatory Quality Gates & Static Verification
+### X. Mandatory Quality Gates & Static Verification
 
 All codebase modifications MUST pass every established static verification check and quality gate prior to merging:
 
@@ -57,7 +246,7 @@ All codebase modifications MUST pass every established static verification check
 *Rationale: Multi-layered static analysis catches defects, regressions, complexity spikes, and security vulnerabilities
 before execution, preserving long-term code quality, security posture, and developer velocity.*
 
-### III. LLM Provider Independence & Isolation
+### XI. LLM Provider Independence & Isolation
 
 Language model providers MUST remain replaceable and strictly isolated from business logic, data models, and storage:
 
@@ -79,7 +268,7 @@ the core application from upstream provider API deprecations or disruptions. Lev
 atomically into structured signatures prevents prompt drift, enables systematic compiler optimization, and preserves
 clean boundaries between business logic and LLM prompting.*
 
-### IV. Determinism, Cost/Value Pragmatism & Simplicity
+### XII. Determinism, Cost/Value Pragmatism & Core Validation
 
 Architecture decisions MUST balance strict determinism against pragmatic cost/value trade-offs and simplicity:
 
@@ -90,10 +279,6 @@ Architecture decisions MUST balance strict determinism against pragmatic cost/va
   - *Heuristic & Error-Tolerant Tasks*: Where false positives or false negatives carry low operational impact
     (e.g., policy violation heuristics, semantic classification, advisory checks), an LLM solution MAY be justified
     if delivery speed, flexibility, and business value exceed the operational and token costs.
-- **Inherent Simplicity & Requirement Negotiation**: Simplicity is a paramount quality attribute. Engineers SHOULD
-  prioritize the simplest viable solution. If an overly complex requirement threatens system maintainability or
-  introduces disproportionate fragility, the requirement itself MAY be challenged, reshaped, or simplified subject to
-  analyst or stakeholder validation.
 - **Deterministic Core Rules**: Domain inputs and configurations MUST be validated using Pydantic models.
   Retrieval query constraints (dates, source filters, ticket keys) MUST be parsed into deterministic query filters.
 
@@ -101,7 +286,7 @@ Architecture decisions MUST balance strict determinism against pragmatic cost/va
 deterministic engines for fuzzy heuristic problems leads to unmaintainable bloat. Grounding decisions in cost/value and
 simplicity ensures robust, economical, and agile architecture.*
 
-### V. Provenance, Lineage & Fact-Conclusion Separation
+### XIII. Provenance, Lineage & Fact-Conclusion Separation
 
 The origin, processing transformations, and underlying criteria of all conclusions, insights, and factual assertions
 MUST be known, traceable, and communicable across all assistant subsystems and capabilities:
@@ -128,7 +313,7 @@ MUST be known, traceable, and communicable across all assistant subsystems and c
 Absolute transparency regarding where facts originate, how they are processed, and what criteria produce conclusions
 is essential to establish trust, ensure auditability, and eliminate misleading hallucinations.*
 
-### VI. Zero-Trust, Container Isolation & Least Privilege
+### XIV. Zero-Trust, Container Isolation & Least Privilege
 
 External tools, data connectors, and Model Context Protocol (MCP) servers MUST operate under an uncompromising
 Zero-Trust security model, strict containerized isolation, and least-privilege boundaries:
@@ -154,21 +339,24 @@ Zero-Trust security model, strict containerized isolation, and least-privilege b
 Zero-Trust, containerized isolation, and strict least-privilege ensures that buggy, malicious, or compromised external
 components cannot compromise the host environment, exfiltrate sensitive data, or access unauthorized assets.*
 
-### VII. Safeguards for Side-Effecting Operations
+### XV. Safeguards for Side-Effecting Operations
 
 Any operation that alters state, writes to external services, or triggers side effects MUST provide robust safeguards:
 
-- Persistent workflows MUST be idempotent, leveraging checkpoints and finishing in known states to ensure data integrity.
+- Persistent workflows MUST be idempotent, leveraging checkpoints and finishing in known states to ensure
+  data integrity.
 - Data MAY be cached to optimize network, processing, and data utilization.
 - External tool definitions MUST default to read-only operation (`read_only: true`).
 - Tools SHOULD support a DRY-RUN mode to allow process auditing without impacting persistent data.
-- Destructive, state-mutating, or externally visible actions MUST support validation, audit logging, and explicit user approval before execution.
-- Multi-step operations SHOULD guarantee atomicity. Subsequent steps MUST NOT execute unless preceding steps complete successfully.
+- Destructive, state-mutating, or externally visible actions MUST support validation, audit logging, and explicit user
+  approval before execution.
+- Multi-step operations SHOULD guarantee atomicity. Subsequent steps MUST NOT execute unless preceding steps complete
+  successfully.
 
 *Rationale: Autonomous agent capabilities interacting with production tooling (e.g., Jira, Slack, Git) risk
 unintended modification or disruption without defensive operational safeguards.*
 
-### VIII. Behavioral Preservation & Public Contract Stability
+### XVI. Behavioral Preservation & Public Contract Stability
 
 Existing public behavior, command-line interfaces, and configuration contracts MUST NOT be changed unintentionally:
 
@@ -181,7 +369,7 @@ Existing public behavior, command-line interfaces, and configuration contracts M
 *Rationale: Predictable behavior ensures that automated workflows, continuous ingestion, and operator usage remain
 dependable across updates.*
 
-### IX. Comprehensive Test Coverage & CI Compliance
+### XVII. Comprehensive Test Coverage & CI Compliance
 
 New functionality, connectors, and bug fixes MUST be accompanied by automated tests that satisfy all CI requirements:
 
@@ -194,12 +382,15 @@ New functionality, connectors, and bug fixes MUST be accompanied by automated te
   accommodate legacy modules, future development iterations MUST progressively increase coverage with the objective of
   getting as close as possible to a 90% comprehensive test coverage target. New code and critical domain modules SHOULD
   target high test coverage (>= 80%) upon introduction.
-- **Exploratory & Feature Validation Tests**: Tests aimed at validating new features, interactive workflows, or iterative development proofs-of-concept MAY be placed under `pocs/`. These validation scripts confirm correct feature behavior during active development but are not strictly required to be integrated into formal unit testing suites or CI regression pipelines.
+- **Exploratory & Feature Validation Tests**: Tests aimed at validating new features, interactive workflows, or
+  iterative development proofs-of-concept MAY be placed under `pocs/`. These validation scripts confirm correct
+  feature behavior during active development but are not strictly required to be integrated into formal unit testing
+  suites or CI regression pipelines.
 
 *Rationale: Automated regression testing is the principal defense against subtle functional breakage across complex
 ingestion and retrieval components. An ambitious coverage trajectory ensures long-term system reliability.*
 
-### X. Standard Protocols & Ecosystem Reuse Over Custom Wheels
+### XVIII. Standard Protocols & Ecosystem Reuse Over Custom Wheels
 
 The system architecture MUST prefer established standards, protocols, and mature open-source libraries over custom
 reinventions:
@@ -217,7 +408,7 @@ reinventions:
 *Rationale: Reusing proven ecosystem components reduces maintenance overhead, limits novel security surface area, and
 focuses project effort on core RAG capabilities.*
 
-### XI. IDE & AI-Agent Agnosticism
+### XIX. IDE & AI-Agent Agnosticism
 
 The project MUST NOT depend on or mandate any specific integrated development environment (IDE), editor, or AI coding
 assistant:
@@ -237,15 +428,37 @@ diverse contributor toolchains (VS Code, Cursor, Claude Code, Antigravity, Neovi
 
 ## Security, Isolation & Tool Constraints
 
-1. **Credential Hygiene & Least Privilege**: Credentials and API tokens (Jira, Confluence, Slack, LLM keys) MUST reside exclusively in `.env` or secure environment variables. Secrets MUST NEVER be committed to configuration files or source control. Service accounts and API tokens MUST be granted the absolute minimum permissions required (e.g., read-only scopes by default).
-2. **Supply Chain Security & Immutability**: All third-party dependencies MUST be continuously audited for vulnerabilities (e.g., `pip-audit`). Lockfiles (`poetry.lock`) MUST be used for deterministic builds. To mitigate supply chain attacks, newly published dependency versions MUST have a minimum age of 7 days before adoption unless explicitly overridden. Base container images and external executables MUST be pinned to specific cryptographic hashes (e.g., SHA-256 digests) rather than mutable tags (like `latest`).
-3. **Container Hardening & Ephemeral Execution**: MCP containers and sandboxes MUST be launched with strict process constraints, non-root users, and memory quotas. Furthermore, execution environments MUST be strictly ephemeral and stateless; they MUST be torn down and rebuilt fresh between distinct sessions to prevent state contamination and payload persistence.
-4. **Network Exposure & Verified Endpoints**: Any exposed API endpoints or network listeners (e.g., `just api`) MUST enforce strict authentication and TLS/HTTPS encryption. Binding to public interfaces without authorization is strictly prohibited. Likewise, all outbound calls to external endpoints, services, and APIs MUST exclusively use verified and secure channels (TLS/HTTPS).
-5. **Boundary Validation & Payload Sanitization**: All data crossing trust boundaries (from LLMs, external APIs, or MCP tools) MUST be strictly validated against formal schemas (e.g., Pydantic). Untyped parsing of external payloads is prohibited. Ingested external content MUST be sanitized to neutralize embedded scripts.
-6. **LLM Boundaries & Data Minimization**: Interactions with LLMs MUST strictly demarcate trusted system prompts from untrusted user/external data to mitigate Prompt Injection. The retrieval pipelines MUST adhere to strict data minimization, sending only the precise document chunks required to fulfill the task.
-7. **Rate Limiting & Graceful Degradation**: The system MUST implement strict rate limiting, usage quotas, and circuit breakers for external API and LLM invocations to prevent "Denial of Wallet" loops. External service failures MUST trigger graceful degradation or fallback mechanisms rather than causing unhandled crashes.
-8. **Auditability & Observability**: Security-sensitive operations, tool invocations, and retrieval actions MUST be logged with appropriate severity levels and monitored via telemetry without logging sensitive payloads or credentials.
-9. **Vulnerability Disclosure Policy**: The project MUST maintain a `SECURITY.md` file detailing a coordinated vulnerability disclosure process, providing a private channel to report vulnerabilities before public disclosure.
+1. **Credential Hygiene & Least Privilege**: Credentials and API tokens (Jira, Confluence, Slack, LLM keys) MUST reside
+   exclusively in `.env` or secure environment variables. Secrets MUST NEVER be committed to configuration files or
+   source control. Service accounts and API tokens MUST be granted the absolute minimum permissions required
+   (e.g., read-only scopes by default).
+2. **Supply Chain Security & Immutability**: All third-party dependencies MUST be continuously audited for
+   vulnerabilities (e.g., `pip-audit`). Lockfiles (`poetry.lock`) MUST be used for deterministic builds. To mitigate
+   supply chain attacks, newly published dependency versions MUST have a minimum age of 7 days before adoption unless
+   explicitly overridden. Base container images and external executables MUST be pinned to specific cryptographic
+   hashes (e.g., SHA-256 digests) rather than mutable tags (like `latest`).
+3. **Container Hardening & Ephemeral Execution**: MCP containers and sandboxes MUST be launched with strict process
+   constraints, non-root users, and memory quotas. Furthermore, execution environments MUST be strictly ephemeral and
+   stateless; they MUST be torn down and rebuilt fresh between distinct sessions to prevent state contamination and
+   payload persistence.
+4. **Network Exposure & Verified Endpoints**: Any exposed API endpoints or network listeners (e.g., `just api`) MUST
+   enforce strict authentication and TLS/HTTPS encryption. Binding to public interfaces without authorization is
+   strictly prohibited. Likewise, all outbound calls to external endpoints, services, and APIs MUST exclusively use
+   verified and secure channels (TLS/HTTPS).
+5. **Boundary Validation & Payload Sanitization**: All data crossing trust boundaries (from LLMs, external APIs, or
+   MCP tools) MUST be strictly validated against formal schemas (e.g., Pydantic). Untyped parsing of external payloads
+   is prohibited. Ingested external content MUST be sanitized to neutralize embedded scripts.
+6. **LLM Boundaries & Data Minimization**: Interactions with LLMs MUST strictly demarcate trusted system prompts from
+   untrusted user/external data to mitigate Prompt Injection. The retrieval pipelines MUST adhere to strict data
+   minimization, sending only the precise document chunks required to fulfill the task.
+7. **Rate Limiting & Graceful Degradation**: The system MUST implement strict rate limiting, usage quotas, and circuit
+   breakers for external API and LLM invocations to prevent "Denial of Wallet" loops. External service failures MUST
+   trigger graceful degradation or fallback mechanisms rather than causing unhandled crashes.
+8. **Auditability & Observability**: Security-sensitive operations, tool invocations, and retrieval actions MUST be
+   logged with appropriate severity levels and monitored via telemetry without logging sensitive payloads or
+   credentials.
+9. **Vulnerability Disclosure Policy**: The project MUST maintain a `SECURITY.md` file detailing a coordinated
+   vulnerability disclosure process, providing a private channel to report vulnerabilities before public disclosure.
 
 ## Observability: Tracing, Logging & Metrics
 
@@ -340,6 +553,17 @@ Logging, and Metrics:
 This Constitution is the foundational architectural policy of the Vatuta project. It supersedes all informal
 guidelines, documentation conventions, and ad-hoc practices.
 
+**Core Governing Rule**: The goal is not to build the most comprehensive solution imaginable. The goal is to build
+the simplest correct, maintainable solution for the requirements that actually exist.
+
+- **SpecKit Workflow Application**:
+  - Apply these principles consistently across all SpecKit workflows (`/speckit-specify`, `/speckit-clarify`,
+    `/speckit-plan`, `/speckit-tasks`, `/speckit-implement`, `/speckit-analyze`, `/speckit-converge`).
+  - Ensure all specification, planning, and task artifacts respect these principles.
+  - Treat additional requirements as proposed until explicitly approved by the user.
+  - Any exception that materially increases complexity MUST include a documented, user-approved justification.
+  - Do not reinterpret existing user-approved decisions without confirmation.
+  - Preserve existing constitution principles that do not conflict with these rules.
 - **Amendment Procedure**:
   - Any amendment to core principles, security baselines, quality gates, or release procedures requires an explicit
     proposal, architectural justification, and update to relevant documentation in `docs/`.
@@ -352,4 +576,4 @@ guidelines, documentation conventions, and ad-hoc practices.
   - All pull requests, code reviews, releases, and CI pipelines MUST enforce compliance with this Constitution.
   - Deviations or exceptions MUST be rejected unless formally ratified via the amendment process.
 
-**Version**: 1.14.0 | **Ratified**: 2026-09-11 | **Last Amended**: 2026-09-17
+**Version**: 1.15.0 | **Ratified**: 2026-09-11 | **Last Amended**: 2026-10-20
