@@ -1,115 +1,69 @@
-# Policy Checker: Technical Design Inputs
+# Policy Validation Engine: Design Inputs Register
 
-**Updated**: 2026-10-20
-**Feature**: [Policy Checker Mechanism](spec.md)
-**Source**: [Original notes](../../policy-checker.md)
-**Status**: Non-binding input for future technical planning; no architecture or implementation plan has been selected.
+**Updated**: 2026-11-08
+**Specification**: [spec.md](spec.md)
+**Plan**: [plan.md](plan.md) | **Demo Plan**: [demo-plan.md](demo-plan.md)
+**Research**: [research.md](research.md)
+**Scope decision**: [ADR-019](../../docs/policy-checker/adr-019-file-based-policy-operations.md)
 
-## Purpose
+## Role and Status
 
-Keep the user's technical suggestions available without treating exploratory examples as approved requirements.
-The specification defines behavior and acceptance criteria; the later planning phase must compare alternatives and
-justify any technology selection against those requirements and the Vatuta constitution.
+The 2026-11-04 scope, UX, and LLM-flows refinement is authoritative. Phase 0 research and Phase 1 design are complete;
+this register records the decisions and separates implementation qualification from stakeholder ambiguities. It is not
+a second specification. No runtime feature, dependency installation, or live-source certification has been completed.
 
-## Candidates and Investigations
+## Resolved Inputs
 
-- **Deterministic evaluation**: CEL or JSON Schema. Compare expressiveness, reproducibility, validation, and safe
-  execution for the required controls. They need not serve interchangeable purposes.
-- **Semantic evaluation**: LLM evaluation or a JEV-type model from TypeSafe AI. Establish suitability, availability,
-  evaluation criteria, reproducibility limits, and cost using representative policies. Preserve provider independence.
-- **Hybrid controls**: Combine deterministic and semantic evaluation. Determine how partial evaluations compose while
-  preserving outcome meanings and explanations.
-- **Evidence transformations**: Substrait is explicitly a preference, not a decision. Evaluate whether it helps
-  represent filtering, projection, aggregation, and normalization at acceptable complexity. Compare simpler
-  alternatives.
-- **Evidence relationships**: Operation sequences, evidence graphs, and query examples. Compare representations for
-  cross-source references and prerequisite results without requiring a graph engine or query language.
-- **Shared evidence**: Reuse collection and preparation for multiple controls. Define equivalence, invocation scope,
-  provenance, and execution scheduling without assuming a cross-run cache.
-- **Control representation**: Several illustrative YAML control shapes. Design a validated, inspectable contract after
-  behavior is settled. Do not copy the examples into a schema as requirements.
-- **Normalized control structure & execution engine**: The control creation stage outputs a normalized control that
-  encapsulates unique ID, description, policy reference/section/version, evidence sources, source applicability,
-  evidence transformations, selection criteria for violations (supporting multiple distinct transformation + selection
-  paths), exception criteria, parameters, and evaluation method. The execution engine must consume this normalized
-  definition as the bridge from policy text to deterministic execution instructions, holding all data, information,
-  parameters, and criteria needed to run validation without re-reading the policy document.
-- **Multi-path violation detection**: Support multiple alternative pathways (combinations of transformation +
-  selection/criteria) within a single control to detect violations across different representations or mechanisms
-  in source data.
-- **Command interface**: Extend the existing Vatuta client with `policy`. Define creation and verification contracts,
-  configuration inputs, parameter handling, reports, and errors.
-- **Programmatic invocation**: Define headless CLI and programmatic API contracts suitable for a future MCP wrapper.
-  An operational MCP service is outside this delivery, as already resolved in FR-009.
-- **Automated evaluation**: Human review workflows and handoff artifacts are outside the agreed feature scope.
-  Preserve the specification's automated evaluation and explicit failure behavior.
-- **Audit artifacts**: One identifiable invocation directory with stage subdirectories. Choose names, formats,
-  correlation, and redaction that support human inspection and machine reuse.
-- **MLOps evaluation and prompt optimization platform**: Evaluate widely adopted open-source MLOps/LLMOps tools
-  (e.g., MLflow, OpenLLMetry/Traceloop, Arize Phoenix, Langfuse) for importing and managing captured LLM interaction
-  samples to support regression testing, prompt tuning (e.g., DSPy teleprompters/optimizers), and benchmark tracking
-  without introducing tight vendor lock-in.
-- **Languages and libraries**: The notes permit technologies beyond Python when useful. Retain the project's
-  Python/Poetry baseline and assess interoperability, maintenance, and constitutional constraints before proposing
-  additions.
+| Earlier investigation | Resolution | Reference |
+| --- | --- | --- |
+| Stateless service and MCP boundary | `PolicyService` exposes `create`, `execute`, and `read_trace` over JSON-serializable Pydantic models (`policy_parameters` and `policy serve` excluded). | Research R1 |
+| Deterministic startup | Client filtering and deterministic execution bypass unrelated eager LLM preflight; selected backends initialize only when needed. | Research R1, R4 |
+| Step-by-step creation LLM flow | Policy decomposition into atomic rules -> sequential rule creation with `SharedParameterCatalog` -> bounded JSONata evidence exploration (`policy.discovery_max_queries`, `policy.discovery_max_output_bytes`) -> `selection` + `selection_tests` -> `criterion` + `criterion_tests`. | Research R2, R4; data model |
+| Embedded unit tests (`test_cases`) | Mandatory `selection_tests` and `criterion_tests` executed during creation (even when `trial_attempts == 0`) and persisted in `ControlDefinition.test_cases`. | Research R4; control-format contract |
+| Control, tags, and parameter models | Pydantic `ControlDefinition` with `tags: list[str]` and `test_cases: ControlTestCases`, safe YAML on client, self-contained value schemas, explicit default presence, shared-name validation. | Research R5; data model |
+| Client filtering & projection tool | Client-side tool over `policy.controls_directory` supporting metadata/text criteria, `projection`, and `include_merged_parameters=True` (default). | Operation contracts |
+| Guided 2-step check LLM flow | Step 1 selects `control_id`s via `ClientControlQuery` lightweight projection (`policy.check_max_filter_queries`, `policy.check_max_output_bytes`) followed by deterministic `merged_parameters` load; Step 2 extracts prompt parameters and calls `PolicyService.execute`. | Research R4; operation contracts |
+| JSONata missing/null distinction | Evaluate once through an existence envelope; no implicit scalar conversion or generated subject IDs. | Research R2 |
+| Deterministic language execution | JSONata function guards and CEL strict booleans over explicit inputs. | Research R2, R3 |
+| Semantic evaluation | Existing provider and DSPy signatures; strict singleton response mapping; no runtime fallback or batching setting. | Research R4 |
+| Evidence payload conversion | Preserve SDK result, check tool error first, structured precedence, single complete-JSON text fallback. | Research R6 |
+| Completeness mechanism | Trusted server/tool profiles with argument-scope schemas and explicit boolean proofs; unknown is ERROR. | Research R6 |
+| Reference source candidates | Core engine stays 100% source-independent; GitHub/Jira MCP profiles live only in isolated demo YAML (`pocs/policy_demo/`). | Control-format contract; [demo-plan.md](demo-plan.md) |
+| Testing, validation & demo split | Pragmatic TDD (unit + lightweight contract tests in CI, minimal integration, zero Docker/SaaS in CI), minimal 2-scenario local `quickstart.md`, and isolated blog demo under `pocs/policy_demo/`. | [plan.md](plan.md), [quickstart.md](quickstart.md), [demo-plan.md](demo-plan.md) |
+| Runtime errors and outputs | Per-control errors by `control_id` after whole-request validation; filtering retains errors; no aggregate compliance state. | Operation contracts |
+| Traces and privacy | Private sanitized stage artifacts, `PolicyService.read_trace(uri)`, existing logging/metrics, no expiry or lifecycle history. | Research R7 |
+| Creation trials | Existing bounded attempts and complete-or-error behavior; empty error-free live trial passes with visible unexecuted live criterion while `criterion_tests` still verify the criterion. | Spec FR-026, FR-046 |
 
-## Boundaries of the Examples
+## Implementation Qualification
 
-- The `JIRA-027`, `JIRA-042`, and `PR-001` examples illustrate policy concepts, not a stable serialization contract.
-- `one_of`, `evidence_graph`, `lateral_join`, interpolation syntax, field paths, and expression snippets are
-  exploratory.
-  Neither their exact syntax nor their evaluation semantics has been approved.
-- RASE means Requirement, Applicability, Selection, and Exception. The eventual representation must preserve the
-  policy's
-  meaning; examples do not define a universal algorithm for selecting alternatives or applying exemptions.
-- Azure DevOps appears only as an illustrative source. Initial validation remains limited to GitHub and Jira Free.
-- The evidence-check pseudocode illustrates outcome distinctions, not a mandatory execution algorithm. The design must
-  honor the spec's separate rules for missing evidence, applicability, exceptions, and source failures.
-- Logical processing stages do not require separate services, a particular workflow framework, or one physical fetch per
-  control. Shared collection must remain attributable to each consuming control.
+These checks are required before claiming working implementations, not unresolved functional choices:
 
-## Existing Constraints to Carry into Planning
+- Install/lock the selected libraries through Poetry; satisfy release-age, license, dependency audit, and Python
+  3.12/3.13 checks. Verify JSONata envelope behavior, disabled builtins including aliases, regex/time guards,
+  and CEL boolean/null/error conversion against the actual pinned releases.
+- Verify the generated Pydantic JSON schemas (`model_json_schema()`), policy decomposition, incremental
+  `SharedParameterCatalog`, bounded JSONata exploration (`policy.discovery_max_queries`,
+  `policy.discovery_max_output_bytes`), mandatory `selection_tests` and `criterion_tests`, `tags` inference and
+  merging, typed semantic outputs, absent-versus-null defaults, whole-argument binding, client directory containment,
+  and stdout/stderr separation.
+- Test complete, incomplete, and unknown evidence (including empty responses) in fast, self-contained unit and contract
+  tests under `tests/policy/` using provider-neutral fixtures—requiring zero Docker containers, databases, or external
+  API credentials in GitHub Actions CI.
+- Validate read-only credentials, explicit source allowlists, digest-pinned images, sanitization, private trace files,
+  bounded calls, and failure isolation using existing infrastructure. Never use logs as a substitute for policy history.
+- Run the minimal 2-scenario local [quickstart](quickstart.md) acceptance check after core implementation. Keep the
+  temporary GitHub Free + Jira Cloud Free blog showcase strictly isolated under `pocs/policy_demo/` per
+  [demo-plan.md](demo-plan.md) and out of CI.
 
-- Preserve [ADR-010](../../docs/policy-checker/adr-010-versioned-controls-and-policy-hashes.md): successful creation saves
-  a new control-set version and preserves earlier versions. Hash the exact supplied UTF-8 policy content to detect
-  changes independently of generated-control identity. Record the evaluated version and its document hash in each
-  verification. Choose the hash algorithm, version identifiers, comparison baseline selection, and storage contract
-  during planning without requiring policy reanalysis for verification.
-- Preserve [ADR-009](../../docs/policy-checker/adr-009-required-trial-parameters.md): enabled creation-time trials require
-  supplied parameter values; missing values fail creation rather than deferring trials. Zero-attempt mode remains
-  available, and verification may use different valid values within its configured scope and permissions.
-- Preserve [ADR-008](../../docs/policy-checker/adr-008-policy-input-formats.md): the initial policy input contract accepts
-  UTF-8 plain text and Markdown only, with explicit rejection of unsupported formats and invalid encoding. Document
-  conversion and OCR are outside the initial scope; preserve the existing policy-reference requirements.
-- Preserve [ADR-007](../../docs/policy-checker/adr-007-configurable-artifact-retention.md): invocation artifact retention
-  is configurable and defaults to no automatic expiry. Explicitly configured expiry covers successful and failed
-  invocation artifacts while preserving active artifacts and saved controls. Define duration units, expiry timestamps,
-  and cleanup scheduling during planning.
-- Preserve [ADR-006](../../docs/policy-checker/adr-006-technical-model-failure.md): technical model failures during
-  verification abort the invocation once any permitted retries are exhausted. Retain completed results as incomplete
-  work and do not turn a failed call into a compliance outcome. Define bounded retry and timeout behavior during
-  planning without changing the immediate abort rule for unavailable evidence sources.
-- Preserve the five decisions from the 2026-10-19 clarification round, documented in
-  [ADRs 001–005](../../docs/policy-checker/glossary.md#decision-records): fail creation when validation attempts are
-  exhausted; allow verification after skipped trials while retaining mandatory checks; pair per-control compliance
-  with evidence coverage; publish no overall policy compliance percentage; automatically execute prerequisites within
-  the configured scope and permissions, distinguishing them from selected controls in reports.
-- Preserve the five decisions recorded on 2026-10-08, including fail-fast source unavailability and fail-safe ambiguous
-  semantic judgments. Do not reclassify either case as ordinary missing evidence.
-- Preserve the existing CLI and configuration behavior outside the new policy capabilities.
-- Follow the constitution's provider independence, structured model interaction, validated boundaries, and
-  least-privilege
-  source access requirements. Source content and model outputs are data, not authority to execute arbitrary actions.
-- Preserve evidence provenance and keep observations, model explanations, and conclusions distinguishable.
-- Record prompts, returned outputs, external interactions, transformations, and outcomes with the constitution's
-  required
-  credential and personal-data redaction. Do not require unavailable provider-internal reasoning.
-- Treat new dependencies and non-Python components as proposals requiring justification against the existing project
-  constraints, not as a blanket replacement for the established runtime or dependency-management rules.
-- Include user and component documentation updates in the eventual implementation plan. This specification update does
-  not change runtime functionality or publish a new CLI contract.
+## Exclusions and Next Phase
 
-## Expected Later Outputs
+No policy registry, server-side control repository, revisions, hashes for comparison, managed review/approval,
+publication, maintenance, identity reconciliation, historical retrieval/restoration, or trace-retention scheduler is
+planned. `vatuta policy serve` and the `policy_parameters` MCP tool are excluded from this increment. No dependency
+graph, automatic prerequisites, evidence pagination, provider-specific executor adapters, Docker-in-CI test harnesses,
+custom demo UI, runtime model planning, new retry queue, cache, parallel executor, or generated violation explanation
+is added.
 
-After behavioral clarification, planning can produce a technical plan, research decisions, a data model, interface
-contracts, and a validation guide. None of those outputs is generated or approved by this document.
+The next command is `/speckit-tasks`. It must derive permanent production tasks (`src/`, `tests/`, `docs/`) separately
+from the optional final temporary demonstration phase (`pocs/policy_demo/`) per [plan.md](plan.md) and
+[demo-plan.md](demo-plan.md).

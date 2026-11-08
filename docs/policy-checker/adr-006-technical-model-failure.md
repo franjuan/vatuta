@@ -1,8 +1,15 @@
 # ADR-006: Abort Verification on a Technical Model Failure
 
 **Date**: 2026-10-19
-**Status**: Accepted
+**Status**: Superseded — current semantic and error rules are in ADR-018 and ADR-019
 **Feature**: [Policy Checker Mechanism](../../specs/002-policy-checker/spec.md)
+
+## Current Applicability (2026-10-25)
+
+Declared semantic criteria may call an LLM under [ADR-018](adr-018-semantic-criterion-exception.md). Technical failures
+and ambiguous judgments produce ERROR for affected subjects, not automatic non-compliance. Independent controls
+continue, including after source outages, under [ADR-019](adr-019-file-based-policy-operations.md). The invocation-wide
+abort and fail-safe classification described below are historical and must not be implemented.
 
 ## Context
 

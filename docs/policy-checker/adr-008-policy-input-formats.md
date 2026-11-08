@@ -1,8 +1,18 @@
 # ADR-008: Accept UTF-8 Plain Text and Markdown Policy Documents
 
 **Date**: 2026-10-20
-**Status**: Accepted
+**Status**: Accepted — extended to inline policy text by ADR-019
 **Feature**: [Policy Checker Mechanism](../../specs/002-policy-checker/spec.md)
+
+## Current Applicability (2026-10-29)
+
+UTF-8 plain text and Markdown remain the supported formats. MCP creation accepts `policy_text` and optional descriptive
+`construction_context` and returns YAML controls. Optional `policy_id` supplies a provenance reference. The CLI may read
+a supported file within its root and pass the content as `policy_text` to the same application request. MCP creation
+accepts no policy file path. No additional document formats were approved in the scope simplification.
+
+See [ADR-019](adr-019-file-based-policy-operations.md) and the current specification. The sections below
+retain earlier decisions and their original requirement references; only compatible behavior remains active.
 
 ## Context
 

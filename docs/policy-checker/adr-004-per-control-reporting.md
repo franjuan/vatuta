@@ -1,8 +1,16 @@
 # ADR-004: Report Compliance Per Control Without an Overall Policy Percentage
 
 **Date**: 2026-10-19
-**Status**: Accepted
+**Status**: Partially superseded by ADR-014 on 2026-10-20
 **Feature**: [Policy Checker Mechanism](../../specs/002-policy-checker/spec.md)
+
+## Current Applicability (2026-10-25)
+
+The prohibition on an overall policy compliance percentage remains accepted. The old per-control compliance and
+evidence-coverage formulas below are superseded with ADR-003. ADR-017 defines ERROR for control failures,
+NOT_APPLICABLE for successful empty selections, and no aggregate compliance state for error-free nonempty runs.
+[ADR-019](adr-019-file-based-policy-operations.md) preserves these outcomes and isolates source outages per control.
+This historical record does not mandate replacement percentages or additional result-summary counts.
 
 ## Context
 

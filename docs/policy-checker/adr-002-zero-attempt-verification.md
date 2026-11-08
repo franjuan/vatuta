@@ -1,8 +1,17 @@
 # ADR-002: Allow Verification When Creation-Time Trial Execution Is Skipped
 
 **Date**: 2026-10-19
-**Status**: Accepted
+**Status**: Accepted — skipped-trial behavior retained without approval workflow
 **Feature**: [Policy Checker Mechanism](../../specs/002-policy-checker/spec.md)
+
+## Current Applicability (2026-10-25)
+
+Zero attempts skips trials only. Mandatory structural and permission checks, visible skipped-trial records, and
+subsequent execution remain. Successful controls require no review, approval, or publication. Dependent evidence
+calls remain unsupported; no dependency graph evaluator is introduced.
+
+See [ADR-019](adr-019-file-based-policy-operations.md) and the current specification. The sections below
+retain earlier decisions and their original requirement references; only compatible behavior remains active.
 
 ## Context
 

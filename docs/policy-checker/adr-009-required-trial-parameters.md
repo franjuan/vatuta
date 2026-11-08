@@ -1,8 +1,24 @@
 # ADR-009: Require Parameter Values for Enabled Creation-Time Trials
 
 **Date**: 2026-10-20
-**Status**: Accepted
+**Status**: Accepted — trial requirements retained; parameter defaults clarified by ADR-019
 **Feature**: [Policy Checker Mechanism](../../specs/002-policy-checker/spec.md)
+
+## Current Applicability (2026-10-29)
+
+Missing required trial values still fail the complete creation when trials are enabled. Preserve trial attempt
+behavior and scope/permission checks. Construction values are invocation defaults only when explicitly declared.
+Later execution may supply different valid values. No publication or approval step remains.
+
+MCP callers supply descriptive `construction_context`, not a map keyed by unknown future parameter names. The
+constructor defines declarations and derives supported trial values from the policy and context. Insufficient context
+returns `MISSING_CONSTRUCTION_CONTEXT` with an actionable explanation, parameter semantics/schema, and affected controls,
+without reusable artifacts or invented values. The caller can expand context in a new request. Explicit request
+`trial_attempts` overrides deployment setting `policy.trial_attempts` for that creation; when omitted, use deployment
+configuration, default one. Missing context does not silently disable trials.
+
+See [ADR-019](adr-019-file-based-policy-operations.md) and the current specification. The sections below
+retain earlier decisions and their original requirement references; only compatible behavior remains active.
 
 ## Context
 

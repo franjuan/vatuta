@@ -1,8 +1,17 @@
 # ADR-007: Configure Artifact Retention With No Automatic Expiry by Default
 
 **Date**: 2026-10-20
-**Status**: Accepted
+**Status**: Superseded by ADR-019 on 2026-10-25
 **Feature**: [Policy Checker Mechanism](../../specs/002-policy-checker/spec.md)
+
+## Current Applicability (2026-10-25)
+
+Keep diagnostic traces in the configured log directory until explicitly deleted, with required redaction. Retention
+periods and automatic age-based cleanup are outside the current feature. The configurable expiry requirements and
+alternatives below are historical, not implementation requirements.
+
+See [ADR-019](adr-019-file-based-policy-operations.md) and the current specification. The sections below
+retain earlier decisions and their original requirement references; only compatible behavior remains active.
 
 ## Context
 

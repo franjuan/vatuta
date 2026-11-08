@@ -1,8 +1,21 @@
 # ADR-001: Fail Control Creation When Validation Attempts Are Exhausted
 
 **Date**: 2026-10-19
-**Status**: Accepted
+**Status**: Accepted — trial behavior retained; lifecycle wording superseded by ADR-019
 **Feature**: [Policy Checker Mechanism](../../specs/002-policy-checker/spec.md)
+
+## Current Applicability (2026-10-25)
+
+Keep whole-creation failure on exhausted trials, diagnostic retention, and no reusable subset. Successful creation
+returns YAML artifacts without review, approval, or publication. Earlier publication wording below describes
+delivery of reusable controls, not a current lifecycle operation.
+
+On 2026-10-25 the stakeholder clarified that an error-free creation trial passes even with an empty selection:
+record NOT_APPLICABLE and that the criterion was not executed. Do not require a populated sample. NON_COMPLIANT
+findings alone also do not fail a trial. Mandatory checks and existing error/completeness rules remain in force.
+
+See [ADR-019](adr-019-file-based-policy-operations.md) and the current specification. The sections below
+retain earlier decisions and their original requirement references; only compatible behavior remains active.
 
 ## Context
 

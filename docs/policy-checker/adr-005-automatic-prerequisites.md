@@ -1,8 +1,13 @@
 # ADR-005: Automatically Execute Prerequisites of Selected Controls
 
 **Date**: 2026-10-19
-**Status**: Accepted
+**Status**: Superseded by ADR-013 on 2026-10-20
 **Feature**: [Policy Checker Mechanism](../../specs/002-policy-checker/spec.md)
+
+## Current Applicability
+
+Initial execution now uses independent MCP evidence calls and contains no control dependency graph or automatic
+prerequisite execution. The decision text below is preserved only as history.
 
 ## Context
 

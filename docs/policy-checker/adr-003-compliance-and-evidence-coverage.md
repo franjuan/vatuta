@@ -1,8 +1,14 @@
 # ADR-003: Report Compliance Alongside Evidence Coverage
 
 **Date**: 2026-10-19
-**Status**: Accepted
+**Status**: Superseded by ADR-014 on 2026-10-20
 **Feature**: [Policy Checker Mechanism](../../specs/002-policy-checker/spec.md)
+
+## Current Applicability
+
+The current subject states are COMPLIANT, NON_COMPLIANT, and ERROR; NOT_APPLICABLE belongs to an empty successful
+control execution. The formulas below are historical, not current requirements. No replacement percentage or aggregation
+rule has been accepted.
 
 ## Context
 

@@ -1,15 +1,10 @@
 <!--
 Sync Impact Report
-- Version change: 1.14.0 → 1.15.0 (Minor Version Bump)
+- Version change: 1.15.0 → 1.16.0 (Minor Version Bump)
 - Modified principles & sections:
-  - Principles I-XI re-indexed to IX-XIX, preserving existing environment, quality, security, and runtime policies.
-  - Principle IV updated to "Determinism, Cost/Value Pragmatism & Core Validation" to integrate with Simplicity rules.
-  - Governance section updated with core governing rule, SpecKit workflow governance, and documented justification.
-- Added sections:
-  - Core Principles I-VIII added: Simplicity as a First-Class Architectural Principle, Requirements Traceability and
-    Scope Control, AI Initiative with Human Approval, Proportional Edge-Case Handling, Non-Functional Requirements
-    Must Be Justified, Incremental Development & Anti-Overengineering, Specification & Planning Discipline, and
-    Constitution Enforcement & Decision Priority.
+  - Principle XVII ("Comprehensive Test Coverage & CI Compliance") refined with project-wide Pragmatic TDD,
+    lightweight contract testing, minimized integration testing, and hermetic GitHub Actions CI constraints.
+- Added sections: None
 - Removed sections: None
 - Follow-up TODOs: None
 -->
@@ -374,8 +369,19 @@ dependable across updates.*
 New functionality, connectors, and bug fixes MUST be accompanied by automated tests that satisfy all CI requirements:
 
 - Every public function and component MUST have corresponding unit tests under `tests/`.
-- External service calls, LLM invocations, and container lifecycles MUST be mocked in unit test suites to ensure
-  reliable, hermetic execution.
+- **Pragmatic TDD & Testing Pyramid**: Automated testing MUST follow a pragmatic Test-Driven Development (TDD)
+  approach focused on correctness and stability rather than test count:
+  - *Unit Tests (Primary)*: Fast, isolated, deterministic tests covering business logic, parsing, transformations,
+    relevant edge cases, and failure handling. External service calls, LLM invocations, and container lifecycles MUST
+    be mocked or faked.
+  - *Contract Tests (Boundary Validation)*: Lightweight, self-contained schema and interface checks (e.g., MCP tool
+    schemas, Pydantic data contracts, provider abstractions) executed in CI without external services.
+  - *Integration Tests (Minimized)*: Introduced ONLY when providing substantial value beyond unit and contract tests;
+    the existence of an integration point does NOT automatically justify an integration test.
+- **Hermetic, Low-Infrastructure CI**: Automated tests in GitHub Actions MUST remain fast, deterministic, and
+  self-contained—requiring no external credentials, live third-party service availability, database provisioning, or
+  Docker container orchestration unless explicitly justified and approved. Integration tests requiring live external
+  infrastructure SHOULD remain optional, locally executed checks rather than CI gates.
 - CI pipeline suites (matrix testing for Python 3.12 and 3.13, minimum 25% test coverage floor, SAST security reports,
   and CycloneDX SBOM generation) MUST remain fully green.
 - **Coverage Evolution Target**: While the baseline CI failure threshold is currently set at a 25% coverage floor to
@@ -576,4 +582,4 @@ the simplest correct, maintainable solution for the requirements that actually e
   - All pull requests, code reviews, releases, and CI pipelines MUST enforce compliance with this Constitution.
   - Deviations or exceptions MUST be rejected unless formally ratified via the amendment process.
 
-**Version**: 1.15.0 | **Ratified**: 2026-09-11 | **Last Amended**: 2026-10-20
+**Version**: 1.16.0 | **Ratified**: 2026-09-11 | **Last Amended**: 2026-11-08

@@ -1,0 +1,98 @@
+---
+id: reference-approved-ticket
+description: Every open pull request must reference an approved issue.
+tags:
+  - change-management
+  - pull-requests
+source:
+  policy: reference-policy
+  rule: approved-ticket
+  excerpt: Every open pull request must reference an approved issue.
+parameters:
+  repository:
+    description: Repository whose open pull requests are checked.
+    value_schema:
+      type: string
+      minLength: 1
+    construction_value: example/project
+  project:
+    description: Issue project containing the relevant approval records.
+    value_schema:
+      type: string
+      minLength: 1
+    construction_value: EXAMPLE
+evidence:
+  - name: prs
+    server: reference
+    tool: reference_prs
+    arguments:
+      repository:
+        parameter: repository
+  - name: issues
+    server: reference
+    tool: reference_issues
+    arguments:
+      project:
+        parameter: project
+selection: >-
+  (
+    $issues := evidence.issues.items;
+    [evidence.prs.items.(
+      $pr := $;
+      $ticket := $issues[key = $pr.issue_key][0];
+      {
+        "id": $string($pr.number),
+        "descriptive_id": $pr.url,
+        "ticket_status": $exists($ticket.status) ? $ticket.status : null
+      }
+    )]
+  )
+criterion:
+  mode: deterministic
+  expression: 'subject.ticket_status != null && subject.ticket_status == "Approved"'
+test_cases:
+  selection_tests:
+    - description: Joins pull requests with matching issues and preserves null status when missing.
+      mock_evidence:
+        prs:
+          items:
+            - number: 101
+              url: https://example.test/pr/101
+              issue_key: EXAMPLE-1
+            - number: 103
+              url: https://example.test/pr/103
+              issue_key: null
+        issues:
+          items:
+            - key: EXAMPLE-1
+              status: Approved
+      expected_subjects:
+        - id: "101"
+          descriptive_id: https://example.test/pr/101
+          ticket_status: Approved
+        - id: "103"
+          descriptive_id: https://example.test/pr/103
+          ticket_status: null
+    - description: Returns NOT_APPLICABLE when no pull requests exist.
+      mock_evidence:
+        prs:
+          items: []
+        issues:
+          items: []
+      expected_outcome: NOT_APPLICABLE
+  criterion_tests:
+    - description: Pull request with Approved ticket is compliant.
+      subject:
+        id: "101"
+        descriptive_id: https://example.test/pr/101
+        ticket_status: Approved
+      expected_state: COMPLIANT
+    - description: Pull request without Approved ticket is non-compliant.
+      subject:
+        id: "102"
+        descriptive_id: https://example.test/pr/102
+        ticket_status: Pending
+      expected_state: NON_COMPLIANT
+creation_check:
+  trial: skipped
+  criterion_executed: false

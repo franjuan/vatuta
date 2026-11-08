@@ -1,8 +1,17 @@
 # ADR-010: Version Saved Control Sets and Hash Policy Documents
 
 **Date**: 2026-10-20
-**Status**: Accepted
+**Status**: Superseded — versioning and comparison excluded by ADR-019
 **Feature**: [Policy Checker Mechanism](../../specs/002-policy-checker/spec.md)
+
+## Current Applicability (2026-10-25)
+
+Policy/control versions, revision history, comparison hashes, publication, and restoration are outside the current
+scope. Preserve source/rule attribution and the actual executed definitions in results and traces without
+introducing a version subsystem. Earlier version/hash contracts below are historical.
+
+See [ADR-019](adr-019-file-based-policy-operations.md) and the current specification. The sections below
+retain earlier decisions and their original requirement references; only compatible behavior remains active.
 
 ## Context
 
