@@ -2,6 +2,25 @@
 
 All notable changes to the Vatuta project are documented in this file.
 
+## [0.5.2] - 2026-11-08
+
+### Fixed
+
+- **Pre-commit Semgrep Hook**: Forced `EIO_BACKEND=posix` in the Semgrep pre-commit hook configuration to resolve
+  runtime I/O backend errors on Linux environments.
+
+### Security
+
+- **Dependencies Update**: Upgraded `fastembed` to `^0.9.1` (`0.9.1`) and `pillow` to `13.0.0`, along with transitive
+  dependencies (`mcp`, `langgraph-sdk`, `multidict`, `cryptography`, `aiohttp`), resolving 39 `pip-audit`
+  vulnerabilities.
+
+### Documentation
+
+- **README Updates**: Added the Vatuta 0.5.1 project article link and Headroom LLM proxy reference to `README.md`.
+
+---
+
 ## [0.5.1] - 2026-09-30
 
 ### Fixed
