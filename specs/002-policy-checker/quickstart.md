@@ -1,6 +1,6 @@
 # Policy Validation Engine: Minimal E2E Acceptance Quickstart
 
-**Date**: 2026-11-08
+**Date**: 2026-11-11
 **Status**: Local post-implementation acceptance runbook (not executed in GitHub Actions CI).
 
 ## Purpose and Scope Boundaries
@@ -20,96 +20,93 @@ Contracts and schemas are authoritative in [operations.md](contracts/operations.
 
 ## Prerequisites
 
-- Python 3.12 or 3.13 with Poetry installed (`poetry install --with dev`).
+- Python 3.12 or 3.13 with Poetry and the development dependencies already installed.
 - Permanent automated tests already green locally (`poetry run pytest -q`).
-- For Scenario 1A (live LLM control creation with `--trial-attempts 0`), a local `.env` with one configured LLM key
-  (for example `GEMINI_API_KEY`); Scenario 1B and Scenario 2 require zero network or API credentials.
+- Both scenarios use local fixtures and controlled authoring responses; neither needs Docker, network, or credentials.
+- Implement the two focused cases below in the already planned `tests/client/test_policy.py` CLI wiring tests.
+  The commands are post-implementation validation entry points, not tests available or executed during planning.
+  Reuse those permanent hermetic tests rather than adding a separate acceptance suite.
+- The planned `tests/fixtures/policy/vatuta.yaml` must be a complete standalone configuration with `rag` backend
+  declarations and bindings, `qdrant`, empty `sources`, and local reference MCP profiles. Use temporary controls and
+  trace directories. Keep the generic configuration loader unchanged; policy execution must not initialize RAG,
+  embeddings, Qdrant, or LLM providers for deterministic controls.
+
+### Fixture Contract for Both Scenarios
+
+Use [reference-control.yaml](contracts/reference-control.yaml) and the planned
+`tests/fixtures/policy/reference_evidence.json` as the canonical deterministic example: PR `101` links an `Approved`
+issue, PR `102` links a `Pending` issue, and PR `103` has no linked issue. Keep their identifiers stable.
+
+The hand-authored reference declares `id: reference-approved-ticket`. Execution uses that declared identifier.
+For creation, assert the generated `<policy_id>-<rule_id>` convention against the supplied policy ID and returned rule.
+
+Replace only MCP transport and authoring model boundaries. Keep CLI parsing, creation orchestration, synthetic tests,
+JSONata, CEL, file saving/loading, execution, and trace persistence real. The planned fixtures must provide:
+
+- `MCPServer.start` and `stop` async fakes, so no container or Docker client is contacted.
+- An async `MCPServer.list_tools` fake returning SDK `ListToolsResult(tools=[Tool(...)])`, with `name` and `inputSchema`
+  for both `reference_prs` and `reference_issues`. Require string `repository` and `project`, respectively, matching the
+  local profile schemas. Execution discovers these schemas before calling tools; an empty list or raw dict is invalid.
+- Async `call_tool` responses as SDK `CallToolResult(content=[], structuredContent=payload, isError=False)` objects.
+  Each payload contains the canonical records and explicit completeness proof required by its local evidence profile.
+  Load serialized SDK envelopes with `CallToolResult.model_validate(record)`; do not return bare evidence dictionaries.
+- Call counters and failure-on-use guards on real LLM/provider entry points and network/transport boundaries. Controlled
+  authoring responses are allowed only during creation; execution must make zero LLM calls.
 
 ---
 
-## Scenario 1 — Complete Happy-Path E2E (Create, Execute/Check, and Trace Read)
+## Scenario 1 — Complete Happy-Path E2E (Create, Execute, and Trace Read)
 
 **Objective**: Confirm that Vatuta authors a self-tested YAML control from policy text, executes deterministic
 compliance evaluation end-to-end through the CLI using existing reference fixtures, separates `stdout` JSON from
 `stderr` progress, and persists a readable sanitized trace.
 
-### 1A. Author Controls with Embedded Synthetic Unit Tests (`vatuta policy create`)
+### 1A. Author a Control with Embedded Synthetic Unit Tests (`vatuta policy create`)
 
-Run creation into a temporary directory with `--trial-attempts 0` (exercises DSPy decomposition, sequential rule
-creation, and mandatory local execution of `selection_tests` and `criterion_tests` via real JSONata and CEL without
-requiring live upstream MCP servers):
+The focused case invokes the real CLI via `CliRunner` with the policy text "Every open pull request must reference an
+approved issue.", `--policy-id acceptance-change-mgmt`, construction context "Repository example/project; issues in
+project EXAMPLE.", `--tag acceptance`, `--trial-attempts 0`, `--format json`, and a temporary `--output-dir`.
 
-```bash
-TMP_CONTROLS="$(mktemp -d)"
-poetry run vatuta --config tests/fixtures/policy/vatuta.yaml policy create \
-  --policy-text "Every open pull request must reference an approved issue." \
-  --policy-id acceptance-change-mgmt \
-  --construction-context "Repository example/project; issues in project EXAMPLE." \
-  --tag acceptance \
-  --trial-attempts 0 \
-  --output-dir "$TMP_CONTROLS" \
-  --format json > "$TMP_CONTROLS/create-result.json"
-```
+Supply controlled DSPy signature responses derived from the reference obligation, including its deterministic
+selection, criterion, and synthetic cases. The real creation pipeline must run every synthetic test and save its
+returned control. Do not substitute the reference YAML for the saved result when executing the roundtrip.
+
+Assert zero MCP starts, `list_tools`, and `call_tool` calls throughout this creation. Step 0 catalogs are local for
+every trial setting; live discovery can start only after the all-rules Phase A sweep succeeds. With trials disabled,
+creation never contacts MCP. Shared parameter declarations already used by other rules remain immutable; later rules
+must match
+them or use distinct names. Saving rejects filename/ID collisions without overwriting existing controls.
 
 ### 1B. Execute Compliance Check & Inspect Diagnostic Trace (`vatuta policy execute` + `read_trace`)
 
-Execute the canonical [reference-control.yaml](contracts/reference-control.yaml) end-to-end against the deterministic
-reference fixture responses (`PR 101` approved, `PR 102` pending, `PR 103` unlinked) and verify both `violations`
-(default) and `all` filters plus trace retrieval:
+In the same case, load and execute the actual control saved in 1A with explicit
+`{"repository":"example/project","project":"EXAMPLE"}` parameters and the SDK-shaped MCP fakes above. Invoke the
+CLI twice: once without `--result-filter` to test default `violations`, then with `--result-filter all`. Read each
+execution trace using `PolicyService.read_trace` and its returned invocation ID. Run the complete case with:
 
 ```bash
-poetry run python - <<'PY'
-import json
-from pathlib import Path
-from unittest.mock import AsyncMock, patch
-from typer.testing import CliRunner
-
-from src.client.client import app
-from src.policy.service import PolicyService
-
-fixtures = json.loads(Path("tests/fixtures/policy/reference_evidence.json").read_text(encoding="utf-8"))
-
-async def fake_call_tool(name: str, arguments: dict | None = None):
-    return fixtures[name]
-
-runner = CliRunner()
-with patch("src.mcp.server.MCPServer.start", new=AsyncMock()), \
-     patch("src.mcp.server.MCPServer.stop", new=AsyncMock()), \
-     patch("src.mcp.server.MCPServer.call_tool", side_effect=fake_call_tool):
-    res = runner.invoke(
-        app,
-        [
-            "--config", "tests/fixtures/policy/vatuta.yaml",
-            "policy", "execute",
-            "--control", "specs/002-policy-checker/contracts/reference-control.yaml",
-            "--parameters", '{"repository":"example/project","project":"EXAMPLE"}',
-            "--format", "json",
-        ],
-    )
-
-assert res.exit_code == 0, res.stderr
-payload = json.loads(res.stdout)
-assert payload["errors"] == []
-subjects = {s["id"]: s["state"] for s in payload["results"][0]["subjects"]}
-assert subjects == {"102": "NON_COMPLIANT", "103": "NON_COMPLIANT"}, subjects
-
-trace_uri = f"vatuta://traces/policy/execution/{payload['invocation_id']}"
-trace = PolicyService.from_config_path("tests/fixtures/policy/vatuta.yaml").read_trace(trace_uri)
-assert trace["invocation_id"] == payload["invocation_id"]
-print("SCENARIO 1 PASSED:", payload["invocation_id"])
-PY
+poetry run pytest -q tests/client/test_policy.py::test_create_execute_and_read_trace
 ```
 
 ### Expected Behavior & Pass/Fail Criteria
 
 - **Pass**:
-  1. `policy create` exits `0`, writes one `<id>.yaml` in `$TMP_CONTROLS`, `errors` is `[]`, `tags` includes
+  1. `policy create` exits `0`, writes one `<id>.yaml` in the temporary output directory, `errors` is `[]`, `tags`
+     includes
      `"acceptance"`, and `test_cases.selection_tests` / `test_cases.criterion_tests` are populated and verified.
   2. `policy execute` exits `0`, writes valid JSON exclusively to `stdout`, reports `102` and `103` as `NON_COMPLIANT`
-     (omitting compliant `101` under the default `violations` filter), and emits no aggregate compliance percentage.
-  3. `PolicyService.read_trace(trace_uri)` returns sanitized `InvocationTrace` JSON with matching `invocation_id`.
+     (omitting compliant `101` under default `violations`). With `all`, assert exactly `101: COMPLIANT`,
+     `102: NON_COMPLIANT`, and `103: NON_COMPLIANT`. Both runs have no request/control errors or aggregate percentage.
+  3. Each `ControlResult` preserves the saved control's `source` and the effective execution `parameters` under both
+     filters. Its `control_id` matches the generated YAML, proving the create-to-execute roundtrip.
+  4. `PolicyService.read_trace(trace_uri)` returns sanitized `InvocationTrace` JSON with matching `invocation_id`.
+     Check redacted fixture secrets are absent and progress is confined to `stderr`; parse all `stdout` as JSON.
+  5. MCP schema discovery and evidence fakes are called during execution, while all LLM call counters remain zero.
 - **Fail**: Non-zero exit code, polluted `stdout` JSON, missing `102`/`103` violations, `101` reported as a violation,
   or unreadable/unsanitized trace output.
+
+Trace write failure belongs to focused permanent error tests, not an additional E2E scenario: retain computed results,
+append top-level `TRACE_WRITE_FAILED`, and exit `1`. Do not replace successful evaluations with empty results.
 
 ---
 
@@ -123,29 +120,21 @@ repository/project and produce false compliance signals.)*
 
 ### Execution Instructions
 
+The focused case invokes `policy execute` through `CliRunner` using the standalone fixture config, the canonical
+reference control, `--parameters '{}'`, and `--format json`. Use failure-on-use mocks and counters for MCP start,
+`list_tools`, `call_tool`, and every LLM/provider entry point. Keep request validation real.
+
 ```bash
-poetry run vatuta --config tests/fixtures/policy/vatuta.yaml policy execute \
-  --control specs/002-policy-checker/contracts/reference-control.yaml \
-  --parameters '{}' \
-  --format json > /tmp/vatuta-missing-params.json
-echo "EXIT_CODE=$?"
-poetry run python -c '
-import json
-data = json.loads(open("/tmp/vatuta-missing-params.json", encoding="utf-8").read())
-missing = {e["parameter"] for e in data["errors"]}
-assert data["results"] == [], data
-assert missing == {"repository", "project"}, missing
-assert all(e["control_id"] == "reference-approved-ticket" for e in data["errors"])
-print("SCENARIO 2 PASSED:", sorted(missing))
-'
+poetry run pytest -q tests/client/test_policy.py::test_missing_parameters_rejects_before_external_calls
 ```
 
 ### Expected Behavior & Pass/Fail Criteria
 
 - **Pass**:
-  1. Command exits with code `2` (invalid request / missing inputs) without requiring LLM keys or running Docker.
+  1. Assert `result.exit_code == 2` (invalid request / missing inputs); printing the exit code is insufficient.
   2. JSON output has `results == []` and two `ErrorDetail` entries naming both `repository` and `project` along with
      `control_id: "reference-approved-ticket"`.
-  3. Zero MCP container startups, evidence calls, or LLM calls occur.
+  3. Assert every external-call mock is uncalled, including MCP start, schema discovery, evidence calls, and LLM calls.
+     This must pass with credentials absent and Docker unavailable; both errors must be reported together.
 - **Fail**: Exit code `0` or `1`, fallback to `example/project` or `EXAMPLE` `construction_value`s, partial missing
   parameter reporting, or any attempted Docker/MCP connection.

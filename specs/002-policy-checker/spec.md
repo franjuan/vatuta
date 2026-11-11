@@ -2,9 +2,9 @@
 
 **Feature Branch**: `002-policy-checker`
 **Created**: 2026-10-06
-**Updated**: 2026-11-05
-**Status**: Scope clarified — ready for technical planning
-**Input**: Stakeholder scope, UX, and LLM flows refinement agreed on 2026-11-04 and 2026-11-05.
+**Updated**: 2026-11-11
+**Status**: Technical design aligned with the confirmed review decisions
+**Input**: Stakeholder scope, UX, and step-by-step creation/execution LLM flows agreed on 2026-11-04 through 2026-11-10.
 
 Vatuta provides a stateless policy service (`PolicyService`, structured 1:1 as an MCP-ready interface using
 JSON-serializable Pydantic models) with two domain operations: create executable controls from a policy (`create` /
@@ -82,6 +82,15 @@ embedded `test_cases` (`selection_tests` and `criterion_tests`), trial execution
     Generated `source.policy` uses the supplied policy identifier or the creation invocation ID when omitted.
 14. **Given** construction context that contradicts policy obligations or exceeds configured permissions, **When**
     controls are generated, **Then** the context cannot weaken those obligations or expand the permitted scope.
+15. **Given** any trial setting, **When** creation performs Step 0 and Phase A, **Then** it uses the local tool catalog
+    without starting containers, connecting to MCP, or discovering live schemas. Enabled trials connect only after
+    Phase A succeeds; zero attempts never connects to MCP.
+16. **Given** a parameter already shared with another rule, **When** later construction or repair needs a different
+    declaration, **Then** it adapts the current rule or declares a distinct name, leaving the shared declaration and
+    earlier rules unchanged. Failed candidate changes do not pollute the shared catalog.
+17. **Given** a target `<id>.yaml` already exists, **When** the client saves generated controls, **Then** it rejects
+    the collision, preserves the existing file, and reports a persistence error instead of overwriting or renaming it.
+    The client checks the complete target set before publishing any file.
 
 ### User Story 2 - Filter Controls, Project Attributes, and Deduce Parameters in Check (Priority: P1)
 
@@ -100,26 +109,30 @@ required inputs, defaults, and trial-only construction values. Filter and projec
 
 1. **Given** YAML control files in `policy.controls_directory` (or `--controls-dir`), **When** the client's filtering
    and projection tool runs with criteria (`ids`, `policy_ids`, `rule_ids`, `tags`, `evaluation_mode`,
-   `evidence_server`, `evidence_tool`, `parameter_names`, `text_query`, `files`, or `glob`), **Then** it
-   deterministically returns the matching controls projected to the requested attributes (`projection`, e.g.,
-   `["id", "description", "tags", "source"]` or `["full"]`), without external evidence calls.
+   `evidence_server`, `evidence_tool`, `parameter_names`, `text_query`, `files`, or `glob`), **Then** it combines
+   distinct filter fields with logical **AND** and multi-value list fields with logical **OR**, fails immediately if any
+   encountered control YAML file is malformed, and deterministically returns the matching controls projected to the
+   requested attributes (`projection`, e.g., `["id", "description", "tags", "source"]` or `["full"]`), without external
+   evidence calls.
 2. **Given** `include_merged_parameters=True` (the default), **When** the client tool projects control information,
    **Then** it also returns `merged_parameters` describing each shared parameter's schema, required or optional status,
    declared default, and referencing `control_id`s and descriptions. Setting `include_merged_parameters=False` omits
    the merged block.
 3. **Given** a natural-language prompt in `vatuta policy check "<prompt>"`, **When** Step 1 (Rule Selection) runs,
-   **Then** the LLM uses the client filtering/projection tool with lightweight projection (`["id", "description",
-   "tags", "source"]`, bounded by configurable `policy.check_max_filter_queries`, default 3 queries, and output
-   truncation `policy.check_max_output_bytes`, default 4096 bytes) to select the applicable `control_id`s, and the
-   client deterministically loads those controls with `projection=["full"]` and `include_merged_parameters=True`.
+   **Then** the LLM iteratively queries the client filtering/projection tool with lightweight projection (`["id",
+   "description", "tags", "source"]`, bounded by configurable `policy.check_max_filter_queries`, default 3 queries, and
+   output truncation `policy.check_max_output_bytes`, default 4096 bytes, with early exit when `done=True`) to select
+   the applicable `control_id`s (failing with `NO_CONTROLS_MATCHED` if empty), and the client deterministically loads
+   those controls with `projection=["full"]` and `include_merged_parameters=True`.
 4. **Given** the selected controls and their `merged_parameters`, **When** Step 2 (Parameter Deduction) of
-   `vatuta policy check "<prompt>"` runs, **Then** the LLM extracts explicit parameter values present in the user's
-   prompt (without inventing missing values) and the client invokes `PolicyService.execute` with the inline
-   `ControlDefinition` list and resolved parameters. The stateless execution engine itself never infers parameters from
-   free text.
+   `vatuta policy check "<prompt>"` runs, **Then** if `merged_parameters` is empty the LLM call is skipped (`parameters
+   = {}`), otherwise the LLM extracts explicit parameter values present in the user's prompt (without inventing missing
+   values), and the client invokes `PolicyService.execute` associating Steps 1 and 2 with the execution `invocation_id`
+   trace. The stateless execution engine itself never infers parameters from free text.
 5. **Given** several selected controls declaring the same parameter name, **When** their requirements are merged or
    validated for execution, **Then** that name denotes one shared parameter and one supplied value applies to every
-   referencing control.
+   referencing control. Extra parameter keys in `request.parameters` not declared by any supplied control are permitted,
+   and each control receives only the resolved parameters declared in its own `control.parameters`.
 6. **Given** a required parameter with only a construction value, **When** execution omits its value,
    **Then** the construction value is not silently used. An explicitly declared default can satisfy an omitted value;
    an explicit invocation value takes precedence over that default.
@@ -156,31 +169,39 @@ error visibility, filters, and continued execution.
 4. **Given** successful complete evidence and a selection producing no result or an empty collection,
    **When** selection finishes, **Then** the control is NOT_APPLICABLE and no criterion runs. Root null is instead
    a selection contract ERROR. A valid subject with a null related-ticket field remains evaluable.
-5. **Given** a mixture of valid subjects and objects missing mandatory identifiers, **When** evaluation runs,
-   **Then** valid subjects are evaluated, invalid objects are reported without invented IDs, and the control returns
-   global ERROR. An invalid-only collection is ERROR, not NOT_APPLICABLE.
-6. **Given** multiple independent controls and a failure in source access, response conversion, selection, or
-   criterion evaluation, **When** execution proceeds, **Then** the affected control reports ERROR and the others
-   continue. An unavailable required source follows the same rule. Failed evidence or selection does not reach
-   criterion evaluation; valid subject results already obtained remain available.
+5. **Given** a mixture of valid subjects, objects missing mandatory non-whitespace identifiers (`id` or
+   `descriptive_id`), and subjects with colliding duplicate `id`s within the same control selection, **When** evaluation
+   runs, **Then** subjects with unique valid `id`s are evaluated by `criterion`, invalid objects and duplicate-ID
+   subjects are not evaluated by `criterion` and are reported in `errors` (with `DUPLICATE_SUBJECT_ID`, `subject_id`,
+   and `selection_index` for duplicates) without invented IDs, and the control returns global `outcome: "ERROR"`. An
+   invalid-only or duplicate-only collection is `ERROR`, not `NOT_APPLICABLE`.
+6. **Given** multiple independent controls and a failure in source/profile/permission validation, source access,
+   conversion, or whole-selection evaluation, **When** execution proceeds, **Then** the affected control skips its
+   remaining dependent steps and reports `ERROR` while independent controls continue. An individual subject's criterion
+   error preserves other valid subjects' evaluation. Active MCP containers and exact-match
+   `(server, tool, resolved_arguments)` evidence are reused within the invocation.
 7. **Given** incomplete required evidence or completeness that neither the tool contract nor response establishes,
-   **When** evidence is checked, **Then** the affected control reports ERROR before selection or criterion evaluation,
-   with no subject verdicts. Other controls continue. Empty data with unknown completeness is not NOT_APPLICABLE.
+   **When** evidence is checked, **Then** the affected control fast-fails and reports ERROR before subsequent evidence
+   calls, selection, or criterion evaluation, with no subject verdicts. Other controls continue. Empty data with unknown
+   completeness is not NOT_APPLICABLE.
 8. **Given** a response with structured content and text, **When** evidence is converted, **Then** structured content
    is authoritative. Without it, exactly one text block containing a complete valid JSON value is accepted.
    Unsupported payloads, malformed JSON, and tool-reported errors remain errors rather than evidence.
-9. **Given** the three reference pull-request results, **When** `result_filter=all`, **Then** all three subject results
-   are returned; with `violations` or an omitted filter, only 102 and 103 appear as findings. Errors remain visible
-   and distinguishable under either filter.
+9. **Given** the three reference pull-request results, **When** `result_filter=all`, **Then** all subject results
+   (`COMPLIANT`, `NON_COMPLIANT`, and `ERROR`) are returned in `ControlResult.subjects`; with `violations` or an omitted
+   filter, `ControlResult.subjects` contains only `NON_COMPLIANT` findings (`102` and `103`). `ControlResult.errors`
+   retains all control and subject errors under either filter.
 10. **Given** an error-free execution with at least one evaluated subject, **When** results are returned,
     **Then** there is no aggregate COMPLIANT or NON_COMPLIANT state. An empty violations list after evaluating only
     compliant subjects does not become NOT_APPLICABLE. Any subject error produces global control ERROR.
-11. **Given** independent subjects evaluated together using one semantic criterion, **When** a batch response is
-    processed, **Then** each judgment uses only its own subject inputs and maps unambiguously to that subject.
-    Missing, conflicting, or unusable responses produce errors; valid mappings are preserved. A failed batch errors
-    its affected subjects and does not stop other independent controls.
+11. **Given** independent subjects using one semantic criterion, **When** each singleton model response is processed,
+    **Then** its judgment uses only that subject's inputs and maps unambiguously through its correlation token.
+    Missing, conflicting, or unusable responses error the affected subject; other subjects and controls continue.
 12. **Given** equivalent direct CLI and programmatic service requests, **When** they finish, **Then** their structured
     results, parameter validation, filtering, and error semantics agree.
+13. **Given** resolved invocation values and declared defaults, **When** a control result is returned under either
+    filter, **Then** it includes the executed control's `source` and its own effective `parameters`, including for
+    `ERROR` and `NOT_APPLICABLE`. Construction-only values and other controls' parameters are excluded.
 
 ### User Story 4 - Inspect Diagnostic Traces (Priority: P1)
 
@@ -211,6 +232,11 @@ evaluation, and verify attribution, intermediate data, and required redaction.
 6. **Given** an unknown, missing, deleted, malformed, or inaccessible trace resource, **When** a client reads it,
    **Then** the service returns a resource error without exposing arbitrary files. Trace-write failures remain visible
    through existing error semantics; deriving a URI does not guarantee that its trace is available.
+7. **Given** calculated evaluation results, **When** writing their trace fails, **Then** the response preserves those
+   results, appends a global `TRACE_WRITE_FAILED` error, and the CLI exits with code `1`. Subject states and control
+   outcomes are not rewritten solely because diagnostics could not be saved.
+8. **Given** a guided check that fails before execution, **When** its error is returned, **Then** the client retains
+   the check's invocation ID, returns `results: []`, and attempts to save its pre-execution stage trace.
 
 ### Edge Cases
 
@@ -282,7 +308,9 @@ contracts use FR-038 through FR-047.
   operation and returned `invocation_id`, using the operation contract's templates without an additional trace field.
   Resolve persisted traces through `PolicyService.read_trace` (designed for MCP `resources/read`), returning sanitized
   InvocationTrace JSON (`application/json`) without model or evidence calls. Surface trace-write failures through
-  existing error semantics. Unknown, missing, deleted, malformed, or inaccessible resources MUST produce resource
+   existing error semantics. For execution, retain calculated results and append a global `TRACE_WRITE_FAILED` error
+   with CLI exit `1`; do not rewrite compliance states. Unknown, missing, deleted, malformed, or inaccessible resources
+   MUST produce resource
   errors.
 - **FR-011**: Persist source interactions, intermediate data, results, and errors in readable, machine-reusable form,
   with credential and personal-data redaction. Distinguish creation model interactions from semantic evaluation.
@@ -293,30 +321,49 @@ contracts use FR-038 through FR-047.
   attribute `projection`. Execution MUST evaluate only the supplied controls without repeating policy analysis.
 - **FR-013**: Each evidence declaration MUST identify its evidence, configured server, tool, and invocation arguments.
   Credentials and connection settings remain external. Prefer structured response content; otherwise accept exactly
-  one text block whose entire text is valid JSON. Unsupported content or tool-reported errors MUST stop the affected
-  control before selection and criterion evaluation. Do not extract embedded JSON from prose or Markdown.
-- **FR-014**: Validate explicit invocation values and declared defaults against parameter declarations, configured
-  scope, and permissions before evidence acquisition. Missing required values for any supplied control MUST reject
-  the entire invocation and identify all missing values, their semantics, and affected `control_id`s. Execution MAY use
-  valid values different from construction inputs without recreating controls.
-- **FR-015**: Selection MUST return a JSON object or collection of objects with `id` and `descriptive_id` per subject.
-  No result or an empty collection yields NOT_APPLICABLE; root null is ERROR. Null fields within valid subjects are
-  allowed. Evaluate valid subjects even alongside invalid objects; report invalid objects without invented IDs or
-  implicit scalar wrapping. An invalid-only collection is ERROR and invokes no criterion.
-- **FR-017**: Results and errors MUST identify the executed control definition by `control_id`, source provenance,
-  resolved invocation inputs, and evaluated subjects. Violations MUST identify their subjects unambiguously. Revision
-  identifiers, file paths in service responses, generated explanations, and remedies are not required.
-- **FR-018**: After request validation, source unavailability, conversion, selection, and criterion failures MUST be
-  reported for the affected control while remaining independent controls continue. Required evidence that is
-  incomplete or not established as complete by the tool contract or response MUST cause ERROR before selection and
-  criterion evaluation, without subject verdicts. Preserve valid results and all errors; never classify technical
-  failures as non-compliance or inapplicability. No automatic pagination or invocation-wide source-abort exception.
-- **FR-019**: One declared criterion MUST be reused independently for every subject. Boolean true and false map to
-  COMPLIANT and NON_COMPLIANT; non-boolean results and technical failures map to ERROR.
+  one text block whose entire text is valid JSON. Within a single `PolicyService.execute` invocation, keep started MCP
+  server containers alive across controls and cache valid responses in memory by exact `(server, tool,
+  resolved_arguments)`. If any evidence declaration in a control fails validation, acquisition, conversion, or
+  completeness, fast-fail that control immediately without calling its remaining evidence declarations, selection, or
+  criterion. Do not extract embedded JSON from prose or Markdown.
+- **FR-014**: During pre-flight request validation (`Stage E0`), validate that `controls` is nonempty, `control.id`s are
+  unique, shared parameter declarations across supplied controls are compatible, and explicit invocation values and
+  declared defaults satisfy parameter declarations (`value_schema`) before any evidence acquisition. Missing required
+  values for any supplied control MUST reject the entire invocation and identify all missing values, their semantics,
+  and affected `control_id`s. Extra parameter keys in `request.parameters` not declared by any supplied control MUST be
+  permitted, passing each control only the subset of resolved parameters declared in its own `control.parameters`.
+  Per-control evidence profile, tool allowlist, `arguments_schema`, `inputSchema`, and expression errors are isolated
+  per
+  control in `Stages E1–E3`.
+- **FR-015**: Selection MUST return a JSON object or collection of objects with non-empty, non-whitespace string `id`
+  and `descriptive_id` (`len(s.strip()) > 0`) per subject. No result or an empty collection yields NOT_APPLICABLE; root
+  null is ERROR. Null fields within valid subjects are allowed. Within a control's selection output, subjects with a
+  unique valid `id` MUST be evaluated by `criterion`, whereas invalid objects and subjects sharing a duplicate `id` MUST
+  NOT be evaluated by `criterion`: report invalid objects (`INVALID_SUBJECT`) and duplicate-ID subjects
+  (`DUPLICATE_SUBJECT_ID`, with `subject_id` and `selection_index`) in `errors` without invented IDs or implicit scalar
+  wrapping, and set the control's global `outcome` to `ERROR`. During creation (`selection_tests` and live trials),
+  `DUPLICATE_SUBJECT_ID` also fails selection validation so the constructor repairs accidental Cartesian-product joins.
+- **FR-017**: Every `ControlResult` MUST include `control_id`, the executed definition's `source` provenance, and
+  `parameters` containing only that control's effective invocation values after explicit-value/default resolution.
+  Include these fields for errors and inapplicability under both filters, as well as in the trace. Trace lookup alone
+  does not satisfy attribution. Exclude construction-only values and unrelated request keys; preserve existing privacy
+  safeguards. Errors and violations MUST identify affected controls and subjects where known. Revision identifiers,
+  file paths in service responses, generated explanations, and remedies are not required.
+- **FR-018**: After pre-flight request validation (`Stage E0`), missing/unauthorized evidence profiles, argument-scope
+  violations, source unavailability, conversion, completeness, and whole-selection failures MUST fast-fail the
+  affected control (`outcome: "ERROR"`) while remaining independent controls continue. Individual criterion failures
+  error their subjects and the control outcome while other valid subjects continue. Required evidence that is
+  incomplete or not established as complete by the tool contract or response MUST cause ERROR before remaining evidence
+  calls, selection, and criterion evaluation, without subject verdicts. Preserve valid results and all errors; never
+  classify technical failures as non-compliance or inapplicability. No automatic pagination or invocation-wide
+  source-abort exception.
+- **FR-019**: One declared criterion MUST be reused independently for every valid unique-ID subject. Boolean true and
+  false map to COMPLIANT and NON_COMPLIANT; non-boolean results and technical failures map to ERROR.
 - **FR-021**: Accept invocation-level `result_filter` with `all` and `violations`, defaulting to `violations`.
-  The former returns all subject results; the latter returns NON_COMPLIANT findings. Both MUST retain visible errors
-  distinguished from violations. Subject results contain `id`, `descriptive_id`, and state. Filtering changes neither
-  evaluation nor its status; the filter is not a control setting.
+  `all` returns all evaluated subject results (`COMPLIANT`, `NON_COMPLIANT`, and `ERROR`) in `ControlResult.subjects`;
+  `violations` returns only `NON_COMPLIANT` findings in `ControlResult.subjects`. Both MUST retain all control and
+  subject errors in `ControlResult.errors`. Subject results contain `id`, `descriptive_id`, and state. Filtering changes
+  neither evaluation nor its status; the filter is not a control setting.
 - **FR-022**: Interactive clients MUST show stage progress separately from diagnostic logs and machine-readable output.
 - **FR-023**: Diagnostic records MUST identify components and stages and follow project logging and privacy standards.
 - **FR-024**: Retain creation and semantic-evaluation model interactions as structured samples suitable for prompt
@@ -338,61 +385,93 @@ contracts use FR-038 through FR-047.
 - **FR-034**: Each control MUST declare its deterministic or LLM evaluation mode and criterion. An LLM criterion
   MUST include its semantic condition and why deterministic evaluation is insufficient. Creation trials and later
   execution MUST use that same declared mode.
-- **FR-035**: Semantic evaluations MAY batch independent subjects using the same criterion. Each judgment MUST use
-  only that criterion and its own subject's inputs, with an unambiguous subject-response mapping and no shared verdict.
+- **FR-035**: Semantic evaluations (`mode: llm`) MUST evaluate one valid subject per LLM request
+  (`SemanticCriterionSignature`). The LLM receives only the rendered `condition`, a correlation token (`subject_ref`),
+  and that single `subject` JSON object (never a separate `parameters` dictionary), while `criterion.condition` MAY use
+  `{{parameters.<name>}}` template placeholders that the engine deterministically substitutes with the control's
+  resolved parameter values prior to the LLM call.
 - **FR-036**: Missing, conflicting, ambiguous, non-boolean, or unusable semantic responses MUST produce ERROR for
-  affected subjects. Preserve valid mappings and report unexpected responses as errors. A failed batch errors its
-  affected subjects; other subjects and independent controls continue under FR-018.
-- **FR-037**: Semantic traces MUST identify the criterion, evaluator and available model/version/settings, inputs,
-  responses, batch membership, and subject mapping under existing privacy rules. Results identify the evaluation
-  mode. Internal model reasoning is not required.
-- **FR-038**: Creation MUST derive parameter declarations from the policy, descriptive construction context, and
-  permitted tool capabilities, passing an incremental `SharedParameterCatalog` across rules created from the same
-  policy so shared concepts reuse the same parameter name and compatible `value_schema`. Derive supported construction
-  values without assuming the caller knows parameter names; never invent missing values. Trial inputs MUST NOT silently
-  become invocation defaults. If enabled trials lack required values, fail creation with actionable
-  `MISSING_CONSTRUCTION_CONTEXT` errors describing missing information, semantics/schema, and affected controls, with
-  no reusable controls or implicit trial skipping. Context MUST NOT weaken policy obligations or configured
-  permissions.
-- **FR-039**: The client's local filtering and projection tool MUST deterministically filter YAML controls in
-  `policy.controls_directory` (`--controls-dir`), project the requested control attributes, and when
-  `include_merged_parameters=True` (the default) return the merged shared parameter descriptions (`name`,
-  `value_schema`, `required`, `default`, and referencing `control_id`s with descriptions) without model or evidence
-  calls. `policy_parameters` is not a separate service or MCP operation.
+  affected subjects. Preserve valid mappings and report unexpected responses as errors; other subjects and independent
+  controls continue under FR-018.
+- **FR-037**: Semantic traces MUST identify the rendered criterion, evaluator and available model/version/settings,
+  inputs, responses, and subject mapping under existing privacy rules. Results identify the evaluation mode. Internal
+  model reasoning is not required.
+- **FR-038**: Creation MUST derive only the minimum necessary parameter declarations from the policy, descriptive
+  construction context, and permitted tool capabilities across all creation stages (evidence/parameters, selection,
+  criterion, and correction), allowing controls with zero parameters (`parameters: {}`) when none are required and
+  passing an incremental `SharedParameterCatalog` across rules created from the same policy. Two parameters share the
+  same name in `SharedParameterCatalog` only when their `value_schema`, `construction_value`, and `default` are
+  compatible/identical; if any of those differ despite similar semantics, the constructor MUST either align to the
+  existing catalog entry or declare a distinct parameter name. Declarations already shared with other rules MUST remain
+  immutable through later stages and retries; failed candidate changes MUST NOT alter them. Step 0 and Phase A use only
+  local `policy.evidence_profiles` (`arguments_schema` and `contract_reference`) for every trial setting, without MCP
+  startup, connection, or tool discovery. When `trial_attempts == 0`, `construction_value` is optional and no MCP access
+  occurs anywhere in creation. When `trial_attempts > 0`, creation first runs Step 2.1 across all rules to collect and
+  return
+  all missing required `construction_value`s (`MISSING_CONSTRUCTION_CONTEXT`) and affected `control_id`s at once before
+  invoking any MCP server. Only after Phase A succeeds may it discover live `inputSchema` and call evidence tools in
+  Phase B, which fails fast as soon as any rule exhausts its attempts.
+- **FR-039**: The client's local filtering and projection tool (`ClientControlQuery`) MUST deterministically filter YAML
+  controls in `policy.controls_directory` (`--controls-dir`), combining distinct filter fields with logical **AND** and
+  multi-value list fields (`ids`, `policy_ids`, `rule_ids`, `tags`, `parameter_names`, `files`) with logical **OR**,
+  failing the call immediately if any encountered control YAML file is malformed (`INVALID_CONTROL_FILE`), projecting
+  the requested control attributes, and when `include_merged_parameters=True` (the default) returning the merged shared
+  parameter descriptions (`name`, `value_schema`, `required`, `default`, and referencing `control_id`s with
+  descriptions) without model or evidence calls. `policy_parameters` is not a separate service or MCP operation.
 - **FR-040**: Same-name parameters MUST denote the same shared input across selected controls and use one resolved
   invocation value. An explicit value overrides its declared default. Without an explicit value or applicable declared
-  default, the parameter is missing. Construction values MUST NOT silently become defaults.
-- **FR-041**: `PolicyService.create` MUST return structured `ControlDefinition` objects directly. The client MAY
-  serialize and save them as `<id>.yaml` files in `policy.controls_directory` (or `--output-dir`) for manual inspection
-  and later selection; managing that client directory is not the service's responsibility.
+  default, the parameter is missing. Construction values MUST NOT silently become defaults. Extra keys in
+  `request.parameters` not declared by any supplied control are ignored at request level; each control receives only the
+  resolved parameters declared in its own `control.parameters`.
+- **FR-041**: `PolicyService.create` MUST return structured `ControlDefinition` objects directly, assigning each control
+  a deterministic kebab-case slug `id` (`f"{policy_id}-{rule_id}"`, or `rule_id` if already prefixed with
+  `f"{policy_id}-"`, unique within the creation output). The client MAY serialize and save them as `<id>.yaml` files in
+  `policy.controls_directory` (or `--output-dir`) for manual inspection and later selection; managing that client
+  directory is not the service's responsibility. Saving MUST reject existing target files with `CONTROL_FILE_EXISTS`
+  (CLI exit `1`) and preserve them. Check the complete target set before publishing any file; no overwrite option,
+  silent replacement, or automatic renaming is provided.
 - **FR-042**: Empty control lists, duplicate `control_id`s in an execution request, unreadable or malformed client YAML
-  files, empty client filter matches, and incompatible same-name parameter declarations MUST produce explicit input
-  errors before evidence acquisition. Both the client's `include_merged_parameters` aggregation and
-  `PolicyService.execute` validation MUST expose declaration conflicts rather than inventing semantics or choosing
+  files, empty client filter matches (`NO_CONTROLS_MATCHED`), and incompatible same-name parameter declarations MUST
+  produce explicit input errors before evidence acquisition. Both the client's `include_merged_parameters` aggregation
+  and `PolicyService.execute` validation MUST expose declaration conflicts rather than inventing semantics or choosing
   between inconsistent defaults.
 - **FR-043**: `ControlDefinition` MUST include `tags: list[str]`. During creation, the constructor MUST generate
   relevant tags from the policy and `construction_context` and merge any explicit `tags` supplied in the creation
   request.
 - **FR-044**: Creation MUST first decompose the policy into atomic normative rules before constructing controls one by
   one. Two obligations MUST be split into separate rules whenever they can fail independently and a user needs to know
-  which condition failed, or whenever the policy author would consider them distinct violations.
+  which condition failed, or whenever the policy author would consider them distinct violations. If decomposition
+  extracts zero normative obligations from `policy_text`, creation MUST fail with `NO_NORMATIVE_RULES` (`stage:
+  "decomposition"`).
 - **FR-045**: During per-rule creation when live trials are enabled (`trial_attempts > 0`), the constructor MAY inspect
-  in-memory evidence fetched with `construction_value` inputs using bounded exploratory JSONata queries governed by
-  configurable `policy.discovery_max_queries` (default 5 queries per control) and `policy.discovery_max_output_bytes`
-  (default 4096 bytes per query output, marked `[TRUNCATED]` when exceeded) instead of injecting raw evidence payloads
-  into LLM prompts.
+  in-memory evidence fetched with `construction_value` inputs using bounded exploratory JSONata queries evaluated over
+  the root context `{"evidence": ..., "parameters": ...}`, governed by configurable `policy.discovery_max_queries`
+  (default 5 queries per control) and `policy.discovery_max_output_bytes` (default 4096 bytes per query output, marked
+  `[TRUNCATED]` when exceeded). Failed or `missing` exploratory queries return their error/missing observation within
+  the query budget so the constructor can refine the next query, and the loop closes early as soon as sufficient
+  information is obtained (`done=True`).
 - **FR-046**: Creation MUST generate, execute, and persist synthetic unit tests in `ControlDefinition.test_cases` for
-  every control: `selection_tests` (testing `selection` against synthetic `mock_evidence` for both populated subjects
-  and `NOT_APPLICABLE` cases) and `criterion_tests` (testing `criterion` against synthetic `Subject` objects for at
-  least one `COMPLIANT` and one `NON_COMPLIANT` case). These unit tests MUST pass during creation even when
-  `trial_attempts=0`.
-- **FR-047**: `vatuta policy check "<prompt>"` MUST execute a guided 2-step LLM flow on the client: Step 1 uses the
-  local `ClientControlQuery` tool with lightweight projection (`["id", "description", "tags", "source"]`), bounded by
-  configurable `policy.check_max_filter_queries` (default 3 queries) and `policy.check_max_output_bytes` (default 4096
-  bytes per query output, marked `[TRUNCATED]` when exceeded), to select applicable `control_id`s, followed by
-  deterministic client loading of those controls with `projection=["full"]` and `include_merged_parameters=True`; Step
-  2 extracts explicit parameter values from the user's prompt against `merged_parameters` (without inventing missing
-  values) before invoking `PolicyService.execute`.
+  every control: `selection_tests` (normalizing single-object JSONata output to a 1-element list before comparing
+  against `expected_subjects`, rejecting duplicate subject IDs with `DUPLICATE_SUBJECT_ID`, and testing
+  `NOT_APPLICABLE` cases) and `criterion_tests` (testing `criterion` against synthetic `Subject` objects for at least
+  one `COMPLIANT` and one `NON_COMPLIANT` case, invoking CEL for `mode: deterministic` and the semantic LLM evaluator
+  with `{{parameters.<name>}}` template substitution for `mode: llm`). Unit test parameter resolution follows explicit
+  `test_case.parameters` -> `default` -> `construction_value` precedence. These unit tests MUST pass during creation
+  even when `trial_attempts=0`. When `trial_attempts > 1` and a rule fails in Steps 2.2–2.4, bounded repair re-executes
+  from Step 2.1 carrying the full accumulated context of all prior stages and reusing in-memory fetched MCP evidence
+  whenever `evidence` declarations and resolved arguments are unchanged.
+- **FR-047**: `vatuta policy check "<prompt>"` MUST execute a guided 2-step LLM flow on the client associated with a
+  single execution `invocation_id` trace (`vatuta://traces/policy/execution/{invocation_id}`): Step 1 iteratively
+  queries the local `ClientControlQuery` tool with lightweight projection (`["id", "description", "tags", "source"]`),
+  bounded by configurable `policy.check_max_filter_queries` (default 3 queries) and `policy.check_max_output_bytes`
+  (default 4096 bytes per query output, marked `[TRUNCATED]` when exceeded, exiting early when `done=True`), to select
+  applicable `control_id`s (failing with `NO_CONTROLS_MATCHED` if none match), followed by deterministic client loading
+  of those controls with `projection=["full"]` and `include_merged_parameters=True`; Step 2 is skipped when
+  `merged_parameters` is empty (`parameters={}`) and otherwise extracts explicit parameter values from the user's prompt
+  against `merged_parameters` (without inventing missing values) before invoking `PolicyService.execute` under the same
+  `invocation_id`. An internal invocation context establishes the identifier before Step 1 and is shared with execution;
+  public request schemas remain unchanged. Failures before execution return that identifier, `results: []`, and errors,
+  and attempt to retain the same stage trace.
 
 ### Key Entities
 
@@ -449,11 +528,12 @@ contracts use FR-038 through FR-047.
 - **SC-007**: Empty-selection, root-null, mixed valid/invalid, invalid-only, null-field, and all-compliant fixtures
   distinguish errors, inapplicability, and an empty filtered findings list without invented identifiers or verdicts.
 - **SC-008**: Controls for a deterministic rule and a semantic-only rule execute in their declared modes. Controlled
-  true, false, and failed semantic judgments map to the correct subjects and outcomes, individually or in batches.
+  true, false, and failed singleton semantic judgments map to the correct subjects and outcomes.
   Deterministic failures never trigger semantic evaluation.
 - **SC-009**: Every reference creation and execution, successful or failed, retains attributable diagnostic artifacts
   with required redaction. Semantic cases include evaluator and subject-response attribution; traces do not expire
-  automatically based on age.
+  automatically based on age. A trace-write failure retains calculated execution results and produces a global error
+  with exit code `1`. Results carry their own provenance and effective parameters without requiring trace retrieval.
 - **SC-010**: Direct CLI (`vatuta policy execute`), guided 2-step prompt CLI (`vatuta policy check "<prompt>"`), and
   programmatic `PolicyService` calls produce consistent parameter validation, missing-input diagnostics, subject
   findings, and errors. A client can save, filter, project, and inspect controls in `policy.controls_directory`
@@ -574,3 +654,105 @@ contracts use FR-038 through FR-047.
      `projection=["full"]` and `include_merged_parameters=True`.
   2. **Step 2 (Parameter Extraction)**: A dedicated DSPy signature receives the user's prompt and `merged_parameters`
      and extracts explicit parameter values before calling `PolicyService.execute`.
+
+### Session 2026-11-08 — Step-by-Step Creation Pipeline Contracts & Edge Cases
+
+- **Tool Catalog (Step 0; clarified on 2026-11-11)**: Creation uses local `policy.evidence_profiles`
+  (`arguments_schema` and `contract_reference`) for every trial setting. Live discovery and schema validation occur
+  only after Phase A succeeds, and only with enabled trials.
+- **Deterministic `ControlDefinition.id` & Zero Normative Rules (Step 1)**:
+  - `ControlDefinition.id` is a deterministic kebab-case slug `f"{policy_id}-{rule_id}"` (or `rule_id` if already
+    prefixed with `f"{policy_id}-"`, deduplicated if needed), not an opaque UUID.
+  - If policy decomposition extracts zero normative obligations, creation fails with `NO_NORMATIVE_RULES` (`stage:
+    "decomposition"`).
+- **Two-Phase Rule Orchestration (Collect-All Missing Context vs. Fail-Fast Execution)**:
+  - **Phase A (Step 2.1 across all rules `r_1..r_N`)**: Run `RuleEvidenceAndParametersSignature` across all rules first
+    with the incremental `SharedParameterCatalog`. When `trial_attempts > 0`, aggregate and return all
+    `MISSING_CONSTRUCTION_CONTEXT` errors and affected `control_id`s across all rules in a single response before
+    calling any MCP server.
+  - **Phase B (Steps 2.2–2.5 per rule with Fail-Fast)**: Run discovery, selection, criterion, and bounded retries rule
+    by rule; abort immediately (Fail-Fast) as soon as a rule fails definitively after exhausting its attempts.
+- **Parameter Creation Across All Stages & `SharedParameterCatalog` Compatibility**:
+  - Any creation stage (`2.1`, `2.3`, `2.4`, `2.5`) may declare parameters. When `trial_attempts == 0`,
+    `construction_value` is optional. When `trial_attempts > 0`, a newly added parameter in `2.3`/`2.4` lacking both
+    `default` and `construction_value` enters bounded retry first (in case a policy-derived `default` was intended) and
+    otherwise fails with `MISSING_CONSTRUCTION_CONTEXT`.
+  - Two parameters share a name in `SharedParameterCatalog` only if `value_schema`, `construction_value`, and `default`
+    match; if any differ despite similar semantics, it is treated as a distinct parameter (either align to the catalog
+    or use a different parameter name).
+- **JSONata Discovery Loop (Step 2.2)**: Evaluates queries over the root context `{"evidence": ..., "parameters": ...}`,
+  returns syntax/runtime errors or `missing` as observations within the `discovery_max_queries` budget so the model can
+  refine the next query, and supports early loop termination (`done=True`) without exhausting all 5 queries.
+- **Synthetic Unit Tests Execution (`selection_tests` & `criterion_tests` — Steps 2.3 & 2.4)**:
+  - Normalize single-object JSONata selection results to a 1-element list `[obj]` before comparing with
+    `expected_subjects`.
+  - Resolve unit-test parameters with precedence: `1. test_case.parameters` -> `2. default` ->
+    `3. construction_value`.
+  - Execute `criterion_tests` with CEL for `mode: deterministic` and by calling the LLM (`SemanticCriterionSignature`)
+    for `mode: llm` (including when `trial_attempts == 0`).
+- **Full-Context Retry & In-Memory Evidence Cache (Step 2.5)**: When `trial_attempts > 1` and a stage fails, retry
+  re-runs from Step 2.1 carrying the full accumulated context and errors from all prior stages, while reusing cached
+  in-memory MCP evidence whenever `(server, tool, resolved_arguments)` have not changed.
+
+### Session 2026-11-10 — Step-by-Step Execution Pipeline Contracts & Edge Cases
+
+- **`vatuta policy check` Iterative Rule Selection, Parameter Short-Circuit & Unified `invocation_id` Trace**:
+  - Step 1 (`PolicyCheckRuleSelectionSignature`) runs an iterative loop (up to `policy.check_max_filter_queries`,
+    default 3, truncated to `policy.check_max_output_bytes`, default 4096 bytes) that either queries
+    `ClientControlQuery` or sets `done=True` with `selected_control_ids`. If no controls match (`selected_control_ids ==
+    []`), fail immediately with `NO_CONTROLS_MATCHED` (exit code `2`) without calling `execute`.
+  - Creation and execution follow a **parameter minimization principle**: controls declare only the minimum necessary
+    parameters (`parameters: {}` is valid). In `policy check` Step 2, if `merged_parameters` is empty, skip the Step 2
+    LLM call completely (`parameters={}`).
+  - Steps 1 and 2 of `vatuta policy check` are associated with the same `invocation_id` as the execution call and
+    recorded as pre-execution stages (`check_rule_selection`, `check_parameter_extraction`) in
+    `vatuta://traces/policy/execution/{invocation_id}`.
+- **`ClientControlQuery` Boolean Semantics & Malformed YAML Guard**:
+  - Combine distinct filter fields with logical **AND**, and combine multiple values within a list field (`ids`,
+    `policy_ids`, `rule_ids`, `tags`, `parameter_names`, `files`) with logical **OR**.
+  - Fail the `ClientControlQuery` call immediately (`INVALID_CONTROL_FILE`, exit code `2`) if any encountered YAML
+    control file is malformed or fails schema validation.
+- **Pre-Flight (`Stage E0`) vs. Per-Control (`Stages E1–E3`) Validation Boundary & Extra Parameter Keys**:
+  - `Stage E0` (whole-request pre-flight) validates only nonempty unique `controls`, shared parameter declaration
+    compatibility across supplied controls, presence of all required parameters (`MISSING_PARAMETER`), and parameter
+    `value_schema` conformance (`INVALID_PARAMETER_VALUE`). Extra keys in `request.parameters` not declared by any
+    supplied control are allowed, and each control receives only the subset of resolved parameters declared in its own
+    `control.parameters`.
+  - Validating `evidence_profiles`, tool allowlists, `arguments_schema`, discovered `inputSchema`, MCP calls,
+    `complete_when`, and expression syntax/evaluation occurs **per control** in `Stages E1–E3`, isolating failures to
+    the affected control (`outcome: "ERROR"`) while remaining controls continue.
+- **Per-Invocation MCP Container Reuse, Exact-Match Evidence Cache & Control Fast-Fail (`Stage E1`)**:
+  - Keep started `MCPServer` containers alive across controls for the duration of a single `PolicyService.execute`
+    invocation, and cache valid evidence responses in memory keyed by exact `(server, tool, resolved_arguments)`.
+  - If any evidence declaration in a control fails, fast-fail that control immediately without invoking its remaining
+    evidence declarations, `selection`, or `criterion`.
+- **Subject Non-Whitespace IDs & `DUPLICATE_SUBJECT_ID` Handling (`Stage E2` & Creation Step 2.3)**:
+  - Selected subjects require `id` and `descriptive_id` to be non-empty, non-whitespace strings
+    (`isinstance(s, str) and len(s.strip()) > 0`).
+  - Within a control's selection output, subjects with a unique valid `id` are evaluated normally by `criterion`,
+    whereas subjects sharing a duplicate `id` are **not** evaluated by `criterion`, emit `ErrorDetail` with
+    `code="DUPLICATE_SUBJECT_ID"`, `stage="selection"`, `subject_id`, and `selection_index`, and set the control's
+    `outcome` to `"ERROR"` (both at runtime in `execute` and during `selection_tests`/live trials in `create`).
+- **Semantic Criterion (`mode: llm`) Singleton Call & Parameter Template Substitution (`Stage E3`)**:
+  - Evaluate 1 subject per `SemanticCriterionSignature` call; do not pass `parameters` as a separate input dict to the
+    LLM, but allow `criterion.condition` to reference declared parameters via `{{parameters.<name>}}` template
+    placeholders rendered deterministically before calling the LLM.
+- **Result Filtering for `result_filter="violations"` (`Stage E4`)**:
+  - Under `result_filter="violations"`, `ControlResult.subjects` contains **only** `NON_COMPLIANT` subjects; subject
+    and control errors remain in `ControlResult.errors` under both `"violations"` and `"all"`.
+
+### Session 2026-11-11 — Confirmed Technical Review Decisions
+
+- Use a local tool catalog through Step 0 and Phase A. Connect to MCP and discover live tool schemas only after Phase A
+  succeeds when trials are enabled; zero attempts never starts or contacts MCP.
+- Keep parameter declarations already used by other rules immutable. Adapt the current rule or choose a distinct
+  parameter name; later construction and retries cannot invalidate existing shared declarations.
+- Reject existing `<id>.yaml` destinations and preserve them. Check the complete output set before publishing; no
+  overwrite option or automatic renaming is introduced.
+- Include `source` and effective per-control `parameters` in every `ControlResult`, in addition to the trace. The
+  stakeholder explicitly selected self-contained results rather than trace-only attribution.
+- If an execution trace cannot be written, retain calculated results, add a global `TRACE_WRITE_FAILED` error, and
+  return CLI exit `1` without changing subject verdicts.
+- Supply a complete standalone configuration template for the optional blog demo, with all required general settings,
+  explicit LLM bindings, MCP profiles, and control/trace paths. Document values to fill in; credentials stay in `.env`.
+  Reproduction must not require copying a user's personal configuration. This does not add demo dependencies to core CI.

@@ -1,15 +1,16 @@
 # ADR-018: Permit Semantic Criteria Only as a Last Resort
 
 **Date**: 2026-10-22
+**Updated**: 2026-11-11
 **Status**: Accepted — evaluation mode confirmed; lifecycle assumptions removed by ADR-019
 **Feature**: [Policy Validation Engine specification](../../specs/002-policy-checker/spec.md)
 
-## Current Applicability (2026-10-25)
+## Current Applicability (2026-11-11)
 
 Choose deterministic or LLM mode during creation and declare it in YAML. Execution and creation trials follow that
-mode without runtime fallback. Preserve independent semantic judgments, optional batching, attribution, and error
-handling. Approval, publication, revisions, configurable retention, and the source-unavailability abort exception in
-the earlier integration assumptions below are superseded.
+mode without runtime fallback. Preserve independent judgments, attribution, and error handling. FR-035 now requires
+one subject per model call; the batching decisions and rejection of singleton calls below are historical. Approval,
+publication, revisions, configurable retention, and the source-unavailability abort exception are also superseded.
 
 See [ADR-019](adr-019-file-based-policy-operations.md) and the current specification. The sections below
 retain earlier decisions and their original requirement references; only compatible behavior remains active.
@@ -42,9 +43,12 @@ stakeholder interview answers.
 
 - Declare the evaluation mode, semantic condition, and reason deterministic evaluation is insufficient in the control
   proposal. Review and approval precede publication. Execution uses that definition rather than inventing a strategy.
-- A deterministic runtime error remains ERROR; it does not authorize an automatic semantic fallback or expression repair.
-- Acquisition and Selection remain deterministic. Empty/invalid-only selections or evidence failures do not call a model.
-- Boolean true/false maps to COMPLIANT/NON_COMPLIANT. Missing, ambiguous, non-boolean, conflicting, or unusable judgments
+- A deterministic runtime error remains ERROR; it does not authorize an automatic semantic fallback or expression
+  repair.
+- Acquisition and Selection remain deterministic. Empty/invalid-only selections or evidence failures do not call a
+  model.
+- Boolean true/false maps to COMPLIANT/NON_COMPLIANT. Missing, ambiguous, non-boolean, conflicting, or unusable
+  judgments
   are ERROR. The historical fail-safe rule that classified semantic uncertainty as non-compliance is not restored.
 - Retain unambiguous subject results from partial batch responses. Missing or conflicting mappings error their affected
   subjects; unexpected or unassignable responses remain visible as errors. A failed batch errors all affected subjects.

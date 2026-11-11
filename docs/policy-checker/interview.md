@@ -1,17 +1,41 @@
 # Policy Validation Engine: Interview and Decision Record
 
-**Updated**: 2026-10-30
+**Updated**: 2026-11-11
 **Status**: Current scope clarified; earlier answers retained below with supersession
 **Specification**: [spec.md](../../specs/002-policy-checker/spec.md)
 **Design**: [design.md](design.md)
 **Terms and ADR index**: [glossary.md](glossary.md)
 
-## Current Agreement — 2026-10-30
+## Current Agreement — 2026-11-11
+
+The current specification and ADR-019 define the stateless `PolicyService`: creation returns structured
+`ControlDefinition` objects, execution accepts those objects inline, and the client owns YAML storage, filtering,
+parameter merging, and guided checks. The MCP transport is deferred; `policy_parameters` is not a service operation.
+
+The stakeholder explicitly confirmed these six choices during the technical review:
+
+1. Use local evidence profiles through Step 0 and Phase A; start or contact MCP only after Phase A succeeds with
+   enabled trials. Zero attempts never contacts MCP.
+2. Keep declarations already shared with other rules immutable. Adapt the current rule or use a distinct parameter
+   name instead of changing declarations that other rules use.
+3. Reject existing target `<id>.yaml` files and preserve them; do not overwrite automatically or add an overwrite mode.
+4. Include `source` and effective per-control `parameters` in every `ControlResult`, as well as the trace. The user
+   chose self-contained results rather than trace-only provenance.
+5. Preserve calculated execution results when trace writing fails, add a global diagnostic error, and return exit
+   code `1`.
+6. Provide a complete standalone configuration template to reproduce the optional demo from a clean checkout. Include
+   general configuration, LLM bindings, MCP profiles, and control/trace paths; credentials remain in `.env`.
+
+## Historical Agreement — 2026-10-30
+
+The following summary records the earlier agreement. Its service-side file selectors, parameter-discovery operation,
+and YAML-response wording were superseded by the current agreement above and ADR-019.
 
 The stakeholder approved simplifying the existing feature to creation and execution of control files, plus deterministic
 parameter discovery on 2026-10-25, then refined MCP creation inputs on 2026-10-29. Trace resource URIs were agreed on
 2026-10-30. This section and
-[ADR-019](adr-019-file-based-policy-operations.md) supersede incompatible earlier answers below. The current specification
+[ADR-019](adr-019-file-based-policy-operations.md) supersede incompatible earlier answers below. The current
+specification
 is authoritative; older FR/SC/story references describe their earlier revision.
 
 1. MCP creation accepts `policy_text`, optional provenance identifier `policy_id`, optional descriptive
@@ -27,7 +51,8 @@ is authoritative; older FR/SC/story references describe their earlier revision.
 5. Validate all selected controls' mandatory inputs before execution. Missing values reject the complete request with
    their meanings and affected controls, before any evidence acquisition or evaluation.
 6. Creation remains complete-or-error. An unrepresentable obligation fails the whole creation; no reusable partial set
-   is returned. Explicit request `trial_attempts` overrides deployment setting `policy.trial_attempts` for that creation;
+   is returned. Explicit request `trial_attempts` overrides deployment setting `policy.trial_attempts` for that
+   creation;
    when omitted, use deployment configuration, default one.
    Mandatory checks, bounded corrections, and zero-attempt behavior remain. Missing required trial information returns
    actionable `MISSING_CONSTRUCTION_CONTEXT` errors, allowing a new request with expanded context, without inventing

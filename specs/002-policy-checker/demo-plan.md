@@ -1,6 +1,6 @@
 # Temporary Blog Demonstration Plan: GitHub Free & Jira Cloud Free via MCP
 
-**Date**: 2026-11-08
+**Date**: 2026-11-11
 **Feature**: [002-policy-checker](spec.md) | **Master Plan**: [plan.md](plan.md)
 **Target Location (when executed)**: `pocs/policy_demo/` (strictly isolated from `src/`, `tests/`, and CI)
 
@@ -42,7 +42,7 @@ exact `@sha256:...` digests in `pocs/policy_demo/vatuta.demo.yaml` per Vatuta's 
 Store demo credentials exclusively in the local `.env` file at the repository root (git-ignored):
 
 ```dotenv
-# LLM provider already used locally by Vatuta
+# Credentials for the model selected in the standalone demo configuration
 GEMINI_API_KEY="<local-gemini-api-key>"
 
 # GitHub Free fine-grained PAT (Read-only: Metadata, Contents, Pull requests on vatuta-payments-demo)
@@ -58,10 +58,34 @@ READ_ONLY_MODE="true"
 
 ### 2.3 Isolated Demo Configuration (`pocs/policy_demo/vatuta.demo.yaml`)
 
-All provider-specific connection settings and completeness assertions live strictly in
-`pocs/policy_demo/vatuta.demo.yaml`:
+Provide the following complete standalone template as `pocs/policy_demo/vatuta.demo.yaml` during implementation.
+It must not depend on copying a personal configuration or on implicit merging: `--config` loads one complete file.
+Replace `<model-name>` with a Gemini model available to the configured account and replace both `<pinned-digest>`
+values with the verified image digests. Keep actual credentials only in `.env`. Another supported LLM provider can be
+selected by changing the backend model identifier and documenting its required credential variable.
+
+The required `rag`, `qdrant`, and `sources` sections satisfy the existing configuration schema. Policy commands use
+only the selected LLM backend and MCP evidence sources; they must not start RAG ingestion, download embeddings, or
+connect to Qdrant. No Qdrant server is needed for this demo. Source-specific profiles remain isolated here.
 
 ```yaml
+rag:
+  llm_backends:
+    demo:
+      model: "gemini/<model-name>"
+      temperature: 0.2
+      max_tokens: 2000
+  router_backend: "demo"
+  generator_backend: "demo"
+
+qdrant:
+  url: "http://localhost:6333"
+  collection_name: "unused_policy_demo"
+  embeddings_model: "intfloat/multilingual-e5-small"
+  sparse_embeddings_model: "Qdrant/bm25"
+
+sources: {}
+
 mcp_servers:
   github:
     image: "ghcr.io/github/github-mcp-server@sha256:<pinned-digest>"
@@ -95,6 +119,8 @@ mcp_servers:
       - "^jira_search$"
 
 policy:
+  creation_backend: "demo"
+  evaluation_backend: "demo"
   controls_directory: "pocs/policy_demo/controls"
   trace_directory: "logs/policy_demo"
   trial_attempts: 1
@@ -113,6 +139,7 @@ policy:
       complete_when: >-
         arguments.page = 1 and $type(data.items) = "array" and
         $type(data.total_count) = "number" and data.total_count >= 0 and
+        $floor(data.total_count) = data.total_count and $type(data.incomplete_results) = "boolean" and
         data.incomplete_results = false and $count(data.items) = data.total_count
       trace_redact_paths: []
       trace_safe_text_paths: ["/items/*/title", "/items/*/body", "/items/*/html_url"]
@@ -147,14 +174,27 @@ policy:
         ($not($exists(arguments.page_token)) or arguments.page_token = null) and
         ($not($exists(arguments.start_at)) or arguments.start_at = 0) and
         $type(data.issues) = "array" and
+        ($not($exists(data.start_at)) or data.start_at = 0) and
         ($not($exists(data.next_page_token)) or data.next_page_token = null) and
+        $type(data.total) = "number" and $floor(data.total) = data.total and
         ((data.total >= 0 and $count(data.issues) = data.total) or
-         ($count(data.issues) < arguments.limit))
+         (data.total = -1 and $count(data.issues) < arguments.limit))
       trace_redact_paths: []
       trace_safe_text_paths: ["/issues/*/key", "/issues/*/summary", "/issues/*/description"]
 ```
 
 ---
+
+Validate the pinned Jira tool contract before enabling the `total = -1` branch: it is a documented cursor-response
+sentinel, not a general fallback. A known nonnegative total must equal the issue count even when the response is shorter
+than the limit. For example, `issues=[]`, `total=5`, `limit=50` is incomplete and must produce ERROR, never
+NOT_APPLICABLE. Missing/wrong-type totals or unknown pagination semantics fail qualification until the profile has a
+documented positive completeness proof. Exercise these cases using local profile fixtures before taking screenshots.
+
+The standalone template and its setup instructions are planned artifacts, not a claim that policy runtime support or
+live source qualification already exists. Keep the generic loader unchanged; add the approved optional `policy` model
+during production implementation. Document the model ID, pinned images, demo repository/site, and `.env` variable names
+needed to reproduce the run from a clean checkout.
 
 ## 3. Realistic Software Development Scenario (`vatuta-payments-demo` + `PAY`)
 
@@ -334,6 +374,7 @@ are configured:
      side by side with GitHub's Pull Requests list (`PR #1`..`PR #4`) and `main` commit history.
 2. **Screenshot 2 — Natural-Language Policy & Step-by-Step Control Creation**:
    - Display `pocs/policy_demo/policy.md` and run:
+
      ```bash
      poetry run vatuta --config pocs/policy_demo/vatuta.demo.yaml policy create \
        --policy-file pocs/policy_demo/policy.md \
@@ -341,6 +382,7 @@ are configured:
        --construction-context "GitHub repository <owner>/vatuta-payments-demo and Jira project PAY." \
        --tag blog-demo --trial-attempts 1
      ```
+
    - Capture Rich stage progress and the summary of 4 generated controls (`3 deterministic`, `1 llm`, unit tests
      passed).
 3. **Screenshot 3 — Generated Self-Testing YAML Control**:
@@ -348,10 +390,12 @@ are configured:
      `selection`, CEL/`llm` `criterion`, and embedded `test_cases`.
 4. **Screenshot 4 — Natural-Language Compliance Check (`vatuta policy check` — Violations View)**:
    - Run:
+
      ```bash
      poetry run vatuta --config pocs/policy_demo/vatuta.demo.yaml policy check \
        "Check change-governance compliance for GitHub repo <owner>/vatuta-payments-demo and Jira project PAY"
      ```
+
    - Capture Vatuta selecting the 4 controls, extracting parameters, fetching MCP evidence, and rendering actionable
      `NON_COMPLIANT` findings (`PR #2`, `PR #3`, `hotfix` commit) plus `NOT_APPLICABLE` on Rule 4.
 5. **Screenshot 5 — Full Audit View (`--result-filter all`)**:

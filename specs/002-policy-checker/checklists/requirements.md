@@ -2,14 +2,14 @@
 
 **Purpose**: Validate specification completeness and quality before implementation planning
 **Created**: 2026-10-06
-**Updated**: 2026-11-04
+**Updated**: 2026-11-11
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
 
-- [x] No implementation details (languages, frameworks, APIs)
+- [x] Technical constraints are explicit stakeholder decisions, not silently inferred scope
 - [x] Focused on user value and business needs
-- [x] Written for non-technical stakeholders
+- [x] Observable behavior and technical contracts have identifiable authoritative references
 - [x] All mandatory sections completed
 
 ## Requirement Completeness
@@ -17,7 +17,7 @@
 - [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
-- [x] Success criteria are technology-agnostic (no implementation details)
+- [x] Success criteria verify behavior within the approved technical constraints
 - [x] All acceptance scenarios are defined
 - [x] Edge cases are identified
 - [x] Scope is clearly bounded
@@ -28,11 +28,16 @@
 - [x] All functional requirements have clear acceptance criteria
 - [x] User scenarios cover primary flows
 - [x] Feature meets measurable outcomes defined in Success Criteria
-- [x] No implementation details leak into specification
+- [x] Planning details remain in the plan, data model, research, and contracts where practical
 
 ## Validation Notes
 
-- All 16 specification-quality checks pass. This evaluates the specification, not implementation or tool feasibility.
+- Checklist reviewed after the six confirmed 2026-11-11 decisions. This evaluates the documentation, not runtime
+  implementation or source/library qualification. The specification deliberately retains stakeholder-approved
+  Pydantic, MCP, JSONata/CEL, and DSPy constraints rather than claiming to be technology-agnostic.
+- New acceptance scenarios cover local-only creation preflight, immutable shared declarations, non-overwriting saves,
+  self-contained result provenance/parameters, preserved results on trace-write failure, and pre-execution check traces.
+- The optional demo now requires a complete standalone configuration template; it remains outside production and CI.
 - The stateless `PolicyService` contract (`create` and `execute`), step-by-step creation LLM flow (policy
   decomposition, incremental `SharedParameterCatalog`, bounded JSONata evidence exploration, and mandatory persisted
   `selection_tests` and `criterion_tests`), `tags` on `ControlDefinition`, client-side YAML persistence
@@ -67,6 +72,9 @@
 | FR-007, FR-015, FR-019 | Story 3 scenarios 2–5, 10 | SC-005, SC-007, SC-008 |
 | FR-013, FR-018 | Story 3 scenarios 6–8, 11 | SC-006 |
 | FR-017, FR-021, FR-025 | Story 3 scenarios 2, 9–10; Story 4 scenarios 1–2 | SC-005, SC-009 |
-| FR-035, FR-036, FR-037 | Story 3 scenario 11; Story 4 scenario 2 | SC-008, SC-009 |
+| FR-035, FR-036, FR-037 | Story 3 scenario 11 (singleton calls); Story 4 scenario 2 | SC-008, SC-009 |
 | FR-010, FR-011, FR-023, FR-024 | Story 4 scenarios 1–2, 5–6 | SC-009 |
 | FR-022, FR-027 | Story 4 scenarios 3–4 | SC-009, SC-010 |
+| FR-038, FR-041 | Story 1 scenarios 15–17 | SC-001, SC-002, SC-010 |
+| FR-017 | Story 3 scenario 13 | SC-009, SC-010 |
+| FR-010, FR-047 | Story 4 scenarios 7–8 | SC-009, SC-010 |

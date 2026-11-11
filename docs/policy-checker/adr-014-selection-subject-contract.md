@@ -64,13 +64,14 @@ Keep the transformation output explicit and make failures distinguishable from b
 - Positive: Malformed selected objects do not suppress valid subjects' evaluations; errors cannot be mistaken for an
   empty successful selection.
 - Negative: Consumers must handle malformed-object diagnostics separately from identified subject results.
-- Pending: Identifier types, duplicate IDs, and the exact malformed-object diagnostic representation.
-  This ADR does not silently decide those cases or prescribe coercions.
+- Resolved by FR-015 and the current operation contract: non-whitespace string identifiers are required; duplicate-ID
+  subjects are not evaluated and emit `DUPLICATE_SUBJECT_ID` with `subject_id` and `selection_index`. Malformed items
+  emit `INVALID_SUBJECT`; valid unique-ID subjects continue. The engine does not invent or coerce identifiers.
 - [ADR-017](adr-017-partial-subject-errors.md) resolves partial subject errors: continue all subjects, retain their
   results,
   and return global ERROR if any subject fails. The 2026-10-21 update to ADR-017 resolves error-free nonempty execution:
   return individual results without an
-  aggregate global state. Representation details remain pending.
+  aggregate global state. Current response fields are defined in the operation contract.
 - [ADR-003](adr-003-compliance-and-evidence-coverage.md) is superseded because its subject states no longer exist.
 
 ## Related Artifacts
