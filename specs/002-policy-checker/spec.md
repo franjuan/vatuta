@@ -572,10 +572,10 @@ rule IDs, and glob patterns over a nested controls directory, and verify JSON ou
     validation during creation and marks the affected `NON_COMPLIANT` subject as `ERROR`
     (`VIOLATION_MESSAGE_RENDER_ERROR`, setting control `outcome: "ERROR"`) during execution.
 
-**LLM input boundaries**: Keep policy text, user prompts, rule metadata, evidence, and rendered conditions
-in data fields separate from engine instructions. Check that generated source excerpts occur in the submitted policy.
-Validate MCP responses as JSON data and strip scripts from external HTML before sending it to the LLM.
-Send only the data each stage needs.
+- **FR-052 (LLM Input Boundaries & Payload Sanitization)**: Keep policy text, user prompts, rule metadata,
+  evidence, and rendered conditions in data fields separate from engine instructions. Check that generated source
+  excerpts occur in the submitted policy. Validate MCP responses as JSON data and strip scripts from external HTML
+  before sending it to the LLM. Send only the data each stage needs.
 
 #### 5. Observability, Tracing & Privacy
 

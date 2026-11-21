@@ -1,12 +1,3 @@
-<!--
-Sync Impact Report
-- Version change: 2.0.0 → 3.0.0 (major, removes a mandatory security rule)
-- Modified sections: Security, Graceful Degradation
-- Removed requirements: Mandatory external API and LLM rate limits, call budgets, and circuit breakers
-- Updated artifacts: specs/002-policy-checker/plan.md and specs/002-policy-checker/research.md
-- Follow-up TODOs: None
--->
-
 # Vatuta Constitution
 
 **Core Philosophy**: Build the simplest solution that satisfies current requirements and can evolve cleanly later.

@@ -120,7 +120,7 @@ one invocation ID.
 
 ## Constitution Check
 
-Evaluated against [constitution.md](../../.specify/memory/constitution.md) (`v2.0.0`).
+Evaluated against [constitution.md](../../.specify/memory/constitution.md) (`v3.0.0`).
 
 The gate reports **PASS**. Redact credentials and tokens in diagnostics. Ordinary application logs contain
 stage and status information.
@@ -148,7 +148,7 @@ execution contract. The validation plan covers confirmation and selection errors
 
 ```text
 specs/002-policy-checker/
-├── spec.md                # Functional specification (User Stories 1–5, FR-001..FR-051, SC-001..SC-011)
+├── spec.md                # Functional specification (User Stories 1–5, FR-001..FR-052, SC-001..SC-011)
 ├── plan.md                # Schematic implementation, testing, validation, and demo boundary plan
 ├── research.md            # Technical decisions R1–R10 and constitution check
 ├── data-model.md          # Pydantic v2 models, embedded test_cases, ClientControlQuery, config, and transitions
@@ -177,6 +177,7 @@ src/policy/
 ├── expressions.py         # JSONata/CEL boundary adapters, output truncation, deterministic guards
 ├── semantic.py            # Singleton DSPy semantic judgment and strict correlation-token verification
 ├── trace.py               # Sanitized stage artifacts, URI resolution, and metric integration
+├── invocation_context.py  # Per-call internal invocation ID and stage record context
 ├── config.py              # PolicyConfig (controls_directory, query/byte limits, profiles, trace_directory)
 ├── signatures/            # One atomic DSPy Signature class per file
 └── models/                # One JSON-serializable Pydantic v2 model class per file
@@ -184,6 +185,8 @@ src/client/policy.py       # Shared handlers + Typer group (query, create, execu
 src/client/client.py       # Register policy group; skip eager LLM preflight only for policy commands
 src/models/config.py       # Add optional PolicyConfig to VatutaConfig
 src/llm/provider.py        # Selected-backend validation with existing default preserved
+src/utils/logging_config.py # Policy stderr diagnostic routing
+config/logging.yaml        # Centralized logger configuration for policy diagnostics
 src/metrics/policy_metrics.py
 
 skills/vatuta-policy/      # Tracked Agent Skill package (https://agentskills.io/)
@@ -194,6 +197,7 @@ skills/vatuta-policy/      # Tracked Agent Skill package (https://agentskills.io
     └── execute.py         # Select YAML rules (by file, wildcard ID, glob, or filter) and execute with parameters
 
 tests/policy/              # Permanent unit, lightweight contract, and skill/CLI wiring tests (CI)
+├── test_config.py         # PolicyConfig defaults, bounds, and backward-compatibility unit tests
 ├── test_expressions.py    # JSONata envelope, builtin guards, truncation, CEL strict bool/error unit tests
 ├── test_parameters.py     # Shared parameters, defaults vs construction_value, conflict/missing unit tests
 ├── test_files.py          # Safe YAML load/save, nested folders, wildcard IDs, globs, DUPLICATE_CONTROL_ID tests
@@ -203,9 +207,13 @@ tests/policy/              # Permanent unit, lightweight contract, and skill/CLI
 ├── test_semantic.py       # Semantic mode: llm correlation, parameter templates, error-isolation unit tests
 ├── test_agent.py          # Guided 2-step policy check selection and parameter extraction unit tests
 ├── test_trace.py          # Sanitization, redaction, and PolicyService.read_trace unit tests
+├── test_policy_metrics.py # Per-control counters, durations, model/token usage, and error telemetry tests
 ├── test_contracts.py      # Self-contained Pydantic/MCP JSON Schema, reference YAML & boundary contracts
 └── test_skill.py          # Agent Skill SKILL.md frontmatter, PEP 723 metadata, and 3-script parity tests
 tests/client/test_policy.py # CLI query/create/execute/check wiring, exit codes (0/1/2), stdout/stderr separation
+tests/client/test_client.py # Policy-only lazy provider startup and legacy preflight regression tests
+tests/llm/test_provider.py  # Selected-backend validation unit tests
+tests/test_logging_config.py # Centralized stderr routing and logging configuration tests
 tests/fixtures/policy/     # Deterministic provider-neutral JSON/YAML test fixtures (no live SaaS data)
 ```
 
@@ -298,4 +306,4 @@ During implementation, update:
   `docs/policy-checker/adr-019-file-based-policy-operations.md` (documenting `vatuta policy query`, the Agent Skill in
   `skills/vatuta-policy/`, wildcard `--id`, and nested folder selection in simple, schematic English).
 - `config/vatuta.yaml.example` (generic `policy` section).
-- `README.md` and `RELEASE.md` (CLI and Agent Skill usage examples).
+- `README.md`, `RELEASE.md`, and `pyproject.toml` SemVer bump (CLI/Agent Skill usage and lockstep release metadata).
