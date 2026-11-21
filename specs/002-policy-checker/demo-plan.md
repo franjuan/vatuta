@@ -142,7 +142,7 @@ policy:
         $floor(data.total_count) = data.total_count and $type(data.incomplete_results) = "boolean" and
         data.incomplete_results = false and $count(data.items) = data.total_count
       trace_redact_paths: []
-      trace_safe_text_paths: ["/items/*/title", "/items/*/body", "/items/*/html_url"]
+      trace_safe_text_paths: ["/items/0/title", "/items/0/body", "/items/0/html_url"]
 
     github.list_commits:
       contract_reference: "github-mcp-server list_commits page-1 under-limit completeness"
@@ -180,7 +180,7 @@ policy:
         ((data.total >= 0 and $count(data.issues) = data.total) or
          (data.total = -1 and $count(data.issues) < arguments.limit))
       trace_redact_paths: []
-      trace_safe_text_paths: ["/issues/*/key", "/issues/*/summary", "/issues/*/description"]
+      trace_safe_text_paths: ["/issues/0/key", "/issues/0/summary", "/issues/0/description"]
 ```
 
 ---
@@ -304,6 +304,7 @@ Create the repository with three direct linear (non-merge) commits on `main`:
   jira_priority}`.
 - **Evidence Required & Source**: **Both GitHub and Jira** — `github.search_pull_requests` and `jira.jira_search`.
 - **Evaluation Mode**: **Semantic (`mode: llm`)** — `deterministic_insufficiency`: *"Keyword or section-header checks
+- **Semantic projection**: Use `subject_paths: ["/pr_body"]` for rollback and mitigation text.
   cannot distinguish a concrete operational mitigation (feature flags, schema compatibility, safe revert steps) from
   placeholder text such as 'Rollback Plan: TBD'."*
 - **Compliant Scenario**: `PR #1` (`PAY-101`, `High`) specifies feature-flag toggle `PAYMENTS_IDEMPOTENCY_ENFORCE=false`

@@ -134,8 +134,13 @@ Operates over the hierarchical folder tree under `policy.controls_directory` (`-
     - `contract_reference: str`
     - `arguments_schema: dict[str, Any]` (JSON Schema restricting allowed arguments)
     - `complete_when: str` (JSONata boolean expression over `{data, arguments, response}`)
-    - `trace_redact_paths: list[str]` (JSON Pointers to redact)
-    - `trace_safe_text_paths: list[str]` (non-sensitive text paths allowed in traces)
+    - `trace_safe_text_paths: list[str]` (JSON Pointers to text values allowed in traces)
+    - `trace_redact_paths: list[str]` (JSON Pointers to values or subtrees to redact)
+  - Both lists use RFC 6901 JSON Pointer, with explicit array indices and standard `~0` and `~1` escaping.
+    The `*` segment is a literal key. Reject malformed pointers when validating the profile. A valid pointer
+    with no target in a particular response has no effect.
+  - Apply `trace_safe_text_paths` first, then `trace_redact_paths`. Redacting a subtree also hides any allowed
+    values it contains. Credential and token redaction applies regardless of either list.
   - Only strict boolean `True` from `complete_when` proves completeness (`False` -> incomplete `ERROR`; other/missing ->
     unknown completeness `ERROR`).
 
@@ -144,10 +149,16 @@ Operates over the hierarchical folder tree under `policy.controls_directory` (`-
 - **`DeterministicCriterion`**:
   - `{mode: "deterministic", expression: str, violation_message: str}` (CEL over `{subject, parameters}`).
 - **`SemanticCriterion`**:
-  - `{mode: "llm", condition: str, deterministic_insufficiency: str, violation_message: str}`.
-  - Supports `{{parameters.<name>}}` placeholders in `condition`, substituted deterministically before the LLM call.
-  - Evaluates 1 unique-ID valid subject per `SemanticCriterionSignature` call (`{condition, subject_ref, subject}` ->
-    `{subject_ref, verdict: bool}`).
+  - `{mode: "llm", condition: str, deterministic_insufficiency: str, subject_paths: list[str], violation_message: str}`.
+  - `subject_paths` is a required, non-empty list of distinct non-root RFC 6901 pointers relative to the subject.
+    Use explicit array indices and standard escapes. A pointer selects a JSON value. Select a subtree only when
+    the criterion needs it. Apply the same projection in synthetic tests, live trials, and runtime.
+  - Build `subject` as a JSON map keyed by the declared pointers. An absent target yields subject-level
+    `ERROR` before the LLM call. Record `MISSING_SUBJECT_PATH` with stage `criterion`, `subject_id`, and a message
+    containing the pointer. Keep explicit JSON `null`.
+  - Substitute `{{parameters.<name>}}` deterministically. Pass the rendered condition, `subject_ref`, and projected
+    `subject` as separate input fields. Validate a matching token and strict boolean verdict.
+  - Use the original validated subject for deterministic violation message rendering.
 
 ## 7. Service Requests, Results & Traces (`PolicyService`)
 
@@ -168,9 +179,10 @@ Operates over the hierarchical folder tree under `policy.controls_directory` (`-
   descriptive_id?: str, selection_index?: int}`.
   A client `CONTROL_FILE_WRITE_FAILED` error also has `unsaved_paths: list[str]` relative to the output directory.
 - **`InvocationTrace`**: Sanitized JSON trace read via `PolicyService.read_trace(uri)`.
-- **Internal execution context**: Carries the engine-generated `invocation_id` and stage records for one call.
-  Guided `check` initializes it before rule selection and shares it with the core execution path. Direct execution
-  initializes its own context. The context stays outside the public request schema.
+- **Internal invocation context**: Carries the unique `invocation_id` and stage records for one invocation.
+  The outer operation entry point initializes it before validating operation inputs and passes it to delegated
+  handlers and service calls. Guided `check` reuses it for internal queries and execution. Standalone `query`
+  uses it for diagnostics. The context stays outside the public request schema.
 
 ## 8. Processing State Transitions (Schematic)
 
@@ -196,7 +208,7 @@ Operates over the hierarchical folder tree under `policy.controls_directory` (`-
 
 ### B. Guided Check Flow (`vatuta policy check "<prompt>"`)
 
-1. **Allocate Context**: Create shared execution `invocation_id` before Step 1.
+1. **Use Invocation Context**: Start Step 1 with the `invocation_id` allocated at the command entry point.
 2. **Step 1 (`check_rule_selection`)**: The model queries `ClientControlQuery` (default 3 queries, 4096 bytes per
    response). For this invocation, retain the complete `{file: str, id: str}` pairs shown in query responses.
    - `file` is the path relative to `controls_directory` returned by the query. `id` is the corresponding control ID.
@@ -216,16 +228,17 @@ A selection failure returns empty results and the pre-execution trace ID. It ski
 1. **Stage E0 (Whole-Request Pre-Flight)**: Check non-empty unique `controls`, shared parameter compatibility, required
    parameters present (`MISSING_PARAMETER`), and `value_schema` validation (`INVALID_PARAMETER_VALUE`).
 2. **Stage E1 (Per-Control Evidence)**: Reuse started MCP containers and exact `(server, tool, resolved_arguments)`
-   cache across controls. Validate profile, allowlist, schemas, response JSON, and `complete_when == True`. Fast-fail
-   only the affected control on error.
+   cache across controls. Validate profile, allowlist, schemas, response JSON, and `complete_when == True`. Fail the
+   affected control on a tool response or validation error. On required server unavailability, stop work and
+   send completed results and global `MCP_SERVER_UNAVAILABLE` to E4.
 3. **Stage E2 (Per-Control Selection)**: Run JSONata in existence envelope. Empty -> `NOT_APPLICABLE`; root `null` ->
    `ERROR`. Validate non-whitespace `id`/`descriptive_id`. Unique valid `id`s proceed to Stage E3; `INVALID_SUBJECT` and
    `DUPLICATE_SUBJECT_ID` skip Stage E3, record errors, and set control `outcome="ERROR"`.
 4. **Stage E3 (Per-Subject Criterion)**: Run CEL (`deterministic`) or singleton LLM (`llm` with `{{parameters.<name>}}`
    substitution).
 5. **Stage E4 (Filtering & Trace)**: Keep only `NON_COMPLIANT` in `subjects` when `result_filter="violations"` (or all
-   when `"all"`); always keep all `errors`. Save trace; on write failure append global `TRACE_WRITE_FAILED` and exit
-   `1` while preserving `results`.
+   when `"all"`); always keep all `errors`. Attempt trace persistence, including for inline execution and failures.
+   On write failure append global `TRACE_WRITE_FAILED` and exit `1` while preserving results and earlier errors.
 
 ## 9. PolicyConfig (`config/vatuta.yaml`)
 

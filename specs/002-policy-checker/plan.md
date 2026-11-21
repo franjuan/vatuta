@@ -39,12 +39,15 @@
     (`INVALID_PARAMETER_VALUE`, Exit `2`). Allow extra keys in `request.parameters` and pass each control only its own
     declared parameters.
   - **Stages E1–E3 (Per-Control Isolation)**: Reuse started `MCPServer` containers and exact `(server, tool,
-    resolved_arguments)` evidence cache across controls. Fast-fail only the affected control on evidence/completeness
-    errors (`complete_when != True`). Evaluate unique-ID valid subjects via CEL or singleton LLM while reporting
+    resolved_arguments)` evidence cache across controls. Isolate tool and evidence validation errors per control.
+    If a required MCP connection fails, disconnects, or times out, stop pending work and pass completed results
+    and global `MCP_SERVER_UNAVAILABLE` to E4. During creation, stop before repair and save no generated YAML.
+    Evaluate unique-ID valid subjects via CEL or singleton LLM while reporting
     `INVALID_SUBJECT` and `DUPLICATE_SUBJECT_ID` without criterion evaluation.
   - **Stage E4 & Traces**: Filter `subjects` by `result_filter` (`"violations"` vs `"all"`), keep all `errors`, include
-    `source` and effective `parameters` in every `ControlResult`, and save sanitized trace (`TRACE_WRITE_FAILED` keeps
-    `results` and exits `1`).
+    `source` and effective `parameters` in every `ControlResult`, and attempt to save the sanitized trace, including
+    for inline execution and MCP outages. On write failure append `TRACE_WRITE_FAILED`, preserve results and
+    existing errors, and exit `1`.
 - **4. Client Directory Tree, CLI & Agent Skill (`https://agentskills.io/`)**:
   - **Hierarchical Folder Tree**: One `<id>.yaml` per rule under `policy.controls_directory` (`data/controls`,
     overridable via `--controls-dir` or `--output-dir`), supporting nested subfolders per user use case. Pre-check all
@@ -57,14 +60,32 @@
     Duplicate IDs in the matched selection fail with `DUPLICATE_CONTROL_ID` (Exit `2`). Compute `merged_parameters`
     when `include_merged_parameters=True` (default).
     A required declaration without a default forces an explicit invocation value for the whole selection.
-  - **CLI (`vatuta policy ...`)**: `query`, `create`, `execute`, and guided 2-step `check "<prompt>"` (sharing one
-    `invocation_id` trace across rule selection, parameter extraction, and execution).
+  - **CLI (`vatuta policy ...`)**: `query`, `create`, `execute`, and guided 2-step `check "<prompt>"`.
+  - **Invocation identity**: Allocate one unique `invocation_id` per CLI command or Agent Skill script invocation
+    before validating operation inputs. Pass the same ID through shared handlers and the service, including
+    when a script delegates to the CLI. Direct service calls establish a context when called independently.
+    Guided `check` shares its ID across rule selection, internal queries, parameter extraction, and execution.
+    Standalone `query` records its ID in stderr diagnostics on success and failure and keeps its JSON response
+    schema. The deferred MCP transport will allocate one ID per incoming operation call.
   - **Guided Check**: Require confirmation within the query budget. Verify each selected `(file, id)` pair against
     the query results, load only those files, and check their current IDs before merging parameters. Selection
     errors return empty results and a pre-execution trace before any evidence call.
   - **Agent Skill (`skills/vatuta-policy/`)**: Tracked skill package with `SKILL.md` and 3 thin Python scripts in
     `skills/vatuta-policy/scripts/` (`query.py`, `create.py`, `execute.py`) containing **PEP 723 inline script
     metadata** and sharing the exact client handlers with `vatuta policy query|create|execute --format json`.
+
+### LLM input boundaries
+
+- Keep engine-authored DSPy instructions separate from user and external data fields in provider requests.
+- Validate MCP responses as JSON and apply tool-specific validation and completeness checks. Strip scripts
+  from external HTML in the copy projected for the model.
+- Verify generated policy excerpts against their source. Generate and test `subject_paths` for each semantic
+  control. Guided checks use bounded candidate metadata and confirmed parameter declarations.
+- Use the same semantic projection for synthetic tests, live trials, and execution. Mark the subject `ERROR`
+  before the LLM call when a declared path is absent. Record `MISSING_SUBJECT_PATH` at stage `criterion` with
+  the subject ID and missing pointer in `ControlResult.errors`.
+- Save the creation trace before releasing controls to the caller or YAML writer. On failure retain earlier
+  errors and the invocation ID, return `controls: []`, and report `TRACE_WRITE_FAILED`.
 
 ## Technical Context (Schematic)
 
@@ -116,7 +137,9 @@ execution contract. The validation plan covers confirmation and selection errors
 | XVI: Public CLI/config compatibility & `pocs/` isolation | PASS | Adds `vatuta policy` (`query`, `create`, `execute`, `check`) and `skills/vatuta-policy/`; isolates demo in `pocs/policy_demo/`. |
 | XVII: Pragmatic TDD, contract tests & hermetic CI | PASS | Unit-first TDD + lightweight contract tests in CI; minimal integration scope; zero Docker/SaaS dependencies in CI. |
 | XVIII/XIX: Ecosystem reuse & CLI/IDE agnosticism | PASS | Adopts `agentskills.io` + PEP 723 standards in tracked `skills/vatuta-policy/` while keeping `.agents/`/`.cursor/` untracked. |
-| Security & Observability | PASS | Post-design PASS. Redact secrets and keep progress logs separate from JSON output. |
+| Trust boundaries | PASS | Validate external data, separate DSPy instructions, and project inputs per stage. |
+| Observability | PASS | Correlate diagnostics by invocation and redact secrets from traces. |
+| Graceful degradation | PASS | Return a global error on required MCP outages and preserve completed results. |
 | XX: Simple English & complete contracts | PASS | The plan and contracts record the agreed defaults, retry, save, and message behavior. |
 
 ## Project Structure
@@ -214,9 +237,23 @@ pocs/policy_demo/          # Excluded from production package, static gates, and
   exit `1`. Check the same result through the CLI and Agent Skill.
 - **Retries and messages**: Exercise the synthetic failure path at trial settings `0`, `1`, and `>1`. Verify
   message rendering with valid fields, escaped braces, explicit `null`, and subject-level error isolation.
-- **Traces and logs**: Check that a guided call uses one ID across client and service stages. Test trace URI
-  containment and credential redaction. Verify that ordinary logs contain stage and status information,
-  including for MCP subprocess errors, without copying raw diagnostic payloads.
+- **LLM input tests**: Inspect provider requests for separate instructions and data. Check that scripts in
+  external HTML stay out of prompts, plain text remains data, and unused subject fields are excluded. Verify
+  that an invalid policy excerpt fails validation and an absent projected value stops the subject before the call.
+  Assert both result filters retain the same `MISSING_SUBJECT_PATH` diagnostic with the subject ID and pointer.
+- **Creation trace tests**: Force trace writes to fail. Verify the same invocation ID, empty controls, preserved
+  errors, exit code `1`, and an untouched YAML output directory.
+- **MCP failures**: Test connection failure, disconnect, and timeout. Verify partial results, no subsequent calls,
+  and trace finalization. Verify that controls continue after a tool error from a responding server.
+- **MCP startup**: Test digest pinning, tool allowlisting, non-root execution, default-deny network policy,
+  and safe subprocess diagnostics.
+- **Trace paths**: Test JSON Pointer escaping, explicit array indices, and absent targets. Verify that
+  `trace_redact_paths` overrides `trace_safe_text_paths` on overlap and that credentials and tokens stay redacted.
+- **Traces and logs**: Verify independent invocations receive distinct IDs, including successive standalone queries.
+  Check that query diagnostics carry the ID on success and validation failure, and that stdout matches the query
+  response schema. Verify that a script and its delegated handler share one ID and that guided calls reuse their ID
+  for internal queries and service stages. Test trace URI containment and credential redaction. Verify that ordinary
+  logs contain stage and status information, including for MCP subprocess errors, without copying raw payloads.
 - **Lazy startup**: Check that policy query and deterministic execution run without LLM credentials, and existing
   CLI groups still use their normal provider preflight.
 
@@ -243,13 +280,13 @@ pocs/policy_demo/          # Excluded from production package, static gates, and
 
 ### Task Organization Rules for `/speckit-tasks`
 
-1. **Permanent Production Phases (Phases 1–7)**:
+1. **Permanent Production Phases (Phases 1–8)**:
    - Cover `Setup`, `Foundational`, `US1` (Create), `US2` (Search, Merged Parameters & Check), `US3` (Execute), `US4`
      (Traces), `US5` (Agent Skill `skills/vatuta-policy/` & PEP 723 Scripts), and `Polish & Quickstart Validation`
      across `src/`, `skills/vatuta-policy/`, `tests/`, `config/vatuta.yaml.example`, and `docs/`.
    - Follow Pragmatic TDD (unit/contract test tasks before implementation tasks in every phase).
    - Include **zero** references to `pocs/policy_demo/` or live GitHub/Jira accounts.
-2. **Temporary Blog Demonstration Phase (Final Optional Phase — Non-Production / Local Only)**:
+2. **Temporary Blog Demonstration (Phase 9, Optional and Local Only)**:
    - Group all tasks from [demo-plan.md](demo-plan.md) into a final optional phase targeting **only
      `pocs/policy_demo/`**.
 

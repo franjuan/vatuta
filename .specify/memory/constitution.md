@@ -1,12 +1,9 @@
 <!--
 Sync Impact Report
-- Version change: 1.16.0 → 2.0.0 (Major Version Bump)
-- Modified principles & sections:
-  - Retain the pending plain-English and schematic revisions across the constitution.
-  - Security and Observability require redaction of secrets in telemetry, traces, and logs.
-- Added sections:
-  - Principle XX ("Simple English & Schematic Format Without Detail Loss")
-- Removed sections: None
+- Version change: 2.0.0 → 3.0.0 (major, removes a mandatory security rule)
+- Modified sections: Security, Graceful Degradation
+- Removed requirements: Mandatory external API and LLM rate limits, call budgets, and circuit breakers
+- Updated artifacts: specs/002-policy-checker/plan.md and specs/002-policy-checker/research.md
 - Follow-up TODOs: None
 -->
 
@@ -399,9 +396,7 @@ prone to hiding critical requirements inside long paragraphs.*
 6. **LLM Boundaries & Data Minimization**:
    - Strictly separate trusted system prompts from untrusted user/external data to mitigate Prompt Injection.
    - Send only the minimum required data chunks or projections to the LLM.
-7. **Rate Limiting & Graceful Degradation**:
-   - Enforce rate limits, call budgets, and circuit breakers on external API and LLM calls to prevent runaway token or
-     API costs.
+7. **Graceful Degradation**:
    - Degrade gracefully on external service errors instead of crashing.
 8. **Auditability & Safe Telemetry**:
    - Log security-sensitive operations, tool calls, and retrievals with appropriate severity. Redact secrets.
@@ -484,4 +479,4 @@ document it in simple, schematic English without losing detail.
 - **Compliance Review**:
   - All pull requests, code reviews, releases, and CI runs MUST enforce compliance with this Constitution.
 
-**Version**: 2.0.0 | **Ratified**: 2026-09-11 | **Last Amended**: 2026-11-21
+**Version**: 3.0.0 | **Ratified**: 2026-09-11 | **Last Amended**: 2026-11-21

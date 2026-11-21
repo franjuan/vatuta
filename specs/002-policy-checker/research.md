@@ -112,8 +112,8 @@
          2.1 with full accumulated stage context and errors, reusing cached in-memory MCP evidence if bindings did not
          change. Abort creation immediately (Fail-Fast) if any rule exhausts its attempts.
     4. **Runtime Semantic Criterion (`SemanticCriterionSignature`)**:
-       - Evaluate 1 subject per LLM call (`mode: llm`) with correlation token `subject_ref` and deterministic
-         `{{parameters.<name>}}` template substitution in `condition` (no raw `parameters` dict sent to LLM).
+       - Evaluate one subject per call. Resolve `subject_paths` and send only selected values,
+         the rendered condition, and the correlation token.
     5. **Client Guided 2-Step Check (`vatuta policy check "<prompt>"`)**:
        - Share one `invocation_id` trace (`vatuta://traces/policy/execution/{invocation_id}`) across Steps 1, 2, and
          `execute`.
@@ -186,7 +186,8 @@
   - Check `isError` first, prefer `structuredContent`, otherwise parse a single valid JSON text block.
   - Verify completeness via the profile's JSONata `complete_when` expression (`True` = complete; `False` = incomplete
     ERROR; other/missing = unknown completeness ERROR).
-  - Fast-fail the affected control immediately on its first evidence error while other controls continue.
+  - Isolate tool response and evidence validation errors per control. Stop on required MCP server unavailability,
+    keep completed execution results, and report a global failure.
   - Keep `src/policy/` and `tests/policy/` 100% independent of GitHub/Jira; live GitHub/Jira profiles exist only in
     `pocs/policy_demo/`.
 - **Rationale**:
@@ -195,6 +196,9 @@
   - Guessing completeness from short arrays or warning absence (rejected: unsafe when tools omit pagination metadata).
 
 ## R7 — Security, Diagnostics, and Operational Bounds
+
+MCP services own concurrency and blocking. The feature excludes client-side MCP rate limits, call budgets,
+and circuit breakers. Rule YAML access uses no shared locks. Report external service failures as operation errors.
 
 - **Decision**:
   - Reuse Docker `MCPServer` with validated policy profiles. Require the existing read-only root and mounts,
@@ -248,3 +252,13 @@
     `--include-merged-parameters` / `--no-merged-parameters` and `--projection`).
   - Untracked skill in `.agents/skills/` (rejected: `.agents/` is gitignored for personal IDE setup; `skills/` is
     tracked and distributable).
+
+## R10 — LLM Input Boundaries and Semantic Projection
+
+- **Decision**: Keep runtime data in DSPy input fields and verify the boundary in provider requests. Validate
+  MCP values as JSON and strip scripts from external HTML before sending it to the model. Match policy
+  excerpts to the submitted text. Project semantic inputs with explicit JSON Pointers.
+- **Rationale**: Explicit projection is repeatable in synthetic tests, live trials, and execution. The full
+  validated subject remains available for deterministic rendering.
+- **Alternatives considered**: The full subject may expose fields unrelated to the condition. Keyword filters
+  could reject legitimate policy obligations expressed as directives.

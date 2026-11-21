@@ -184,7 +184,7 @@ parameter merging via `ClientControlQuery`, `vatuta policy query`, Skill script 
 As a user or agent, I want to execute selected controls with explicit parameters and get per-control and per-subject
 results and errors by `control_id`.
 
-**Why this priority**: Execution is the core compliance check operation and must isolate runtime failures per control.
+**Why this priority**: Execution must isolate control errors and stop when a required MCP server is unavailable.
 
 **Independent Test**: Execute deterministic and LLM controls via `PolicyService.execute`, `vatuta policy execute`, and
 Skill script 3 against fixed evidence. Verify subject verdicts, filters, and error isolation.
@@ -192,8 +192,8 @@ Skill script 3 against fixed evidence. Verify subject verdicts, filters, and err
 **Acceptance Scenarios**:
 
 1. **Given** valid `ControlDefinition` objects and complete parameters, **When** execution runs, **Then** it fetches
-   each control's evidence, selects subjects, and evaluates `criterion` per subject without re-reading policy text or
-    accessing the local filesystem.
+   each control's evidence, selects subjects, and evaluates `criterion` per subject without reading policy text or
+   rule YAML files. Trace finalization follows FR-010.
 2. **Given** a deterministic control evaluating pull requests `101` (approved issue), `102` (pending issue), and `103`
    (no issue), **When** execution finishes, **Then** results are `COMPLIANT` (no `violation_message`), `NON_COMPLIANT`,
    and `NON_COMPLIANT` with zero LLM calls, and each `NON_COMPLIANT` `SubjectResult` includes an actionable
@@ -209,10 +209,11 @@ Skill script 3 against fixed evidence. Verify subject verdicts, filters, and err
    duplicate `id`s, **When** selection finishes, **Then** valid unique-ID subjects run `criterion`, while invalid
    objects (`INVALID_SUBJECT`) and duplicate-ID objects (`DUPLICATE_SUBJECT_ID` with `subject_id` and
    `selection_index`) skip `criterion`, add errors, and set control `outcome: "ERROR"`.
-6. **Given** multiple controls where one control fails profile validation, MCP connection, completeness, or selection,
-   **When** execution runs, **Then** that control fast-fails with `outcome: "ERROR"` while other controls continue.
-   Started MCP containers and exact `(server, tool, resolved_arguments)` evidence responses are reused within the same
-   execution call.
+6. **Given** multiple controls and one control fails profile validation, receives a tool error from a responding
+   MCP server, or fails completeness or selection, **When** execution runs, **Then** that control returns
+   `outcome: "ERROR"` and the other controls continue. When a required MCP server cannot connect, disconnects, or
+   times out after earlier controls complete, execution stops, returns those completed results and a top-level
+   `MCP_SERVER_UNAVAILABLE` error, and exits with code `1`. Pending controls produce no verdicts.
 7. **Given** incomplete evidence (`complete_when != True`), **When** evidence is checked, **Then** the affected control
    fast-fails with `ERROR` before running remaining evidence calls, selection, or criterion.
 8. **Given** an MCP tool response, **When** evidence is parsed, **Then** structured JSON content is used first;
@@ -268,6 +269,9 @@ errors without building a policy versioning system.
    calculated `results`, adds a top-level `TRACE_WRITE_FAILED` error, and exits with code `1`.
 8. **Given** `vatuta policy check` failing in Step 1 or Step 2 before execution starts, **When** the error is returned,
    **Then** it returns the shared `invocation_id`, `results: []`, and `errors`, and writes the pre-execution trace.
+9. **Given** validated controls ready to save, **When** writing the creation trace fails, **Then** the response
+   returns the same `invocation_id`, `controls: []`, and a top-level `TRACE_WRITE_FAILED` error. The CLI and Skill
+   exit with code `1` and write no generated YAML. If a creation error already exists, keep it in `errors`.
 
 ---
 
@@ -332,9 +336,11 @@ rule IDs, and glob patterns over a nested controls directory, and verify JSON ou
   - Guided `policy check` filter queries: max `policy.check_max_filter_queries` (default 3), each output truncated to
     `policy.check_max_output_bytes` (default 4096 bytes, marked `[TRUNCATED]`). If the model never sets `done=True`
     within that budget, report `CONTROL_SELECTION_INCOMPLETE` (Exit `1`) before execution.
-- **Execution runtime isolation (Exit `1` on errors)**:
-  - Evidence failure, unknown completeness (`complete_when != True`), or root `null` selection fast-fails only the
-    affected control (`outcome: "ERROR"`); other controls keep running.
+- **Execution runtime errors (Exit `1`)**:
+  - A required MCP server connection failure, disconnect, or response timeout stops the operation. Keep results
+    from completed controls, apply the requested result filter, and report a top-level `MCP_SERVER_UNAVAILABLE`.
+  - Tool errors from a responding server, evidence validation failures, incomplete evidence, and root `null`
+    selection fail the affected control (`outcome: "ERROR"`); remaining controls continue.
   - Invalid selected subject (`INVALID_SUBJECT`) or duplicate subject ID (`DUPLICATE_SUBJECT_ID`) skips `criterion` for
     those items, records errors, sets control `outcome: "ERROR"`, and still evaluates remaining valid unique-ID
     subjects.
@@ -395,7 +401,9 @@ rule IDs, and glob patterns over a nested controls directory, and verify JSON ou
     evidence if `(server, tool, resolved_arguments)` did not change.
   - Synthetic test failures use the same configured attempt limit. If no attempt passes, fail the entire creation and
     return `controls: []`; with `trial_attempts == 0`, a failed synthetic test also fails creation.
-  - Live trials pass if error-free, even when results are `NOT_APPLICABLE` or `NON_COMPLIANT`.
+  - Live trials pass if error-free, even for results `NOT_APPLICABLE` or `NON_COMPLIANT`.
+  - Required MCP server unavailability during discovery or live trials stops creation immediately with
+    `MCP_SERVER_UNAVAILABLE` (Exit `1`). Return `controls: []` and write no generated YAML files.
 - **FR-032 (Policy Authority)**: Policy text is the single source of truth. Users may inspect saved `.yaml` files
   manually; no approval workflow, versioning, or diff engine is included.
 - **FR-034 (Criterion & Actionable Violation Message Template Declaration)**: Every control declares `deterministic`
@@ -416,6 +424,7 @@ rule IDs, and glob patterns over a nested controls directory, and verify JSON ou
   - **Phase B (Steps 2.2–2.5 per rule)**: Connect to MCP (only when `trial_attempts > 0`), validate live `inputSchema`,
     and fail fast if any rule exhausts its attempts.
 - **FR-041 (Control IDs & Safe YAML Saving)**:
+  - The feature does not acquire shared locks when reading or writing rule YAML files.
   - Deterministic kebab-case slug: `f"{policy_id}-{rule_id}"` (or `rule_id` if already prefixed, deduplicated).
   - Client saves each control as `<id>.yaml` in `policy.controls_directory` or `--output-dir` (creating missing target
     subfolders).
@@ -502,13 +511,16 @@ rule IDs, and glob patterns over a nested controls directory, and verify JSON ou
   - Keep started MCP containers alive across controls during a single `execute` call and cache valid responses in memory
     by exact `(server, tool, resolved_arguments)`.
   - Accept structured JSON response content first; otherwise accept a single text block containing valid JSON.
-  - Fast-fail the control immediately if any evidence item fails validation, call, parsing, or `complete_when`.
+  - Fast-fail the control on evidence validation, tool response, parsing, or completeness errors.
+  - Fail the operation on required MCP server unavailability as specified in FR-018.
+  - MCP services manage their own concurrency and blocking. Vatuta adds no MCP rate limit, call budget,
+    or circuit breaker for this feature.
 - **FR-014 (Stage E0 Pre-Flight vs Stages E1–E3 Per-Control Validation)**:
   - **Stage E0 (Whole Request)**: Validate non-empty unique `controls`, compatible shared parameters, all required
     parameters present (`MISSING_PARAMETER`), and values matching `value_schema` (`INVALID_PARAMETER_VALUE`). Reject
     entire call on failure before any MCP call.
-  - **Stages E1–E3 (Per Control)**: Isolate profile, allowlist, `arguments_schema`, live `inputSchema`, MCP,
-    `complete_when`, selection, and criterion errors to the affected control (`outcome: "ERROR"`).
+  - **Stages E1–E3 (Runtime)**: Isolate profile, allowlist, schema, tool response, completeness, selection,
+    and criterion errors to the affected control or subject. Apply FR-018 on required MCP server unavailability.
 - **FR-015 (Subject Selection & Duplicate ID Guard)**:
   - Selection output (object normalized to 1-item list, or list of objects) requires non-empty, non-whitespace string
     `id` and `descriptive_id` (`len(s.strip()) > 0`).
@@ -519,9 +531,15 @@ rule IDs, and glob patterns over a nested controls directory, and verify JSON ou
   - Every `ControlResult` (including `ERROR` and `NOT_APPLICABLE`, under any `result_filter`) MUST include
     `control_id`, `source` (`{policy, rule, excerpt}`), and `parameters` (only that control's effective resolved values,
     excluding `construction_value` and other controls' parameters).
-- **FR-018 (Runtime Failure Isolation)**: After `Stage E0`, control or subject failures never abort other independent
-  controls or other valid subjects within the same control. Incomplete evidence (`complete_when != True`) causes control
-  `ERROR` with zero subject verdicts.
+- **FR-018 (Runtime Failure Isolation & MCP Unavailability)**:
+  - A required MCP server is unavailable when its connection cannot be established, the transport disconnects,
+    or a response times out. Stop the operation on that failure and report a top-level `MCP_SERVER_UNAVAILABLE`
+    error identifying the server. Skip pending controls and further evidence or criterion calls.
+  - For `execute` and the execution stage of `check`, keep results from completed controls under the requested
+    `result_filter`, save the failure in the execution trace, and return exit code `1` from the CLI or Skill.
+    When no control has completed, return `results: []`.
+  - Control and subject failures from other causes stay isolated. Incomplete evidence (`complete_when != True`)
+    yields a control-level `ERROR` with zero subject verdicts.
 - **FR-019 (Criterion Evaluation & Violation Message Rendering)**: Evaluate one criterion independently per valid
   unique-ID subject (`true` -> `COMPLIANT`, `false` -> `NON_COMPLIANT`, non-boolean/error -> `ERROR`). When a subject is
   `NON_COMPLIANT`, deterministically render `criterion.violation_message` with that subject's data context (and the
@@ -530,9 +548,13 @@ rule IDs, and glob patterns over a nested controls directory, and verify JSON ou
 - **FR-021 (Result Filter)**: `result_filter` accepts `"violations"` (default: `ControlResult.subjects` has only
   `NON_COMPLIANT`) or `"all"` (`subjects` has `COMPLIANT`, `NON_COMPLIANT`, and `ERROR`). `ControlResult.errors` retains
   all errors under both filters.
-- **FR-035 (Singleton Semantic Evaluation & Parameter Templates)**: `mode: llm` evaluates 1 subject per
-  `SemanticCriterionSignature` call, passing rendered `condition`, `subject_ref`, and `subject` (no raw `parameters`
-  dict), substituting `{{parameters.<name>}}` placeholders in `condition` deterministically before the LLM call.
+- **FR-035 (Singleton Semantic Evaluation & Parameter Templates)**: Each `mode: llm` criterion declares
+  `subject_paths` as RFC 6901 JSON Pointers to values needed by its condition. Creation stores and verifies
+  the projection in criterion tests. Each call sends the rendered condition with deterministic
+  `{{parameters.<name>}}` substitution, `subject_ref`, and the projected values.
+  A missing target yields subject-level `ERROR` before the call. Add `MISSING_SUBJECT_PATH` at stage `criterion`
+  to `ControlResult.errors` with `subject_id` and the missing pointer in the message. Both filters retain the error.
+  Keep explicit JSON `null` values.
 - **FR-036 (Semantic Error Handling)**: Missing, mismatched `subject_ref`, ambiguous, or non-boolean LLM outputs mark
   only the affected subject as `ERROR`.
 - **FR-051 (Safe Format-String Template for Violation & Remediation Messages)**:
@@ -550,6 +572,11 @@ rule IDs, and glob patterns over a nested controls directory, and verify JSON ou
     validation during creation and marks the affected `NON_COMPLIANT` subject as `ERROR`
     (`VIOLATION_MESSAGE_RENDER_ERROR`, setting control `outcome: "ERROR"`) during execution.
 
+**LLM input boundaries**: Keep policy text, user prompts, rule metadata, evidence, and rendered conditions
+in data fields separate from engine instructions. Check that generated source excerpts occur in the submitted policy.
+Validate MCP responses as JSON data and strip scripts from external HTML before sending it to the LLM.
+Send only the data each stage needs.
+
 #### 5. Observability, Tracing & Privacy
 
 - **FR-010 (Trace Directories & Resource URIs)**:
@@ -559,6 +586,9 @@ rule IDs, and glob patterns over a nested controls directory, and verify JSON ou
     - Execution: `vatuta://traces/policy/execution/{invocation_id}`
   - Read via `PolicyService.read_trace(uri)` returning sanitized `InvocationTrace` JSON.
   - If writing an execution trace fails, keep calculated `results`, append global `TRACE_WRITE_FAILED`, and exit `1`.
+  - Creation must save its trace before returning controls or writing YAML. On trace write failure, return the
+    same `invocation_id` and `controls: []`, keep any existing errors, and append global `TRACE_WRITE_FAILED`.
+    The CLI and Skill exit with code `1` and write no generated YAML.
   - Redact credentials and tokens in saved traces, results, and error messages.
 - **FR-022 (Stream Separation)**: Send human progress and logs to `stderr`; send machine-readable JSON output to
   `stdout`.
@@ -664,18 +694,21 @@ rule IDs, and glob patterns over a nested controls directory, and verify JSON ou
   produce `COMPLIANT` (no violation message), `NON_COMPLIANT`, and `NON_COMPLIANT` deterministically with zero LLM
   calls, clear subject-contextualized `violation_message` strings (including violation explanation and remediation
   instructions) on `102` and `103`, and proper `violations` vs `all` filtering.
-- **SC-006 (Per-Control Failure Isolation)**: In multi-control runs, source outages, incomplete evidence, or invalid
-  expressions fail only the affected control (`outcome: "ERROR"`) while remaining controls complete and MCP
-  containers/evidence are reused within the invocation.
+- **SC-006 (Runtime Failure Isolation & MCP Unavailability)**: In multi-control runs, incomplete evidence,
+  tool errors from a responding server, and invalid expressions fail only the affected control or subject.
+  Simulate a required server outage after one control completes. Verify the completed result is returned with
+  a top-level `MCP_SERVER_UNAVAILABLE` error and exit code `1`, and pending controls make zero external calls.
 - **SC-007 (Subject Edge Cases)**: Empty selection (`NOT_APPLICABLE`), root `null` (`ERROR`), invalid subjects
   (`INVALID_SUBJECT`), duplicate subject IDs (`DUPLICATE_SUBJECT_ID`), and all-compliant runs are distinguished without
   invented IDs or verdicts.
 - **SC-008 (Evaluation Modes)**: Deterministic CEL and singleton `llm` controls run in their declared modes (with
   `{{parameters.<name>}}` template substitution in `llm` mode and deterministic `criterion.violation_message` formatting
   from the `subject` context on `NON_COMPLIANT` verdicts in both modes) and never switch modes at runtime.
-- **SC-009 (Traceability & Self-Contained Results)**: Every run saves sanitized stage traces addressable by derived URI,
-  keeps results on `TRACE_WRITE_FAILED` (Exit `1`), and includes `source` and effective `parameters` in every
-  `ControlResult`.
+- **SC-009 (Traceability & Self-Contained Results)**: Each creation or execution run attempts to save a sanitized
+  stage trace, including inline execution and failed runs. A successful write yields a readable trace at the derived
+  URI. On execution trace write failure, preserve calculated results and report `TRACE_WRITE_FAILED` (Exit `1`).
+  On creation trace write failure, verify `controls: []`, `TRACE_WRITE_FAILED` (Exit `1`), and no generated YAML.
+  Every returned `ControlResult` includes its `source` and effective `parameters`.
 - **SC-010 (CLI & Service Parity)**: For equivalent creation and execution requests, CLI and service calls
   produce matching validation and results. CLI entry points map the same errors to the same exit codes.
   Guided `check` runs only confirmed controls whose file paths and IDs match, with zero evidence calls on
@@ -699,6 +732,12 @@ rule IDs, and glob patterns over a nested controls directory, and verify JSON ou
 ## Clarifications (Schematic Summary)
 
 ### Session 2026-11-21
+
+- Q: What should happen when writing the creation trace fails?
+  → A: Fail creation as a whole, return `controls: []` with `TRACE_WRITE_FAILED`, and write no generated YAML.
+
+- Q: What should happen to completed results when a required MCP server becomes unavailable?
+  → A: Stop the operation, keep completed results, and report a global failure with exit code 1.
 
 - Q: What should happen if saving a set of generated control files fails after some files have been written? → A: Keep
   the files already written and report which files are missing.
@@ -732,7 +771,7 @@ rule IDs, and glob patterns over a nested controls directory, and verify JSON ou
   - Phase B (Steps 2.2–2.5 per rule, Fail-Fast): Bounded JSONata discovery (max 5 queries, 4096 bytes, `done=True`),
     mandatory synthetic `selection_tests` and `criterion_tests` saved in `test_cases`, and full-context retry reusing
     in-memory MCP evidence.
-  - Client saving: Check all target `<id>.yaml` paths first; reject collisions with `CONTROL_FILE_EXISTS` (Exit `1`).
+  - Client saving: Check all target `<id>.yaml` paths first; reject collisions `CONTROL_FILE_EXISTS` (Exit `1`).
 - **Execution & Check pipeline**:
   - `ClientControlQuery`: Apply path selectors before reading YAML. Fail on malformed candidates
     (`INVALID_CONTROL_FILE`), combine filters (**AND** across fields, **OR** within lists), project fields, and compute
@@ -744,7 +783,9 @@ rule IDs, and glob patterns over a nested controls directory, and verify JSON ou
     allowed and scoped per control) vs `Stages E1–E3` (per-control failure isolation, MCP container reuse, exact
     evidence cache, `DUPLICATE_SUBJECT_ID` guard, singleton `llm` calls with `{{parameters.<name>}}` substitution).
   - Self-contained `ControlResult`: Always includes `source` and effective per-control `parameters`.
-  - `TRACE_WRITE_FAILED`: Keeps calculated execution results, appends global error, exits `1`.
+  - `MCP_SERVER_UNAVAILABLE`: Stops execution, keeps completed results, and exits `1`.
+  - `TRACE_WRITE_FAILED`: Appends a global error and exits `1`. Execution retains calculated results. Creation
+    returns `controls: []` and writes no generated YAML.
 
 ### 2026-11-19 — Agent Skill UX (`agentskills.io`), 3 Scripts & Schematic Format
 

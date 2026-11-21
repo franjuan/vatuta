@@ -18,7 +18,31 @@
 
 ---
 
+## LLM Input Boundaries
+
+Keep engine-authored DSPy instructions separate from structured input data in the provider request. Validate MCP
+structured responses and parsed JSON text as JSON data with string keys and finite numbers. Apply configured
+tool validation and completeness checks. Parse rule YAML with a safe loader and validate the data against
+the strict `ControlDefinition` model.
+
+| Stage | Data passed to the LLM |
+| --- | --- |
+| Creation and refinement | Policy text, rule context, validated tool metadata, and bounded evidence projections. |
+| Guided selection | User prompt and bounded rule metadata. Track exact candidate pairs delivered to the model. |
+| Guided parameter extraction | User prompt and merged declarations from confirmed and reloaded controls. |
+| Semantic evaluation | Rendered condition, correlation token, and values selected by `subject_paths`. |
+
+Strip scripts from external HTML in a copy of the projected input. Keep plain text as data and verify generated
+policy excerpts against the submitted policy text. Validate model outputs before authorizing any tool call.
+
 ## 1. Create — `PolicyService.create` (`policy_create`)
+
+Save the creation trace before returning generated controls. On write failure, return the same `invocation_id`,
+`controls: []`, and global `TRACE_WRITE_FAILED`, retaining earlier errors. The CLI and Skill exit with code `1`
+before writing any generated YAML.
+
+Required MCP server unavailability during discovery or live trials stops creation before repair. Return a global
+`MCP_SERVER_UNAVAILABLE` error and `controls: []`. The CLI and Skill exit with code `1` and save no generated YAML.
 
 Split a policy into atomic rules and build the complete list of `ControlDefinition` objects step by step with
 `SharedParameterCatalog`, bounded JSONata exploration, mandatory `selection_tests` and `criterion_tests`, and live
@@ -38,7 +62,7 @@ trials. Returns controls only when all rules succeed (`controls: []` on any fail
 
 | Field | Type | Presence | Meaning |
 | --- | --- | --- | --- |
-| `invocation_id` | `string` | Required | Engine-assigned ID of this creation run. |
+| `invocation_id` | `string` | Required | ID of the invocation that started this creation run. |
 | `controls` | `array[ControlDefinition]` | Required | Complete generated controls on success; `[]` on failure. |
 | `errors` | `array[ErrorDetail]` | Required | Creation errors; `[]` on success. |
 
@@ -109,7 +133,7 @@ Execute inline `ControlDefinition` objects with explicit parameters and declared
 
 | Field | Type | Presence | Meaning |
 | --- | --- | --- | --- |
-| `invocation_id` | `string` | Required | Engine-assigned ID of this execution run. |
+| `invocation_id` | `string` | Required | ID of the invocation that started this execution run. |
 | `results` | `array[ControlResult]` | Required | Per-control results (`[]` when Stage E0 pre-flight fails). |
 | `errors` | `array[ErrorDetail]` | Required | Request-level or invocation-level errors (`[]` on clean run). |
 
@@ -149,18 +173,26 @@ Execute inline `ControlDefinition` objects with explicit parameters and declared
    - Reuse started `MCPServer` containers and exact `(server, tool, resolved_arguments)` evidence cache across controls.
    - Validate `evidence_profile`, tool allowlist, `arguments_schema`, discovered live `inputSchema`, JSON payload, and
      `complete_when == True` per control.
-   - Fast-fail only the affected control (`outcome: "ERROR"`) on its first evidence failure; other controls continue.
+   - Fail only the affected control on tool response, schema, parsing, or completeness errors.
+   - A required MCP connection failure, disconnect, or response timeout adds a top-level
+     `MCP_SERVER_UNAVAILABLE` at stage `evidence`, identifies the server in the message, and stops further work.
+     Proceed to E4 with completed results or `results: []` if no control has completed. Exit with code `1`.
 3. **Stage E2 & E3 (Selection & Criterion)**:
    - Normalize single selected object `{...}` to `[{...}]`; require non-whitespace `id` and `descriptive_id`.
-   - Evaluate unique-ID valid subjects via CEL (`deterministic`) or singleton `SemanticCriterionSignature` (`llm` with
-     `{{parameters.<name>}}` template substitution in `condition`).
+   - Evaluate valid subjects with CEL or a singleton `SemanticCriterionSignature`. For the semantic call, render
+     the parameter template and resolve `subject_paths`. Send only the map of projected values, condition, and
+     correlation token. If a projection target is absent, mark only that subject `ERROR` and skip its LLM call.
+     Add an `ErrorDetail` to `ControlResult.errors` with `code: "MISSING_SUBJECT_PATH"`, `stage: "criterion"`,
+     and the affected `subject_id`. Include the missing JSON Pointer in the message, for example
+     `Required subject path '/title' is missing`. Keep the same diagnostic with both `violations` and `all`.
    - Render the violation message when a subject is `NON_COMPLIANT`. If rendering fails, mark that subject and
      the control `ERROR`, record `VIOLATION_MESSAGE_RENDER_ERROR`, and continue with other subjects.
    - Skip `criterion` for invalid objects (`INVALID_SUBJECT`) and duplicate IDs (`DUPLICATE_SUBJECT_ID` with
      `subject_id` and `selection_index`), add them to `ControlResult.errors`, and set control `outcome: "ERROR"`.
 4. **Stage E4 & Trace Finalization**:
    - Apply `result_filter` (`"violations"` vs `"all"`) to `ControlResult.subjects`, keeping all `errors`.
-   - Save trace; if trace write fails, keep `results`, append top-level `TRACE_WRITE_FAILED`, and return Exit `1`.
+   - Attempt to save the trace for every execution, including inline execution and MCP outages. On write failure,
+     preserve results and existing errors, append top-level `TRACE_WRITE_FAILED`, and return exit code `1`.
 
 ---
 
@@ -313,6 +345,24 @@ Implemented in this feature as a tracked skill directory at `skills/vatuta-polic
 
 ## 6. Diagnostic Trace Resources & Error Codes
 
+### Invocation Identity
+
+Allocate one unique `invocation_id` when an external operation starts, before validating operation inputs.
+
+| Entry point | Invocation boundary |
+| --- | --- |
+| CLI | Each invocation of a `vatuta policy` command (`query`, `create`, `execute`, or `check`). |
+| Agent Skill | Each invocation of `query.py`, `create.py`, or `execute.py`. |
+| Future MCP transport | Each incoming operation call, including calls within the same MCP session. |
+
+A script that delegates to the CLI shares its context with the CLI. The entry point passes the context to shared
+handlers, internal stages, and service calls. A direct service call creates a context when invoked independently.
+Guided `check` uses one ID for selection, internal queries, parameter extraction, and execution.
+
+Standalone `query` records its ID in stderr diagnostics on success and failure. Its stdout JSON follows
+the `ClientControlQueryResult` schema. The following resource URI templates apply to creation and execution,
+including guided `check`.
+
 ### Trace URI Templates (`PolicyService.read_trace(uri)`)
 
 | Operation | Trace Resource URI |
@@ -334,7 +384,7 @@ Implemented in this feature as a tracked skill directory at `skills/vatuta-polic
     `PARAMETER_CONFLICT`, `MISSING_PARAMETER`, `INVALID_PARAMETER_VALUE`.
   - Creation / Runtime / Persistence / Trace (Exit `1`): `NO_NORMATIVE_RULES`, `MISSING_CONSTRUCTION_CONTEXT`,
     `CONTROL_FILE_EXISTS`, `CONTROL_FILE_WRITE_FAILED`, `INVALID_SUBJECT`, `DUPLICATE_SUBJECT_ID`,
-    `VIOLATION_MESSAGE_RENDER_ERROR`, `TRACE_WRITE_FAILED`.
+    `MISSING_SUBJECT_PATH`, `VIOLATION_MESSAGE_RENDER_ERROR`, `MCP_SERVER_UNAVAILABLE`, `TRACE_WRITE_FAILED`.
 - **Exit Codes**:
   - `0`: Operation completed without technical errors (includes `COMPLIANT`, `NON_COMPLIANT`, and `NOT_APPLICABLE`).
   - `1`: Guided selection, creation, control or subject runtime, client persistence, or trace write failure.

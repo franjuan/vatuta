@@ -49,9 +49,10 @@
   - Non-deterministic builtins (`now`, `millis`, `random`, `shuffle`, `eval`) are disabled.
 - **Criterion Context (CEL vs LLM)**:
   - **`mode: "deterministic"` (CEL)**: Evaluated with `{subject, parameters}` activation.
-  - **`mode: "llm"` (DSPy `SemanticCriterionSignature`)**: Evaluates 1 unique-ID valid subject per LLM call, passing
-    rendered `condition`, `subject_ref`, and `subject` (no raw `parameters` dict). Supports deterministic
-    `{{parameters.<name>}}` template substitution in `condition` before calling the LLM.
+  - **`mode: "llm"` (DSPy `SemanticCriterionSignature`)**: Requires `subject_paths`, a non-empty list of distinct,
+    non-root RFC 6901 JSON Pointers relative to the subject. Send one subject as a map from pointers to values.
+    For example, `subject_paths: ["/title"]` yields `{"/title": "Change request"}`. Send it with the rendered
+    `condition` and `subject_ref`. An absent target yields subject-level `ERROR` before the call. Keep explicit nulls.
 
 ### Violation message template
 

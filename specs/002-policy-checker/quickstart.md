@@ -142,3 +142,35 @@ Supply explicit `repository` and `project` values through the fake parameter ext
 
 On any selection failure, check that `results` is empty, the pre-execution trace can be read using the returned
 `invocation_id`, and neither the parameter extractor nor the MCP fake was called.
+
+## Scenario 4 — Required MCP Server Outage
+
+Run the hermetic execution suite after implementation.
+
+```bash
+poetry run pytest -q tests/policy/test_execution.py tests/client/test_policy.py
+```
+
+Use inline controls and fake MCP responses. Complete one control, time out the required server for the next,
+and verify that no later control makes an external call. Expect the completed result, a top-level
+`MCP_SERVER_UNAVAILABLE` error, exit code `1`, and a readable execution trace. Repeat with trace persistence
+forced to fail and verify that both errors and the completed result remain in the response.
+
+## Scenario 5 — LLM Inputs and Creation Trace Failure
+
+Run the hermetic tests after implementation.
+
+```bash
+poetry run pytest -q tests/policy/test_semantic.py tests/policy/test_creation.py \
+  tests/policy/test_agent.py tests/client/test_policy.py
+```
+
+Inspect a semantic request for `subject_paths: ["/title"]`. Verify instructions stay separate and the subject
+projection contains only the title. An absent title prevents the call. Run with both result filters and verify
+that `ControlResult.errors` contains the same `MISSING_SUBJECT_PATH` at stage `criterion`, with the subject ID and
+`/title` in its message. Use fake MCP evidence containing HTML
+with a script tag and verify the script is removed before the projected value reaches the model.
+
+Force a creation trace write failure after successful validation. Verify the same invocation ID, `controls: []`,
+`TRACE_WRITE_FAILED`, exit code `1`, and an untouched YAML output directory. Repeat with an existing creation error
+and verify both errors are returned.
