@@ -45,7 +45,7 @@ Edge Cases, and FR-026 of the specification.
 ## Consequences
 
 - Successful validation of some controls cannot turn a failed creation invocation into a reusable deliverable.
-- Diagnostic artifacts remain available, subject to the existing credential and personal-data redaction requirements.
+- Diagnostic artifacts remain available, subject to credential and token redaction requirements.
 - Acceptance coverage must include a mixed set where some controls pass and one exhausts its attempts, confirming that
   creation fails and no reusable set or subset is published.
 - This decision concerns creation-time validation failures, not compliance outcomes from verification.

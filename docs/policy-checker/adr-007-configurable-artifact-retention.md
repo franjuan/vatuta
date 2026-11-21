@@ -31,7 +31,7 @@ invocations. Active invocation artifacts remain protected from retention cleanup
 outside this policy and must not be deleted when their originating invocation's artifacts expire.
 
 This decision is reflected in User Story 4, Edge Cases, and FR-027 of the specification. All retained artifacts remain
-subject to the existing credential and personal-data redaction requirements.
+subject to credential and token redaction requirements.
 
 ## Alternatives Considered
 

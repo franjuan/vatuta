@@ -82,10 +82,9 @@ prompt-driven `vatuta policy check "<prompt>"` pipeline.
     `data/controls`, overridable via `--controls-dir`).
   - The client provides a local filtering and projection function/tool (`ClientControlQuery`) supporting criteria
     (`ids`, `policy_ids`, `rule_ids`, `tags`, `evaluation_mode`, `evidence_server`, `evidence_tool`, `parameter_names`,
-    `text_query`, `files`, `glob`, combining distinct filter fields with logical **AND** and multi-value list fields
-    with logical **OR**), failing immediately with `INVALID_CONTROL_FILE` if any encountered YAML control file is
-    malformed, projecting requested attributes (`projection`, e.g., `["id", "description", "tags", "source"]` or
-    `["full"]`), and providing a configurable `include_merged_parameters: bool = True` parameter (enabled by default).
+    `text_query`, `files`, `glob`). Apply path selectors before YAML validation and fail with `INVALID_CONTROL_FILE`
+    for malformed candidates. Combine fields with **AND** and list values with **OR**. Project requested attributes,
+    including `["full"]`, and compute merged parameters when `include_merged_parameters=True` (the default).
   - In `vatuta policy check "<prompt>"`, the client executes a **guided 2-step LLM pipeline** associated with the same
     execution `invocation_id` trace (`vatuta://traces/policy/execution/{invocation_id}`):
     An internal context allocates this ID before Step 1 and is shared with execution without new public request fields.
@@ -93,9 +92,9 @@ prompt-driven `vatuta policy check "<prompt>"` pipeline.
     1. **Iterative Rule Selection**: The LLM queries `ClientControlQuery` with lightweight projection (`["id",
        "description", "tags", "source"]`, `include_merged_parameters=False`, bounded by configurable
        `policy.check_max_filter_queries`, default `3`, and `policy.check_max_output_bytes`, default `4096` bytes,
-       exiting early when `done=True`) to choose applicable `control_id`s (failing with `NO_CONTROLS_MATCHED` if empty);
-       the client then deterministically loads those controls with `projection=["full"]` and
-       `include_merged_parameters=True`.
+       exiting early when `done=True`) and confirms a list of relative paths and control IDs. If the budget ends
+       without confirmation, return `CONTROL_SELECTION_INCOMPLETE`. A confirmed empty list returns `NO_CONTROLS_MATCHED`.
+       Reload only the selected paths and verify their IDs before computing merged parameters.
     2. **Parameter Deduction**: Skipped when `merged_parameters` is empty (`parameters={}`); otherwise a dedicated DSPy
        signature receives the user's prompt and `merged_parameters` and extracts explicit parameter values from the
        prompt before invoking `PolicyService.execute` under the same `invocation_id`.

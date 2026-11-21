@@ -1,131 +1,114 @@
-# YAML Control and Evaluation Contract
+# YAML Control and Evaluation Contract (Schematic)
 
-**Date**: 2026-11-11
-**Models**: [data-model.md](../data-model.md)
-**Example**: [reference-control.yaml](reference-control.yaml)
+**Date**: 2026-11-20
+**Models**: [data-model.md](../data-model.md) | **Example**: [reference-control.yaml](reference-control.yaml)
 
-One `ControlDefinition` Pydantic model represents one executable control across `PolicyService.create` and
-`PolicyService.execute`, and serializes to one UTF-8 YAML document (`<id>.yaml`) when saved by the Vatuta client. Safe
-loading must reject duplicate keys, multiple documents, unsafe tags, unknown fields, recursive aliases, and values
-outside JSON. Models generate the implementation's JSON schemas; there is no separate hand-maintained schema framework
-or policy schema-version lifecycle.
+## 1. File & Model Basics
 
-## Fields and Bindings
+- **1 Control = 1 YAML File (`<id>.yaml`)**:
+  - Backed by the `ControlDefinition` Pydantic v2 model (`extra='forbid'`).
+  - Saved by the client under `policy.controls_directory` (or `--output-dir`), supporting nested subfolders organized by
+    user use case.
+- **Safe YAML Loading Rules**:
+  - Reject duplicate keys, multiple documents, unsafe tags, unknown fields, recursive aliases, and non-JSON values.
+  - Pre-check all target paths before saving: if any `<id>.yaml` already exists, abort with `CONTROL_FILE_EXISTS` (Exit
+    `1`) and overwrite nothing.
 
-| Section | Required content |
+## 2. ControlDefinition Sections
+
+| Section | Required Content |
 | --- | --- |
-| Identity | `id`, `description`, `tags` (array of nonempty strings), `source: {policy, rule, excerpt}`. |
-| Parameters | Map of `{description, value_schema, construction_value?, default?}`. |
-| Evidence | Array of `{name, server, tool, arguments}`. |
-| Selection | JSONata expression string. |
-| Criterion | `{mode: deterministic, expression}` or `{mode: llm, condition, deterministic_insufficiency}`. |
-| Test cases | `test_cases: {selection_tests: [...], criterion_tests: [...]}` generated and verified during creation. |
-| Creation check | `trial` is `skipped` or `passed`; `criterion_executed` is boolean; optional `outcome` is NOT_APPLICABLE. |
+| Identity | `id` (`f"{policy_id}-{rule_id}"`), `description`, `tags` (`list[str]`), `source: {policy, rule, excerpt}`. |
+| Parameters | Map of `{description, value_schema, required?, construction_value?, default?}`. May be empty. |
+| Evidence | Non-empty list of `{name, server, tool, arguments}` with unique `name`s in the control. |
+| Selection | JSONata expression string over `{evidence, parameters}`. |
+| Criterion | Both modes require `violation_message`. See the criterion context below for mode-specific fields. |
+| Test Cases | `test_cases: {selection_tests: [...], criterion_tests: [...]}` (mandatory, verified during creation). |
+| Creation Check | `{trial: "skipped" \| "passed", criterion_executed: bool, outcome?: "NOT_APPLICABLE"}`. |
 
-`value_schema` uses self-contained JSON Schema 2020-12. Any `$ref` must remain within that schema document; no network
-resolution. Construction values and defaults validate strictly. Omitted default means required; explicit null is a
-valid default only if permitted by its schema. Construction metadata does not bypass later mandatory validation.
+## 3. Parameter, Evidence & Expression Bindings
 
-Creation decomposes the policy into atomic normative rules (failing with `NO_NORMATIVE_RULES` if zero normative rules
-are found), assigns each control a deterministic kebab-case `id` (`f"{policy_id}-{rule_id}"`, or `rule_id` if already
-prefixed with `f"{policy_id}-"`), and derives only the minimum necessary parameter declarations (`parameters: {}` when
-no parameter is needed) across all creation stages (`2.1`, `2.3`, `2.4`, `2.5`) using the incremental
-`SharedParameterCatalog`. Two parameters share a name in `SharedParameterCatalog` only when their `value_schema`,
-`construction_value`, and `default` match; otherwise the constructor adapts to the catalog or declares a distinct
-parameter name. Declarations already shared with other rules remain immutable through later stages and retries.
-Relevant `tags` are inferred and merged with any explicit request `tags`. With `trial_attempts == 0`,
-`construction_value` is optional. Step 0 and Phase A always use only local `policy.evidence_profiles`; live tool schema
-discovery is deferred until Phase A succeeds with enabled trials. In generated controls,
-`source.policy` is the supplied `policy_id`, or the creation invocation ID when omitted; `source.rule` and
-`source.excerpt` identify the obligation in the supplied policy text.
+- **Parameter Schemas & Sharing**:
+  - `value_schema` uses self-contained JSON Schema 2020-12 (no network `$ref`, no string-to-number/bool coercion).
+  - A parameter with no `default` requires an explicit value unless `required: false` is set.
+  - `default: null` is valid only if `value_schema` permits `null`.
+  - `construction_value` is for creation trials only (optional when `trial_attempts == 0`) and never acts as an
+    execution default.
+  - Across rules created from the same policy, `SharedParameterCatalog` shares a parameter name only when
+    `value_schema`, `construction_value`, and `default` match; shared entries are immutable in later rules and retries.
+- **Evidence Argument Bindings**:
+  - Each argument in `evidence[].arguments` is either `{literal: <JSON>}` or `{parameter: <declared_name>}` (whole-value
+    binding, no string template inside evidence arguments).
+  - If a bound optional parameter is absent after resolution, omit that argument. Keep explicit JSON null values.
+    The evidence profile and live tool schema still validate the final argument object before the call.
+  - Step 0 and Phase A validate against local `policy.evidence_profiles` only; live MCP `inputSchema` validation runs
+    before calling tools in Phase B (`trial_attempts > 0`) and `execute` (`Stage E1`).
+- **Selection Context (JSONata)**:
+  - Root context: `{evidence: {<name>: <normalized_json>}, parameters: {<name>: <resolved_value>}}` (scoped to this
+    control's declared parameters).
+  - Non-deterministic builtins (`now`, `millis`, `random`, `shuffle`, `eval`) are disabled.
+- **Criterion Context (CEL vs LLM)**:
+  - **`mode: "deterministic"` (CEL)**: Evaluated with `{subject, parameters}` activation.
+  - **`mode: "llm"` (DSPy `SemanticCriterionSignature`)**: Evaluates 1 unique-ID valid subject per LLM call, passing
+    rendered `condition`, `subject_ref`, and `subject` (no raw `parameters` dict). Supports deterministic
+    `{{parameters.<name>}}` template substitution in `condition` before calling the LLM.
 
-Each evidence argument is exactly `{literal: <JSON value>}` or `{parameter: <declared name>}`. A parameter reference
-binds the entire value without text substitution. Required tool arguments must conform to its discovered input schema.
-The discovered-schema check occurs before live evidence calls, never during the local-only creation preflight.
-Evidence names are unique within a control; parameters and literals are the only evidence argument sources.
+### Violation message template
 
-Selection's root context is `{evidence: {<name>: <normalized JSON>}, parameters: {<name>: <resolved value>}}`
-(containing
-only the parameters declared in that control's `control.parameters`). It can relate independently fetched collections.
-It cannot call external tools. Evaluation guards disable ambient clock/random/dynamic-evaluation functions; policy time
-must be an explicit parameter.
+Both criterion modes require a non-empty `violation_message` template. The template explains what failed and
+how to correct it. Fill direct subject keys, nested mapping paths, `{subject.<path>}`, and
+`{parameters.<name>}` by looking up JSON values. Use `{{` and `}}` for literal braces. Render explicit
+JSON null as `null`. Reject missing fields, undeclared parameters, invalid placeholders, and empty output.
+Reject expression evaluation, method calls, and dunder or Python attribute access. Validate rendering on every
+`NON_COMPLIANT` synthetic test and live trial result.
 
-A deterministic criterion uses CEL activation `{subject: <selected object>, parameters: <resolved values>}`.
-A semantic criterion (`mode: llm`) evaluates one subject per LLM call (`SemanticCriterionSignature`) and receives its
-rendered `condition`, correlation reference (`subject_ref`), and that single `subject` JSON object only (no separate
-`parameters` dictionary is sent to the LLM). However, `criterion.condition` may reference declared parameters via
-`{{parameters.<name>}}` template placeholders, which the engine deterministically substitutes with the control's
-resolved parameter values prior to calling the LLM. No whole evidence corpus, other subjects, or previous verdicts are
-appended to semantic inputs. The declared mode cannot change at runtime.
+## 4. Embedded Synthetic Unit Tests (`test_cases`)
 
-## Embedded Synthetic Unit Tests (`test_cases`)
+Mandatory for every control (executed and required to pass even when `trial_attempts == 0`):
 
-Every `ControlDefinition` contains `test_cases` with two nonempty arrays:
+- **`selection_tests`**:
+  - Fields: `description`, `mock_evidence`, optional `parameters`, and either `expected_outcome: "NOT_APPLICABLE"` or
+    `expected_subjects` (list of valid `Subject` dicts with non-whitespace `id`/`descriptive_id` and unique `id`s).
+  - Must include at least 1 populated case and 1 `NOT_APPLICABLE` case.
+  - Single selected JSON object `{...}` normalizes to `[{...}]` before comparing; duplicate `id`s fail with
+    `DUPLICATE_SUBJECT_ID`.
+- **`criterion_tests`**:
+  - Fields: `description`, `subject` (valid `Subject` dict), optional `parameters`, `expected_state` (`"COMPLIANT"` or
+    `"NON_COMPLIANT"`).
+  - Must include at least 1 `"COMPLIANT"` and 1 `"NON_COMPLIANT"` case.
+  - Runs CEL for `deterministic` and `SemanticCriterionSignature` (with `{{parameters.<name>}}` substitution) for
+    `llm`.
+- **Unit-Test Parameter Priority**:
+  `1. test_case.parameters` -> `2. parameter.default` -> `3. parameter.construction_value`.
 
-- **`selection_tests`**: Each item has `description`, `mock_evidence` (map keyed by declared evidence names), optional
-  `parameters`, and either `expected_outcome: "NOT_APPLICABLE"` or `expected_subjects` (array of expected `Subject`
-  objects with non-whitespace string `id` and `descriptive_id` and unique `id`s). Must include at least one populated
-  subject case and one `NOT_APPLICABLE` case. When comparing against `expected_subjects`, a single selected JSON object
-  `{...}` is normalized to a 1-element list `[{...}]`, and duplicate `id`s fail with `DUPLICATE_SUBJECT_ID`.
-- **`criterion_tests`**: Each item has `description`, `subject` (a valid `Subject` object with non-whitespace `id` and
-  `descriptive_id`), optional `parameters`, and `expected_state` (`"COMPLIANT"` or `"NON_COMPLIANT"`). Must include at
-  least one `"COMPLIANT"` case and one `"NON_COMPLIANT"` case. Evaluated via CEL for `mode: deterministic` and via
-  `SemanticCriterionSignature` (LLM, after rendering any `{{parameters.<name>}}` placeholders in `condition`) for
-  `mode: llm`.
+## 5. Selection & Criterion Output Rules
 
-Unit test parameter resolution follows strict precedence: `1. test_case.parameters` -> `2. parameter.default` ->
-`3. parameter.construction_value`. Both `selection_tests` and `criterion_tests` are executed and required to pass during
-creation even when `trial_attempts == 0`.
+- **Selection Outcomes**:
+  - `exists=false` (no result) or `[]` -> control `outcome: "NOT_APPLICABLE"`, criterion skipped.
+  - Explicit root `null` (`exists=true, value=null`) or root scalar -> control `outcome: "ERROR"`, criterion skipped.
+  - Single object `{...}` -> normalized to `[{...}]`.
+- **Subject Validation & Duplicate ID Guard**:
+  - Every subject requires non-empty, non-whitespace string `id` and `descriptive_id` (`len(s.strip()) > 0`).
+  - Unique valid `id`s run `criterion`.
+  - Invalid objects (`INVALID_SUBJECT`) and duplicate `id`s (`DUPLICATE_SUBJECT_ID` with `subject_id` and
+    `selection_index`) skip `criterion`, record errors in `ControlResult.errors`, and set control `outcome: "ERROR"`.
+- **Criterion Verdicts**:
+  - Strict boolean `true` -> `COMPLIANT`, `false` -> `NON_COMPLIANT`.
+  - Non-boolean, exception, or mismatched `subject_ref` -> `ERROR` (never coerced via truthiness).
 
-## Selection and Criterion Results
+## 6. Reference Evidence Fixtures & Live Profile Examples
 
-- Evaluate the selection once using the internal existence envelope from [research](../research.md).
-- No result or `[]`: NOT_APPLICABLE, no criterion call. Explicit root null: ERROR, no criterion call.
-- One valid object: normalized to a 1-element list `[{...}]`. Array: validate each member independently.
-- `id` and `descriptive_id` must be non-empty, non-whitespace strings (`isinstance(s, str) and len(s.strip()) > 0`);
-  source numeric identifiers can be explicitly converted in Selection. The engine never invents an identifier for a
-  missing field. Other fields may contain any JSON value, including null.
-- Within a control's selection output, subjects with a unique valid `id` are evaluated by `criterion`. Invalid
-  objects/scalars (`INVALID_SUBJECT`) and subjects sharing a duplicate `id` (`DUPLICATE_SUBJECT_ID`, reported with
-  `subject_id` and `selection_index`) are **not** evaluated by `criterion`, are recorded in `ControlResult.errors`, and
-  produce global control `outcome="ERROR"`.
-- Criterion results must be strict booleans; true/false map to COMPLIANT/NON_COMPLIANT. Errors and ambiguous semantic
-  outputs map to ERROR, never truthiness or automatic non-compliance. Under `result_filter="violations"` (default),
-  `ControlResult.subjects` retains only `NON_COMPLIANT` subjects while `ControlResult.errors` retains all control and
-  subject errors.
-
-## Reference Evidence Fixtures
-
-The example uses fixture-only tool names `reference_prs` and `reference_issues`. They are not claimed to be tool names
-or response schemas of a live GitHub/Jira server. Each returns `{items: [...], complete: true|false}` for a documented
-bounded fixture scope. This metadata is a test contract, not a universal completeness flag.
-
-A trusted test profile binds each fixture tool to the assertion `data.complete = true`, its fixture contract reference,
-and the exact input scope. Unknown/missing `complete` fails the proof. A real deployment must replace the profile with
-an assertion justified by the exact deployed tool contract, not relabel a production response as this fixture.
-
-Reference data contains PRs `101`, `102`, `103` linked to an approved issue, a pending issue, and no issue. Selection
-must retain all PRs, including the one with no related issue. Its `ticket_status: null` is evaluated as non-compliance.
-Expected findings under `violations` are `102` and `103`; `all` includes `101` as compliant.
-
-## Live Tool Profile Examples (Configuration Only — Not Core Dependencies)
-
-Core policy evaluation (`src/policy/`) is strictly source-independent. Live upstream MCP tools (such as GitHub and Jira
-in the temporary blog demonstration under `pocs/policy_demo/`, see [demo-plan.md](../demo-plan.md)) are bound purely
-through YAML `policy.evidence_profiles` configuration with explicit pagination arguments:
-
-| Example tool | Positive single-page completeness assertion (`complete_when`) |
-| --- | --- |
-| GitHub `search_pull_requests` | Page 1; `items` array; integer `total_count >= 0` equal to `$count(items)`; boolean `incomplete_results = false`. |
-| GitHub `list_commits` | Page 1 with explicit `perPage > 0`; `data` array; `$count(data) < arguments.perPage` (under-limit single page). |
-| Jira `jira_search` | First page, no next token; exact known total, or a documented unknown-total cursor proof. |
-| GitHub `list_pull_requests` | Unsupported when array count equals page size or lacks explicit page-bound arguments; unknown completeness yields ERROR. |
-
-The proof is a conjunction, not a fallback: missing/wrong-type metadata, truncation flags, subsequent-page requests,
-or hitting `perPage`/`limit` without an exact total must fail (`false` → incomplete-evidence ERROR). Never add
-GitHub-specific or Jira-specific branches to `src/policy/` or require live SaaS credentials in GitHub Actions CI.
-
-For Jira, a nonnegative integer `total` requires exact equality with the issue count; an under-limit response cannot
-override a contradictory known total. Only a documented unknown-total cursor response (such as `total == -1` in the
-pinned tool contract), with first-page arguments, no continuation token, and an explicit positive limit, may use
-`$count(issues) < arguments.limit`. Missing or wrongly typed metadata without a documented proof remains ERROR.
+- **Hermetic Test Fixtures (`tests/fixtures/policy/`)**:
+  - Use provider-neutral fixture tools `reference_prs` and `reference_issues` with `complete_when: "data.complete =
+    true"`.
+  - Canonical PRs: `101` (`Approved` issue -> `COMPLIANT`), `102` (`Pending` issue -> `NON_COMPLIANT`), `103` (no issue,
+    `ticket_status: null` -> `NON_COMPLIANT`).
+- **Live Tool Completeness Profiles (`policy.evidence_profiles` — Configuration Only)**:
+  - Core `src/policy/` has zero GitHub/Jira code. Live profiles in `pocs/policy_demo/vatuta.demo.yaml` use JSONata
+    `complete_when` proofs:
+    - GitHub `search_pull_requests`: Page 1, `items` array, `total_count >= 0`, `total_count = $count(items)`,
+      `incomplete_results = false`.
+    - GitHub `list_commits`: Page 1, explicit `perPage > 0`, `data` array, `$count(data) < arguments.perPage`.
+    - Jira `jira_search`: Page 1, no `next_page_token`, and either exact nonnegative `total = $count(issues)` or
+      documented cursor sentinel `total = -1` with `$count(issues) < arguments.limit`. A short array never overrides a
+      contradictory nonnegative `total`.

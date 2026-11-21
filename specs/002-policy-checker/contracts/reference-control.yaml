@@ -50,6 +50,9 @@ selection: >-
 criterion:
   mode: deterministic
   expression: 'subject.ticket_status != null && subject.ticket_status == "Approved"'
+  violation_message: >-
+    Pull request {descriptive_id} has linked issue status {ticket_status}.
+    Link an approved issue or obtain approval for the linked issue before merging.
 test_cases:
   selection_tests:
     - description: Joins pull requests with matching issues and preserves null status when missing.

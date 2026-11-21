@@ -1,355 +1,342 @@
-# Policy Operations: Stateless Service, Future MCP, and Client Contract
+# Policy Operations: Service, CLI, Agent Skill & Future MCP Contract (Schematic)
 
-**Date**: 2026-11-11
-**Status**: Planned interface; commands and service classes are not implemented yet
+**Date**: 2026-11-20
+**Status**: Planned interface (stateless service, CLI commands, and Agent Skill)
 
-`PolicyService` (`src/policy/service.py`) defines the public stateless operation contracts using JSON-serializable
-Pydantic v2 request and result models with `Field(description=...)` metadata. These models map 1:1 to the two MCP
-domain tools (`policy_create` and `policy_execute`) plus trace resource reads (`read_trace` / `resources/read`). In
-this increment, the Vatuta client invokes `PolicyService` directly; a stdio MCP transport command (`vatuta policy
-serve`) is deferred to a follow-up increment.
+## Architecture Summary
 
-`PolicyService` manages no control directory, `--root`, file selectors, or rule repository. Local YAML control storage
-(`policy.controls_directory`), control filtering, attribute projection, shared parameter merging
-(`include_merged_parameters=True` by default), and the guided 2-step prompt-driven check flow (`vatuta policy check
-"<prompt>"`) belong to the Vatuta client.
+- **Stateless `PolicyService` (`src/policy/service.py`)**:
+  - Uses JSON-serializable Pydantic v2 request/result models with `Field(description=...)`.
+  - Ready 1:1 for future MCP tools (`policy_create`, `policy_execute`) and `resources/read` (`read_trace`).
+  - Manages zero `.yaml` files, directories, or globs.
+  - Note: MCP server transport (`vatuta policy serve`) is deferred.
+- **Client Layer (`src/client/policy.py`, `src/policy/files.py`, `src/policy/parameters.py`)**:
+  - Manages `<id>.yaml` control files (1 file per rule) in a nested directory tree under `policy.controls_directory`
+    (default `"data/controls"`, overridable via `--controls-dir` or `--output-dir`).
+  - Exposes 4 CLI subcommands (`vatuta policy query`, `create`, `execute`, `check`) and 3 Agent Skill scripts
+    (`skills/vatuta-policy/scripts/{query,create,execute}.py` with PEP 723 metadata) sharing the exact client handlers.
 
-## Create — `PolicyService.create` (`policy_create`)
+---
 
-Decompose a policy into atomic normative rules and construct the complete set of executable `ControlDefinition` objects
-one by one with an incremental `SharedParameterCatalog`, bounded in-memory JSONata evidence exploration, mandatory
-synthetic unit tests (`selection_tests` and `criterion_tests`), and configured live trials. Creation returns reusable
-controls only when the complete set succeeds.
+## 1. Create — `PolicyService.create` (`policy_create`)
 
-### Input (`PolicyCreateRequest`)
+Split a policy into atomic rules and build the complete list of `ControlDefinition` objects step by step with
+`SharedParameterCatalog`, bounded JSONata exploration, mandatory `selection_tests` and `criterion_tests`, and live
+trials. Returns controls only when all rules succeed (`controls: []` on any failure).
 
-The request has only the following JSON-serializable fields; unknown fields are rejected (`extra='forbid'`):
+### Input (`PolicyCreateRequest`, `extra='forbid'`)
 
-| Field | Type | Required / default | Meaning |
+| Field | Type | Required / Default | Meaning |
 | --- | --- | --- | --- |
-| `policy_text` | string | Required | Complete nonempty policy in plain text or Markdown. |
-| `policy_id` | string | Optional; `invocation_id` | Nonempty identifier used for policy provenance. |
-| `construction_context` | string | Optional; `""` | Descriptive information for generation, tag inference, and trials. |
-| `tags` | array of strings | Optional; `[]` | Explicit nonempty tags merged into every generated control. |
-| `trial_attempts` | integer | Optional; deployment setting | Maximum live trial attempts for this creation; `>= 0`. |
-
-Example request payload:
-
-```json
-{
-  "policy_text": "Every pull request must reference an approved issue.",
-  "policy_id": "change-management",
-  "construction_context": "Build controls for acme/api. Issues are tracked in Jira project PAY.",
-  "tags": ["compliance", "q4"],
-  "trial_attempts": 1
-}
-```
+| `policy_text` | `string` | Required | Non-empty policy in plain text or Markdown. |
+| `policy_id` | `string` | Optional; `invocation_id` | Non-empty identifier for `source.policy` and control slug prefix. |
+| `construction_context` | `string` | Optional; `""` | Context for tag inference, parameters, and trial values. |
+| `tags` | `array[string]` | Optional; `[]` | Explicit non-empty tags merged into every generated control. |
+| `trial_attempts` | `integer` | Optional; `policy.trial_attempts` (`1`) | Max live trial attempts (`>= 0`). |
 
 ### Output (`PolicyCreateResult`)
 
-Return `{invocation_id, controls, errors}`:
-
 | Field | Type | Presence | Meaning |
 | --- | --- | --- | --- |
-| `invocation_id` | string | Required | Engine-assigned identifier of this creation invocation. |
-| `controls` | array of ControlDefinition | Required | Complete generated controls on success; `[]` on failure. |
-| `errors` | array of ErrorDetail | Required | Creation errors; `[]` on success. See Error Mapping. |
+| `invocation_id` | `string` | Required | Engine-assigned ID of this creation run. |
+| `controls` | `array[ControlDefinition]` | Required | Complete generated controls on success; `[]` on failure. |
+| `errors` | `array[ErrorDetail]` | Required | Creation errors; `[]` on success. |
 
-Each element of `controls` is a full structured `ControlDefinition` object (`id`, `description`, `tags`, `source`,
-`parameters`, `evidence`, `selection`, `criterion`, `test_cases`, `creation_check`) as defined in
-[control-format.md](control-format.md) and [data-model.md](../data-model.md).
+### Step-by-Step Creation Pipeline
 
-### Step-by-Step Creation Behavior
+1. **Step 0 (Pre-flight & Local Tool Catalog)**:
+   - Validate non-empty `policy_text`; resolve `policy_id` and `trial_attempts`.
+   - Build tool catalog from local `policy.evidence_profiles` only (no MCP connection in Step 0 or Phase A).
+2. **Step 1 (Policy Decomposition — `PolicyDecompositionSignature`)**:
+   - Split `policy_text` into atomic normative rules whenever obligations can fail independently or represent separate
+     violations.
+   - If zero rules are found, fail with `NO_NORMATIVE_RULES` (`stage: "decomposition"`).
+   - Assign deterministic slug `id`: `f"{policy_id}-{rule_id}"` (or `rule_id` if already prefixed, deduplicated).
+3. **Step 2, Phase A (All-Rules Parameter & Evidence Sweep — Step 2.1 across `r_1..r_N`)**:
+   - Run `RuleEvidenceAndParametersSignature` sequentially across all rules with `SharedParameterCatalog`.
+   - Declare minimum necessary parameters (`parameters: {}` allowed).
+   - Two rules share a parameter name only when `value_schema`, `construction_value`, and `default` match. Shared
+     declarations are immutable during Phase B and retries.
+   - When `trial_attempts > 0`, if a required parameter lacks both `default` and `construction_value`, collect and
+     return **all** `MISSING_CONSTRUCTION_CONTEXT` errors across all rules at once before starting any MCP server.
+4. **Step 2, Phase B (Per-Rule Deep Construction `r_1..r_N` with Fail-Fast)**:
+   - **Step 2.2 (JSONata Exploration, when `trial_attempts > 0`)**: Connect to MCP, validate live `inputSchema`, fetch
+     evidence once in memory (cached by `(server, tool, resolved_arguments)`), and run up to
+     `policy.discovery_max_queries` (`5`) JSONata queries over `{"evidence", "parameters"}`, truncating each output to
+     `policy.discovery_max_output_bytes` (`4096` bytes + `[TRUNCATED]`). Return query errors/missing within budget; stop
+     early on `done=True`.
+   - **Step 2.3 (Selection & `selection_tests`)**: Build `selection` and `test_cases.selection_tests` (at least 1
+     populated and 1 `NOT_APPLICABLE` case). Normalize `{...}` to `[{...}]`, require non-whitespace
+     `id`/`descriptive_id`, reject `DUPLICATE_SUBJECT_ID`, resolve test parameters (`test_case.parameters` -> `default`
+     -> `construction_value`), and run `selection_tests` (mandatory) + live selection (`trial_attempts > 0`).
+   - **Step 2.4 (Criterion & `criterion_tests`)**: Build `criterion` (`deterministic` CEL or justified `llm`) and
+     `test_cases.criterion_tests` (at least 1 `COMPLIANT` and 1 `NON_COMPLIANT` case). Run `criterion_tests`
+     (mandatory, via CEL or LLM with `{{parameters.<name>}}` substitution) + live criterion (`trial_attempts > 0`).
+   - **Step 2.5 (Full-Context Retry & Fail-Fast)**: If `trial_attempts > 1` and Steps 2.2–2.4 fail, retry from Step 2.1
+     carrying full stage context and errors while reusing cached in-memory MCP evidence. Abort immediately (Fail-Fast)
+     when any rule exhausts its attempts.
 
-1. **Step 0 — Pre-flight & Tool Catalog**:
-   - Validate nonempty `policy_text`. Resolve `policy_id` (defaults to `invocation_id`) and `trial_attempts` (defaults
-     to `policy.trial_attempts`, which defaults to `1`).
-   - For every trial mode, build the tool catalog exclusively from local `policy.evidence_profiles`
-     (`arguments_schema` and `contract_reference`). Do not start containers, connect to MCP, or call `list_tools`
-     before Phase A succeeds. With `trial_attempts == 0`, no MCP connection occurs anywhere in creation.
-2. **Step 1 — Policy Decomposition into Atomic Rules (`PolicyDecompositionSignature`)**:
-   - Split `policy_text` into atomic normative obligations, ignoring non-normative preamble/scope prose. Two obligations
-     MUST be split into separate rules whenever they can fail independently and a user wants to know which condition
-     failed, or whenever the policy author would consider them two distinct violations.
-   - If zero normative obligations are extracted from `policy_text`, fail immediately with `NO_NORMATIVE_RULES`
-     (`stage: "decomposition"`).
-   - Assign each control its deterministic kebab-case `id`: `f"{policy_id}-{rule_id}"` (or `rule_id` directly when
-     `rule_id` already starts with `f"{policy_id}-"`, deduplicated within the creation output).
-3. **Step 2, Phase A — All-Rules Parameter & Evidence Sweep (Step 2.1 across `r_1 ... r_N`)**:
-   - Execute `RuleEvidenceAndParametersSignature` sequentially across all decomposed rules `r_1 ... r_N`, declaring only
-     the minimum necessary parameters (`parameters: {}` when none are needed) and passing and updating the cumulative
-     `SharedParameterCatalog`.
-   - **`SharedParameterCatalog` Compatibility Rule**: Two parameters across rules of the same policy share the same
-     parameter name **only** when their `value_schema`, `construction_value`, and `default` are identical/compatible. If
-     any of those three differ despite similar semantics, it is effectively a distinct parameter: the constructor must
-     either adapt its declaration to be compatible with the catalog or use a distinct parameter name.
-   - Declarations already referenced by other rules are immutable throughout Phase B and all retries. Keep changes
-     local to the current candidate until validated; discard failed-attempt additions. Adapt the current rule or
-     choose a distinct name instead of invalidating another rule's declaration.
-   - When `trial_attempts == 0`, `construction_value` may be omitted; explicit null still requires schema validation.
-   - When `trial_attempts > 0`, inspect all rules after Phase A: if any required parameter (`default` absent) lacks a
-     `construction_value`, aggregate and return **all** `MISSING_CONSTRUCTION_CONTEXT` errors and affected `control_id`s
-     across all rules in a single response before calling any MCP server.
-4. **Step 2, Phase B — Per-Rule Deep Construction (`r_1 ... r_N`) with Fail-Fast**:
-   - Process each rule `r_i` through Steps 2.2–2.5; if any rule fails definitively after exhausting its configured
-     attempts, abort creation immediately (**Fail-Fast**) without executing Phase B for subsequent rules.
-   - **Step 2.2 — Scalable Source Exploration (when `trial_attempts > 0`)**: After Phase A succeeds, connect to the
-     required MCP servers, discover tool `inputSchema`, and validate arguments before evidence calls.
-     Fetch declared evidence once in memory
-     (cached per rule by `(server, tool, resolved_arguments)`) and execute up to configurable
-     `policy.discovery_max_queries` (default **5**) exploratory JSONata queries evaluated over the root context
-     `{"evidence": ..., "parameters": ...}`, truncating each output to `policy.discovery_max_output_bytes` (default
-     **4096** bytes, appending `[TRUNCATED]` if exceeded). Query syntax/runtime errors or `missing` outcomes are
-     returned as observations within the query budget so the model can refine the next query; the loop closes early as
-     soon as `done=True`.
-   - **Step 2.3 — Selection & `selection_tests` (`RuleSelectionSignature`)**: May declare additional parameters
-     (validated against `SharedParameterCatalog`) and generates `test_cases.selection_tests` (at least one populated
-     `expected_subjects` case and one `NOT_APPLICABLE` case) plus the JSONata `selection` expression. Normalize single
-     selected JSON objects `{...}` to `[{...}]`, require non-whitespace `id` and `descriptive_id` (`len(s.strip()) >
-     0`), reject duplicate subject `id`s with `DUPLICATE_SUBJECT_ID`, resolve unit-test parameters with priority `1.
-     test_case.parameters` -> `2. default` -> `3. construction_value`, and execute `selection` against all
-     `selection_tests` (always mandatory, even when `trial_attempts == 0`) and against in-memory live evidence (when
-     `trial_attempts > 0`).
-   - **Step 2.4 — Criterion & `criterion_tests` (`RuleCriterionSignature`)**: May declare additional parameters
-     (validated against `SharedParameterCatalog`) and generates `test_cases.criterion_tests` (at least one `COMPLIANT`
-     and one `NON_COMPLIANT` synthetic `subject`) plus `criterion` (`deterministic` CEL or justified `llm`). Execute
-     `criterion` against all `criterion_tests` (always mandatory, using CEL for `mode: deterministic` and calling
-     `SemanticCriterionSignature` on the LLM with `{{parameters.<name>}}` template substitution in `condition` for
-     `mode: llm`) and against live trial subjects (when `trial_attempts > 0`).
-   - **Step 2.5 — Full-Context Bounded Repair & Persistence**: When `trial_attempts > 1` and a validation, unit test, or
-     live trial fails in Steps 2.2–2.4 (including a newly added parameter in 2.3/2.4 lacking `default` and
-     `construction_value`), re-execute from Step 2.1 carrying the full accumulated context and errors from all prior
-     stages, reusing cached in-memory MCP evidence whenever `(server, tool, resolved_arguments)` are unchanged. On
-     success, persist `test_cases` in the returned `ControlDefinition`.
+   - Synthetic failures share the per-rule attempt budget with live failures. With `trial_attempts=0`, run the
+     mandatory synthetic tests once and skip live MCP. With `trial_attempts=1`, run one attempt without a retry.
+     If the final attempt fails, service creation returns `controls: []`.
 
-- Success: complete `controls` array of `ControlDefinition` objects; `errors` is empty.
-- Failure: `controls` is empty and `errors` explains failed rules/controls/inputs. Diagnostic candidates may exist only
-  in the sanitized trace. Never present passing controls from a failed creation as a reusable partial result.
+### Client YAML Saving Behavior (`create`)
 
-### CLI Mapping (`vatuta policy create`)
+- Saves each returned `ControlDefinition` as `<id>.yaml` in `--output-dir` (or `policy.controls_directory`), creating
+  missing target subdirectories.
+- Pre-checks all target paths for root containment and file collisions before writing any file.
+- If any target `<id>.yaml` already exists, aborts with `CONTROL_FILE_EXISTS` (`stage: "client_persistence"`, Exit `1`)
+  and writes zero files. No overwrite flag or auto-renaming.
+- If a write fails after saving starts, stop the batch and keep all complete files already written. Return
+  `CONTROL_FILE_WRITE_FAILED` at `client_persistence` (exit `1`) with `unsaved_paths` for the failed and
+  unattempted targets, relative to the output directory. A failed write must leave no partial target YAML.
 
-```bash
-poetry run vatuta policy create --policy-file policy.md --policy-id change-management \
-  --construction-context 'Build controls for acme/api; issues are tracked in Jira project PAY.' \
-  --tag compliance --tag q4 --trial-attempts 1 --output-dir data/controls --format json
-poetry run vatuta policy create --policy-text 'Every change must reference an approved issue.' \
-  --construction-context 'Build controls for acme/api; issues are tracked in Jira project PAY.' --format json
-```
+---
 
-When saving controls (via `--output-dir` or configured `policy.controls_directory`), the client serializes each
-returned `ControlDefinition` (including `tags` and `test_cases`) as `<id>.yaml` in a staging directory and writes them
-without replacing existing files. Validate target containment and check the complete output set for collisions before
-publishing any file. If a target already exists, return `CONTROL_FILE_EXISTS` at stage `client_persistence` with CLI
-exit `1`; preserve existing files and publish none of the proposed set. Publication must also reject a destination
-created after the initial check. No overwrite option or automatic renaming is provided. File persistence failures
-belong to the client response, not to the stateless service.
+## 2. Execute — `PolicyService.execute` (`policy_execute`)
 
-## Execute — `PolicyService.execute` (`policy_execute`)
+Execute inline `ControlDefinition` objects with explicit parameters and declared defaults.
 
-Execute the supplied `ControlDefinition` objects inline with explicit invocation values and declared defaults,
-preserving independent results and errors per `control_id` and subject.
+### Input (`PolicyExecuteRequest`, `extra='forbid'`)
 
-### Input (`PolicyExecuteRequest`)
-
-Request: `{controls: list[ControlDefinition], parameters: dict[str, Any], result_filter: "violations" | "all"}`.
-
-| Field | Type | Required / default | Meaning |
+| Field | Type | Required / Default | Meaning |
 | --- | --- | --- | --- |
-| `controls` | array of ControlDefinition | Required | Nonempty list of inline `ControlDefinition` objects with unique `id`s. |
-| `parameters` | object | Optional; `{}` | Map from declared parameter names to explicit JSON invocation values. |
-| `result_filter` | string | Optional; `"violations"` | `"violations"` or `"all"`; always retain errors. |
-
-`PolicyService.execute` accepts structured `ControlDefinition` objects directly (not file paths or globs). Explicit
-values override declared defaults; construction values do not fill missing inputs. No execution prompt or
-natural-language parameter inference is accepted by `PolicyService.execute`.
+| `controls` | `array[ControlDefinition]` | Required | Non-empty list of inline controls with unique `id`s. |
+| `parameters` | `object` | Optional; `{}` | Map of parameter name -> explicit JSON invocation value. |
+| `result_filter` | `string` | Optional; `"violations"` | `"violations"` or `"all"`; errors are always retained. |
 
 ### Output (`PolicyExecuteResult`)
 
-Return `{invocation_id, results, errors}`:
+| Field | Type | Presence | Meaning |
+| --- | --- | --- | --- |
+| `invocation_id` | `string` | Required | Engine-assigned ID of this execution run. |
+| `results` | `array[ControlResult]` | Required | Per-control results (`[]` when Stage E0 pre-flight fails). |
+| `errors` | `array[ErrorDetail]` | Required | Request-level or invocation-level errors (`[]` on clean run). |
+
+#### `ControlResult` Fields
 
 | Field | Type | Presence | Meaning |
 | --- | --- | --- | --- |
-| `invocation_id` | string | Required | Engine-assigned identifier of this execution invocation. |
-| `results` | array of ControlResult | Required | Per-control results; `[]` when request validation fails. |
-| `errors` | array of ErrorDetail | Required | Request or invocation-level diagnostic errors. |
+| `control_id` | `string` | Required | `id` of the executed `ControlDefinition`. |
+| `source` | `object` | Required | `{policy, rule, excerpt}` provenance (always included). |
+| `parameters` | `object` | Required | Effective resolved parameters for this control only (always included). |
+| `evaluation_mode` | `string` | Required | `"deterministic"` or `"llm"`. |
+| `subjects` | `array[SubjectResult]` | Required | `NON_COMPLIANT` only when `"violations"`; all evaluated when `"all"`. |
+| `errors` | `array[ErrorDetail]` | Required | All control and subject errors (retained under both filters). |
+| `outcome` | `string` | Optional | `"ERROR"` or `"NOT_APPLICABLE"`; omitted on error-free non-empty runs. |
 
-Each `ControlResult` in `results` has these fields:
-
-| Field | Type | Presence | Meaning |
-| --- | --- | --- | --- |
-| `control_id` | string | Required | Identifier (`id`) declared by the executed `ControlDefinition`. |
-| `source` | object | Required | Executed definition's provenance: `{policy, rule, excerpt}`. |
-| `parameters` | object | Required | Effective resolved invocation values declared by this control. |
-| `evaluation_mode` | string | Required | Declared criterion mode: `deterministic` or `llm`. |
-| `subjects` | array of SubjectResult | Required | `NON_COMPLIANT` subjects when `result_filter="violations"`; all evaluated subjects (`COMPLIANT`, `NON_COMPLIANT`, `ERROR`) when `result_filter="all"`. |
-| `errors` | array of ErrorDetail | Required | All control/subject errors, retained under either result filter. |
-| `outcome` | string | Optional | `ERROR` or `NOT_APPLICABLE`; absent for error-free nonempty evaluations. |
-
-Every `ControlResult`, including `ERROR` and `NOT_APPLICABLE`, includes `source` and `parameters` under both filters.
-Explicit invocation values override defaults. Exclude construction-only values, unused request keys, and parameters
-belonging only to other controls. Preserve this attribution in the trace too; trace lookup is not required to obtain it.
-Apply existing credential/personal-data redaction at presentation boundaries. Request validation failures return no
-`ControlResult`, and their errors identify affected controls where known. Control runtime errors remain in their
-`ControlResult.errors`; top-level `errors` also permits invocation-level diagnostic failures.
-
-Each `SubjectResult` has these fields:
+#### `SubjectResult` Fields
 
 | Field | Type | Presence | Meaning |
 | --- | --- | --- | --- |
-| `id` | string | Required | Original non-empty, non-whitespace technical identifier of the selected subject. |
-| `descriptive_id` | string | Required | Original non-empty, non-whitespace human-readable identifier of the subject. |
-| `state` | string | Required | `COMPLIANT`, `NON_COMPLIANT`, or `ERROR` for this subject's evaluation. |
+| `id` | `string` | Required | Non-empty, non-whitespace technical subject ID. |
+| `descriptive_id` | `string` | Required | Non-empty, non-whitespace human-readable subject ID. |
+| `state` | `string` | Required | `"COMPLIANT"`, `"NON_COMPLIANT"`, or `"ERROR"`. |
+| `violation_message` | `string` | For `NON_COMPLIANT` | Explanation and remediation from the criterion template. |
 
-### Behavior
+### Execution Stages
 
-1. **Pre-Flight Request Validation (`Stage E0`)**: Validate that `controls` is nonempty, `id` values are unique within
-   the request, shared parameter declarations across supplied controls are compatible (`value_schema` and `default`),
-   and explicit values/defaults satisfy declared `value_schema`s. Missing required values across all controls produce
-   one request-error result (`MISSING_PARAMETER`) with all names, semantics, expected schemas, and affected
-   `control_id`s; zero evidence calls and zero subject evaluations occur. Extra keys in `request.parameters` not
-   declared by any supplied control are allowed and ignored at request level; each control receives only the subset of
-   resolved parameters declared in its own `control.parameters`.
-2. **Per-Control Evidence Acquisition & Completeness (`Stage E1`)**: Keep started `MCPServer` containers alive across
-   controls for the duration of the `execute` invocation and cache valid responses in memory by exact `(server, tool,
-   resolved_arguments)`. For each control, validate `evidence_profile` existence, tool allowlists, `arguments_schema`,
-   and discovered `inputSchema` per control. If any evidence declaration in a control fails validation, connection,
-   conversion, or `complete_when == True`, **fast-fail that control immediately** (`outcome="ERROR"`, skipping its
-   remaining evidence declarations, `selection`, and `criterion`) while independent controls continue.
-3. **Selection & Criterion Evaluation (`Stages E2 & E3`)**: Normalize a single selected JSON object `{...}` to
-   `[{...}]` and require non-empty, non-whitespace `id` and `descriptive_id` (`len(s.strip()) > 0`). Evaluate subjects
-   whose `id` is unique within the control's selection under the declared criterion (`deterministic` CEL with `{subject,
-   parameters}`, or singleton `llm` `SemanticCriterionSignature` with `{{parameters.<name>}}` template substitution in
-   `condition`). Invalid subject objects (`INVALID_SUBJECT`) and subjects sharing a duplicate `id`
-   (`DUPLICATE_SUBJECT_ID`, with `subject_id` and `selection_index`) are not evaluated by `criterion`, are reported in
-   `ControlResult.errors`, and set the control's `outcome` to `"ERROR"`.
-4. **Result Filtering (`Stage E4`)**: Under `result_filter="violations"` (default), `ControlResult.subjects` contains
-   only `NON_COMPLIANT` findings; under `result_filter="all"`, `ControlResult.subjects` contains all evaluated subjects
-   (`COMPLIANT`, `NON_COMPLIANT`, and `ERROR`). `ControlResult.errors` retains all control and subject errors under
-   both filters. No automatic retries, evidence pagination, policy reanalysis, or runtime mode switching.
-5. **Trace Finalization**: If writing the execution trace fails, preserve all calculated `results` and append
-   `ErrorDetail(code="TRACE_WRITE_FAILED", stage="trace", message=...)` to top-level `errors`; return CLI exit `1`.
-   This diagnostic failure alone changes neither subject states nor a control's `outcome`.
+1. **Stage E0 (Whole-Request Pre-Flight)**:
+   - Validate non-empty unique `controls`, compatible shared parameters, all required parameters present
+     (`MISSING_PARAMETER`, Exit `2`), and values matching `value_schema` (`INVALID_PARAMETER_VALUE`, Exit `2`).
+   - Use the same effective required/default rules as `ClientControlQuery`; require an explicit value if any selected
+     control requires the parameter without a default. Reject conflicting schemas or declared defaults even when an
+     explicit value is supplied.
+   - Extra keys in `request.parameters` not declared by any control are ignored at request level; each control receives
+     only its own declared parameters.
+   - Zero MCP or LLM calls occur if Stage E0 fails.
+2. **Stage E1 (Per-Control Evidence & Completeness)**:
+   - Reuse started `MCPServer` containers and exact `(server, tool, resolved_arguments)` evidence cache across controls.
+   - Validate `evidence_profile`, tool allowlist, `arguments_schema`, discovered live `inputSchema`, JSON payload, and
+     `complete_when == True` per control.
+   - Fast-fail only the affected control (`outcome: "ERROR"`) on its first evidence failure; other controls continue.
+3. **Stage E2 & E3 (Selection & Criterion)**:
+   - Normalize single selected object `{...}` to `[{...}]`; require non-whitespace `id` and `descriptive_id`.
+   - Evaluate unique-ID valid subjects via CEL (`deterministic`) or singleton `SemanticCriterionSignature` (`llm` with
+     `{{parameters.<name>}}` template substitution in `condition`).
+   - Render the violation message when a subject is `NON_COMPLIANT`. If rendering fails, mark that subject and
+     the control `ERROR`, record `VIOLATION_MESSAGE_RENDER_ERROR`, and continue with other subjects.
+   - Skip `criterion` for invalid objects (`INVALID_SUBJECT`) and duplicate IDs (`DUPLICATE_SUBJECT_ID` with
+     `subject_id` and `selection_index`), add them to `ControlResult.errors`, and set control `outcome: "ERROR"`.
+4. **Stage E4 & Trace Finalization**:
+   - Apply `result_filter` (`"violations"` vs `"all"`) to `ControlResult.subjects`, keeping all `errors`.
+   - Save trace; if trace write fails, keep `results`, append top-level `TRACE_WRITE_FAILED`, and return Exit `1`.
 
-## Client-Side Filtering, Projection, Parameter Merging, and Guided 2-Step Check Flow
+---
 
-Because `PolicyService` is stateless, the Vatuta client manages local YAML control files under
-`policy.controls_directory` (default `"data/controls"`, overridable via `--controls-dir`) and provides a local
-filtering and projection tool used by both the `vatuta policy check "<prompt>"` pipeline and the direct CLI. Distinct
-filter fields combine with logical **AND**; multiple values within a list field (`ids`, `policy_ids`, `rule_ids`,
-`tags`, `parameter_names`, `files`) combine with logical **OR**. If any encountered YAML control file is malformed or
-fails schema validation, `ClientControlQuery` fails the call immediately with `INVALID_CONTROL_FILE`.
+## 3. Client Query & Parameter Merging — `ClientControlQuery`
+
+Scans the nested folder tree under `policy.controls_directory` (`--controls-dir`), filters YAML controls, projects
+attributes, and merges shared parameters without LLM or MCP calls.
 
 ### Input (`ClientControlQuery`)
 
-| Field | Type | Required / default | Meaning |
+| Field | CLI Flag | Type / Default | Meaning |
 | --- | --- | --- | --- |
-| `ids` | array of strings | Optional; `None` | Match controls whose `id` is in this list (OR). |
-| `policy_ids` | array of strings | Optional; `None` | Match controls whose `source.policy` is in this list (OR). |
-| `rule_ids` | array of strings | Optional; `None` | Match controls whose `source.rule` is in this list (OR). |
-| `tags` | array of strings | Optional; `None` | Match controls whose `tags` contain any of these tags (OR). |
-| `evaluation_mode` | string | Optional; `None` | `"deterministic"` or `"llm"`. |
-| `evidence_server` | string | Optional; `None` | Match controls using this MCP server in `evidence`. |
-| `evidence_tool` | string | Optional; `None` | Match controls using this MCP tool in `evidence`. |
-| `parameter_names` | array of strings | Optional; `None` | Match controls declaring any of these parameter names (OR). |
-| `text_query` | string | Optional; `None` | Case-insensitive substring search in `description` and `source.excerpt`. |
-| `files` | array of strings | Optional; `None` | Specific YAML file paths within `controls_directory` (OR). |
-| `glob` | string | Optional; `None` | Glob pattern expanded safely within `controls_directory`. |
-| `projection` | array of strings | Optional; `["id", "description", "tags", "source", "parameters"]` | Attributes to return per control, or `["full"]` for full `ControlDefinition`. |
-| `include_merged_parameters` | boolean | Optional; `True` | When `True` (default), compute and validate shared `merged_parameters`. |
+| `files` | `--control` | `list[str] \| None` | Specific `.yaml` file paths within `controls_directory` (OR). |
+| `ids` | `--id` | `list[str] \| None` | Exact `control.id` or glob/wildcard patterns on `control.id` (`change-mgmt-*`) (OR). |
+| `glob` | `--glob` | `str \| None` | Glob pattern matching relative paths (`team-a/**/*.yaml`) or bare filenames (`*github*.yaml`). |
+| `policy_ids` | `--policy-id` | `list[str] \| None` | Match `source.policy` (OR). |
+| `rule_ids` | `--rule-id` | `list[str] \| None` | Match `source.rule` (OR). |
+| `tags` | `--tag` | `list[str] \| None` | Match controls containing any listed tag (OR). |
+| `evaluation_mode` | `--mode` | `str \| None` | `"deterministic"` or `"llm"`. |
+| `evidence_server` | `--server` | `str \| None` | Match `evidence[].server`. |
+| `evidence_tool` | `--tool` | `str \| None` | Match `evidence[].tool`. |
+| `parameter_names` | `--parameter` | `list[str] \| None` | Match controls declaring any listed parameter name (OR). |
+| `text_query` | `--text` | `str \| None` | Case-insensitive substring search in `description` and `source.excerpt`. |
+| `projection` | `--projection` | `list[str]` | Default `["id", "description", "tags", "source", "parameters"]`, or `["full"]`. Projected dicts include relative `file` path. |
+| `include_merged_parameters` | `--include-merged-parameters` / `--no-merged-parameters` | `bool = True` | Compute conflict-checked `merged_parameters` across matched controls. |
 
-### Output (`ClientControlQueryResult`)
+### Query Validation Rules & Output (`ClientControlQueryResult`)
 
-| Field | Type | Presence | Meaning |
-| --- | --- | --- | --- |
-| `controls` | array of objects | Required | Matched controls projected to `projection` (or full `ControlDefinition`s). |
-| `merged_parameters` | array of MergedParameter | When `include_merged_parameters=True` | Shared parameter descriptions across matched controls. |
-| `errors` | array of ErrorDetail | Required | File, schema, empty-match, or parameter-conflict errors; `[]` on success. |
+- Combine distinct filter fields with logical **AND** and list values with logical **OR**.
+- Apply `files` and `glob` before opening YAML. If both are supplied, only files matching both are candidates.
+  If neither is supplied, all `.yaml` files under `controls_directory` are candidates.
+- Check containment before opening each candidate. Return `INVALID_CONTROL_FILE` (Exit `2`) if a candidate
+  is malformed or fails schema validation. Apply ID and metadata filters after candidate validation.
+- Allow same `control.id` in different folders on disk, but fail immediately with `DUPLICATE_CONTROL_ID` (Exit `2`) if
+  the active filter/selection matches two files with the same `control.id`.
+- Fail with `NO_CONTROLS_MATCHED` (Exit `2`) when zero controls match.
+- Fail with `PARAMETER_CONFLICT` (Exit `2`) when `include_merged_parameters=True` and two matched controls declare
+  incompatible normalized `value_schema` or different explicitly declared defaults for the same name. A default absent
+  from some declarations is not a conflict; `construction_value` is ignored.
+- Output: `{controls: [...], merged_parameters?: list[MergedParameter], errors: list[ErrorDetail]}`.
+- Each `MergedParameter`: `{name, value_schema, required, default?, controls: [{control_id, description}]}`.
+- Return one entry per parameter name. Set `required: true` and omit `default` if any matched control requires that
+  parameter without declaring a default. Otherwise set `required: false` and include `default` only if an eligible
+  default exists. Preserve an explicitly declared `null` as `default: null`.
 
-Each `MergedParameter` in `merged_parameters` has these fields:
+For example, if control A declares `repository` with default `"app"` and control B requires it without a default,
+the merged entry is:
 
-| Field | Type | Presence | Meaning |
-| --- | --- | --- | --- |
-| `name` | string | Required | Shared parameter name to use as a key in execution's `parameters` object. |
-| `value_schema` | JSON Schema | Required | Self-contained JSON Schema 2020-12 for accepted invocation values. |
-| `required` | boolean | Required | True when there is no declared default, regardless of any construction value. |
-| `default` | JSON value | Optional | Declared invocation default; an explicit null must satisfy the schema. |
-| `controls` | array of objects | Required | `[{control_id, description}]` for each referencing control. |
+```json
+{
+  "name": "repository",
+  "value_schema": {"type": "string"},
+  "required": true,
+  "controls": [
+    {"control_id": "A", "description": "Control A"},
+    {"control_id": "B", "description": "Control B"}
+  ]
+}
+```
 
-### Client CLI Subcommands (`vatuta policy ...`)
+Execution without an explicit `repository` fails with `MISSING_PARAMETER`. If B declares `required: false`, the
+entry has `required: false` and `"default": "app"`. Execution uses that default unless a caller supplies a value.
 
-1. **Direct Execution (`vatuta policy execute`)**:
+---
+
+## 4. Client CLI Commands (`vatuta policy ...`)
+
+The policy group uses the root configuration and sends diagnostics to a stderr console through centralized logging.
+It bypasses eager provider validation. `query` and deterministic `execute` work without LLM credentials.
+`query` and `execute` share the selector flags listed in the [query input](#input-clientcontrolquery).
+`execute` accepts inline JSON or `@file.json` for `--parameters`.
+
+1. **Search Rules & Get Merged Parameters (`vatuta policy query`)**:
 
    ```bash
-   poetry run vatuta policy execute --controls-dir data/controls --policy-id change-management \
-     --tag compliance --parameters @values.json --result-filter all --format json
-   poetry run vatuta policy execute --control data/controls/a.yaml --parameters '{"repository": "acme/api"}'
+   poetry run vatuta policy query --controls-dir data/controls \
+     --glob "payments/**/*.yaml" --tag compliance --format json
+   poetry run vatuta policy query --id "change-management-*" --no-merged-parameters --format json
    ```
 
-   Uses the client filtering utility (`--controls-dir`, `--id`, `--policy-id`, `--rule-id`, `--tag`, `--mode`,
-   `--control`, `--glob`) to load matching `ControlDefinition` objects from disk and passes them inline to
-   `PolicyService.execute`.
-
-2. **Guided 2-Step Check Flow (`vatuta policy check "<prompt>"`)**:
+2. **Create Rules from a Policy (`vatuta policy create`)**:
 
    ```bash
-   poetry run vatuta policy check "Verify change-management compliance for repository acme/api and Jira project PAY"
+   poetry run vatuta policy create --policy-file policy.md --policy-id change-management \
+     --construction-context "Repo acme/api; Jira project PAY." --tag compliance \
+     --trial-attempts 1 --output-dir data/controls/payments --format json
    ```
 
-   Executes a deterministic 2-step LLM flow on the client (separate from `vatuta ask`). Before Step 1, an internal
-   invocation context allocates the execution `invocation_id` and collects stage artifacts. Client orchestration and
-   `execute` share this context without adding public request fields or mutable global state. Direct execution
-   allocates its own context. All stages use `vatuta://traces/policy/execution/{invocation_id}`:
-   - **Step 1 (Iterative Rule Selection — `check_rule_selection`)**: `PolicyCheckRuleSelectionSignature` inspects the
-     prompt and iteratively calls `ClientControlQuery` with `projection=["id", "description", "tags", "source"]` and
-     `include_merged_parameters=False`, bounded by configurable `policy.check_max_filter_queries` (default **3**
-     queries) and output truncation `policy.check_max_output_bytes` (default **4096** bytes, appending `[TRUNCATED]` if
-     exceeded, exiting early when `done=True`), to select the applicable `control_id`s. If `selected_control_ids` is
-     empty (`[]`), fail immediately with `NO_CONTROLS_MATCHED` (exit code `2`) without calling `PolicyService.execute`.
-   - **Deterministic Load**: The client calls `ClientControlQuery(ids=selected_ids, projection=["full"],
-     include_merged_parameters=True)` to load the full `ControlDefinition` objects and compute `merged_parameters`.
-   - **Step 2 (Parameter Deduction — `check_parameter_extraction`)**: When `merged_parameters` is empty (`[]`), skip the
-     Step 2 LLM call completely (`extracted_parameters = {}`). Otherwise, `PolicyCheckParameterExtractionSignature`
-     receives the user's prompt and `merged_parameters` and extracts explicit JSON parameter values present in the
-     prompt (without inventing missing values).
-   - **Step 3 (Stateless Execution)**: The client invokes `PolicyService.execute(controls=selected_controls,
-     parameters=extracted_parameters, result_filter=...)` under the same `invocation_id` and renders the results and
-     errors.
+3. **Execute Selected Rules (`vatuta policy execute`)**:
 
-If a check stage fails before `execute`, return `{invocation_id, results: [], errors}` and attempt to finalize the
-same context's trace without invoking execution. Input/configuration errors use exit `2`; technical model or trace
-failures use exit `1`. A trace failure is appended to existing errors and takes exit-code precedence, preserving any
-already computed results. Creation retains its complete-or-error contract if a required creation trace cannot be saved.
+   ```bash
+   poetry run vatuta policy execute --controls-dir data/controls --glob "payments/**/*.yaml" \
+     --parameters '{"repository": "acme/api", "project": "PAY"}' --result-filter all --format json
+   ```
 
-## Diagnostic Trace Resources
+4. **Guided 2-Step Natural-Language Check (`vatuta policy check "<prompt>"`)**:
 
-The client derives the trace URI from the operation it invoked and the returned `invocation_id`; no additional input
-or output field is needed. Use these resource URI templates:
+   ```bash
+   poetry run vatuta policy check "Check change-management rules for repo acme/api and Jira project PAY"
+   ```
 
-| Operation | Trace resource URI |
+   - Shares one `invocation_id` trace (`vatuta://traces/policy/execution/{invocation_id}`) across all stages:
+     - **Step 1 (`check_rule_selection`)**: The model calls `ClientControlQuery` using the configured query limit
+       (default `3`) and byte limit per response (default `4096`). The client records the complete `(file, id)` pairs
+       shown to the model during this call. An intermediate no-match response can be used to refine the filters.
+     - **Confirmation**: The model returns `done=True` and `selected_controls`, a list of `{file, id}` objects.
+       It may confirm after the last permitted query result. Without confirmation at the limit, return
+       `CONTROL_SELECTION_INCOMPLETE` (Exit `1`). A confirmed empty list returns `NO_CONTROLS_MATCHED` (Exit `2`).
+     - **Deterministic Load**: Confirm that each pair was shown together. Reload only the selected relative paths
+       within the root. Check each current ID against the selection before merging parameters. An unseen pair or
+       changed ID returns `INVALID_CONTROL_SELECTION` (Exit `1`). Two selected files with the same verified ID
+       return `DUPLICATE_CONTROL_ID` (Exit `2`). Pass full controls and `merged_parameters` to the next stage.
+     - **Step 2 (`check_parameter_extraction`)**: Skip if `merged_parameters == []`; else extract explicit values from
+       prompt without guessing missing inputs.
+   - **Step 3**: Run the service execution path with the same internal context allocated before Step 1.
+     The context stays outside `PolicyExecuteRequest`. A selection failure skips parameter extraction and all
+     evidence calls. On a Step 1 or Step 2 failure, return the same `invocation_id`, empty `results`, and the error.
+     Write the trace for the steps completed so far.
+
+---
+
+## 5. Agent Skill Contract (`skills/vatuta-policy/` — `https://agentskills.io/`)
+
+Run the scripts with `poetry run python <script_path>` from the Vatuta project with dependencies installed.
+`query.py` and `execute.py` accept all shared selectors listed in the [query input](#input-clientcontrolquery).
+`execute.py` accepts inline JSON or `@file.json` for `--parameters`.
+
+Implemented in this feature as a tracked skill directory at `skills/vatuta-policy/`:
+
+- **`skills/vatuta-policy/SKILL.md`**:
+  - YAML frontmatter: `name: vatuta-policy`, `description: ...`.
+  - Simple, schematic workflow instructions showing an AI agent how to search rules/parameters, create rules into nested
+    folders, and execute rules.
+- **`skills/vatuta-policy/scripts/` (3 Python Scripts with PEP 723 Metadata)**:
+  - Each script starts with `#!/usr/bin/env python3` and a PEP 723 `# /// script ... # ///` block, and calls the exact
+    same client handler in `src/client/policy.py` as `vatuta policy <query|create|execute> --format json`:
+    1. `skills/vatuta-policy/scripts/query.py`:
+       Accepts `--controls-dir`, `--control`, `--id`, `--glob`, metadata filter flags, `--projection`, and
+       `--include-merged-parameters` / `--no-merged-parameters`.
+    2. `skills/vatuta-policy/scripts/create.py`:
+       Accepts `--policy-file` or `--policy-text`, `--policy-id`, `--construction-context`, `--tag`,
+       `--trial-attempts`, and `--output-dir`.
+    3. `skills/vatuta-policy/scripts/execute.py`:
+       Accepts `--controls-dir`, `--control`, `--id`, `--glob`, metadata filter flags, `--parameters`, and
+       `--result-filter` (`violations` | `all`).
+  - All 3 scripts always emit a single JSON object to `stdout`, write logs/progress to `stderr`, and exit with `0`, `1`,
+    or `2`.
+
+---
+
+## 6. Diagnostic Trace Resources & Error Codes
+
+### Trace URI Templates (`PolicyService.read_trace(uri)`)
+
+| Operation | Trace Resource URI |
 | --- | --- |
 | `PolicyService.create` (`policy_create`) | `vatuta://traces/policy/construction/{invocation_id}` |
 | `PolicyService.execute` (`policy_execute`) | `vatuta://traces/policy/execution/{invocation_id}` |
 
-`PolicyService.read_trace(uri: str)` resolves the URI and returns the sanitized `InvocationTrace` as JSON
-(`application/json`), including stage records, executed definitions, results/errors, measurements, and model
-interactions.
+- Return a resource error for a missing trace, an invalid URI, or a path outside the configured trace directory.
+- Redact credentials and tokens in stored trace payloads, results, and error messages.
 
-## Error Mapping
+### Error Detail Schema & Exit Codes
 
-All `errors` arrays contain `ErrorDetail` objects with these fields:
-
-| Field | Type | Presence | Meaning |
-| --- | --- | --- | --- |
-| `code` | string | Required | Stable machine-readable identifier of the failure. |
-| `stage` | string | Required | Processing stage where the failure was detected. |
-| `message` | string | Required | Actionable human-readable explanation after privacy filtering. |
-| `control_id` | string | When known | Identifier (`id`) of the affected control. |
-| `parameter` | string | When applicable | Parameter with missing, invalid, or conflicting data or declarations. |
-| `subject_id` | string | When known | Original `id` of the subject whose processing failed. |
-| `descriptive_id` | string | When known | Original human-readable identifier of the affected subject. |
-| `selection_index` | integer | When applicable | Zero-based array index of a malformed selected item. |
-
-CLI exit codes: `0` for an operation without technical errors (including violations and NOT_APPLICABLE), `1` for
-creation/runtime/client persistence errors or `TRACE_WRITE_FAILED`, `2` for invalid requests, empty filter selections,
-or configuration errors. A global trace error has `stage="trace"` and does not require `control_id`.
-JSON mode writes exactly one result object to stdout; progress and logging go to stderr.
+- **`ErrorDetail`**: `{code, stage, message, control_id?, parameter?, subject_id?, descriptive_id?, selection_index?}`.
+  Client write failures also include `unsaved_paths: list[str]`.
+- **Key Error Codes**:
+  - Guided selection (Exit `1`, stage `check_rule_selection`): `CONTROL_SELECTION_INCOMPLETE` for unconfirmed
+    selection at the limit, and `INVALID_CONTROL_SELECTION` for a pair not shown or a changed file ID.
+  - Input / Query (Exit `2`): `NO_CONTROLS_MATCHED`, `INVALID_CONTROL_FILE`, `DUPLICATE_CONTROL_ID`,
+    `PARAMETER_CONFLICT`, `MISSING_PARAMETER`, `INVALID_PARAMETER_VALUE`.
+  - Creation / Runtime / Persistence / Trace (Exit `1`): `NO_NORMATIVE_RULES`, `MISSING_CONSTRUCTION_CONTEXT`,
+    `CONTROL_FILE_EXISTS`, `CONTROL_FILE_WRITE_FAILED`, `INVALID_SUBJECT`, `DUPLICATE_SUBJECT_ID`,
+    `VIOLATION_MESSAGE_RENDER_ERROR`, `TRACE_WRITE_FAILED`.
+- **Exit Codes**:
+  - `0`: Operation completed without technical errors (includes `COMPLIANT`, `NON_COMPLIANT`, and `NOT_APPLICABLE`).
+  - `1`: Guided selection, creation, control or subject runtime, client persistence, or trace write failure.
+  - `2`: Invalid request, filter/query failure (`NO_CONTROLS_MATCHED`, `INVALID_CONTROL_FILE`, `DUPLICATE_CONTROL_ID`,
+    `PARAMETER_CONFLICT`, `MISSING_PARAMETER`, `INVALID_PARAMETER_VALUE`), or configuration error.

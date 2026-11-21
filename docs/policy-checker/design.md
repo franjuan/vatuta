@@ -170,11 +170,13 @@ an internal invocation context; the public `PolicyExecuteRequest` has no `invoca
      `include_merged_parameters=False`), bounded by configurable `policy.check_max_filter_queries` (default `3`, `>= 1`)
      and `policy.check_max_output_bytes` (default `4096` bytes, `> 0`, appending `[TRUNCATED]` if exceeded), exiting
      early when `done=True`.
-   - Returns the selected list of `control_id`s. If `selected_control_ids` is empty (`[]`), fails immediately with
-     `NO_CONTROLS_MATCHED` (exit code `2`) without calling `PolicyService.execute`.
+   - Confirms a list of relative file paths and IDs shown together in the search results. If the query budget ends
+     without confirmation, return `CONTROL_SELECTION_INCOMPLETE` (exit `1`). A confirmed empty list returns
+     `NO_CONTROLS_MATCHED` (exit `2`).
 2. **Deterministic Client Load & Parameter Merging**:
-   - The client calls `ClientControlQuery(ids=selected_ids, projection=["full"], include_merged_parameters=True)` to
-     load the full `ControlDefinition` objects and compute the conflict-checked `merged_parameters` deterministically.
+   - Load each selected path within the control directory and verify that its current ID matches.
+   - Return `INVALID_CONTROL_SELECTION` (exit `1`) if a pair was never shown or the file ID changed. If two
+     selected paths share the same ID, return `DUPLICATE_CONTROL_ID` (exit `2`). Merge parameters after verification.
 3. **Step 2 — Parameter Deduction (`PolicyCheckParameterExtractionSignature` / `check_parameter_extraction`)**:
    - If `merged_parameters` is empty (`[]`), the Step 2 LLM call is skipped completely (`extracted_parameters = {}`).
      Otherwise, the signature receives the user's prompt and `merged_parameters` (`name`, `value_schema`, `required`,
@@ -215,6 +217,12 @@ defaults are distinct fields in `ParameterDeclaration`.
 
 - Same names identify the same shared input across selected controls. No per-control invocation override is needed.
 - Construction values support trials; only explicitly declared defaults can fill omitted invocation inputs.
+- A parameter declaration without a default requires a value by default. Set `required: false` to allow omission.
+- If any selected control requires a shared parameter without a default, an explicit value is required for the group.
+  Otherwise an available compatible default applies. Different declared defaults or incompatible schemas conflict;
+  a default missing from some declarations does not.
+- The query returns one merged entry per name. Its `required` field indicates whether an explicit value is required;
+  `default` appears only when usable for the group, with an explicit `null` preserved as `null`.
 - Explicit invocation values override defaults. Without a usable supplied value or declared default, a required
   parameter is missing. Report its meaning and every affected `control_id`.
 - Extra keys in `request.parameters` not declared by any supplied control are permitted (ignored at request level),
@@ -224,11 +232,10 @@ defaults are distinct fields in `ParameterDeclaration`.
   conformance (`INVALID_PARAMETER_VALUE`), reporting all missing required inputs together and executing no controls on
   that failed request. Per-control evidence profile, allowlist, `arguments_schema`, `inputSchema`, and expression
   checks occur per control in `Stages E1–E3`.
-- On the client side, the filtering and projection tool reads YAML files from `policy.controls_directory`
-  (`--controls-dir`), combines distinct filter fields with logical **AND** and multi-value list fields (`ids`,
-  `policy_ids`, `rule_ids`, `tags`, `parameter_names`, `files`) with logical **OR**, fails immediately with
-  `INVALID_CONTROL_FILE` if any encountered YAML control file is malformed, projects requested fields (`projection`),
-  and when `include_merged_parameters=True` (default) returns `merged_parameters` with deterministic conflict checking.
+- The client applies `files` and `glob` under `policy.controls_directory` (`--controls-dir`) before reading YAML.
+  It validates only candidates within that path scope and returns `INVALID_CONTROL_FILE` for invalid candidates.
+  It then applies ID and metadata filters. Distinct fields combine with **AND**, and list values with **OR**.
+  The query projects the requested fields and returns conflict-checked `merged_parameters` by default.
 
 ## Control Representation and Evaluation
 
@@ -295,7 +302,10 @@ Results and traces identify executed definitions, source provenance, resolved in
 revision identifiers. Preserve stage directories, observable stage transitions and decisions, human-readable reusable
 artifacts, durations, errors, and available model usage. Model samples distinguish creation from semantic evaluation and
 retain prompts, returned raw/structured model outputs, available settings, and singleton subject mappings with required
-credential/personal-data redaction. Private model reasoning and generated violation explanations are not required.
+  credential and token redaction. Private model reasoning and generated violation explanations are not required.
+
+Route policy progress and ordinary diagnostics to stderr through the central logging setup. Log stage and status
+information for MCP calls and subprocess errors. Keep free-form tool output out of ordinary logs.
 
 Traces remain in the configured log directory until explicitly deleted. This feature has no retention period setting,
 automatic cleanup, or history-management operation. Interactive progress remains separate from logs and result output.
@@ -310,7 +320,7 @@ bindings, and existing DSPy/provider integration. The [data model](../../specs/0
 and `test_cases`), parameter/default presence, client-side YAML saving and filtering, result envelopes, and errors.
 
 [Design inputs](../../specs/002-policy-checker/design-inputs.md) tracks resolved decisions and implementation
-qualification. [Quickstart](../../specs/002-policy-checker/quickstart.md) defines the minimal 2-scenario local E2E
-acceptance check, while [demo-plan.md](../../specs/002-policy-checker/demo-plan.md) provides the complete standalone
+qualification. [Quickstart](../../specs/002-policy-checker/quickstart.md) covers local CLI and Agent Skill acceptance,
+including scoped search and guided selection. [Demo plan](../../specs/002-policy-checker/demo-plan.md) provides the
 configuration template and temporary GitHub/Jira blog showcase under `pocs/policy_demo/`, outside `src/` and CI.
 Generate tasks with `/speckit-tasks`.

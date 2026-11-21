@@ -579,6 +579,9 @@ Feature development in Vatuta follows Specification-Driven Development (SDD / BD
 
 The current project is a proof of concept. The following areas represent key opportunities for future enhancement:
 
+- **TODO — Personal-Data Protection**: Define and implement detection and redaction of personal data in traces,
+  results, and error messages across the project.
+
 - **Real-Time Ingestion**: Transitioning from scheduled batch processing to event-driven streaming would enable
   proactive, real-time responses to new data.
 

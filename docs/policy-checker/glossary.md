@@ -40,13 +40,10 @@
   and queries them before execution. Before writing, the client checks the entire output set for collisions and rejects
   saving if any target already exists, preserving existing files. There is no overwrite option. `PolicyService` does not
   read or manage this directory.
-- **Client Filtering and Projection Tool**: Client-side function and agent tool (`ClientControlQuery`) that filters
-  local YAML controls in `controls_directory` by metadata/text criteria (`ids`, `policy_ids`, `rule_ids`, `tags`,
-  `evaluation_mode`, `evidence_server`, `evidence_tool`, `parameter_names`, `text_query`, `files`, `glob`, combining
-  distinct filter fields with logical **AND** and multi-value list fields with logical **OR**), fails the call
-  immediately (`INVALID_CONTROL_FILE`) if any encountered YAML control file is malformed, projects requested attributes
-  (`projection`, including `["full"]`), and optionally returns `merged_parameters` (`include_merged_parameters=True` by
-  default).
+- **Client Filtering and Projection Tool**: `ClientControlQuery` applies `files` and `glob` to choose paths under
+  `controls_directory`. Invalid candidate YAML returns `INVALID_CONTROL_FILE`. The tool then filters by ID and
+  metadata, projects the requested attributes, and returns `merged_parameters` by default. Distinct filter fields
+  combine with **AND**, and list values with **OR**.
 - **Manual Inspection**: A user reads the client-saved YAML files in `controls_directory`. This is not a managed
   review, approval, editing, or publication operation.
 
@@ -72,25 +69,21 @@
 - **Construction Value / Trial Parameter Value**: A value derived during construction from the policy or construction
   context for generation or enabled trials, recorded as `construction_value`. It is not a caller-supplied named map or
   an invocation default unless the latter is explicitly declared.
-- **Declared Default**: A value explicitly available when an invocation omits that input. A supplied value takes
-  precedence. Without a supplied value or applicable default, a required parameter is missing.
+- **Declared Default**: A value explicitly declared for an input. It applies when invocation omits the input only if
+  no selected control requires that shared parameter without a default. A supplied value takes precedence. Without a
+  supplied value or applicable default, a required parameter is missing.
 - **Resolved Parameter Value**: The explicit invocation value or applicable declared default used in execution.
   It must satisfy the declaration, configured scope, and permissions.
 - **Merged Parameters (`merged_parameters`)**: Deterministic aggregation of shared parameters across controls matched
   by the client's filtering and projection tool when `include_merged_parameters=True` (default). Reports parameter
-  schemas, required/default status, referencing `control_id`s, and declaration conflicts without model or evidence
-  calls. Replaces the earlier standalone `policy_parameters` MCP tool.
-- **Policy Check Flow (`vatuta policy check "<prompt>"`)**: Guided 2-step client LLM pipeline (separate from the
-  general RAG `vatuta ask` command) associated with a single execution `invocation_id` trace
-  (`vatuta://traces/policy/execution/{invocation_id}`): Step 1 iteratively queries `ClientControlQuery` with lightweight
-  projection (bounded by configurable `policy.check_max_filter_queries`, default `3`, and
-  `policy.check_max_output_bytes`,
-  default `4096` bytes, exiting early when `done=True`) to select applicable `control_id`s (failing with
-  `NO_CONTROLS_MATCHED` if empty), then deterministically loads full controls and `merged_parameters`; Step 2 is skipped
-  when `merged_parameters == []` (`parameters={}`) and otherwise extracts explicit parameter values from the prompt
-  against `merged_parameters` before invoking `PolicyService.execute` under the same internal invocation context and ID.
-  Public execution requests have no `invocation_id` field. A failure before `execute` returns
-  `{invocation_id, results: [], errors}` and persists its check stages in the same execution trace.
+  schemas, effective required/default status, referencing `control_id`s, and declaration conflicts without model or
+  evidence calls. A missing default differs from an explicitly declared `null`. Replaces the earlier standalone
+  `policy_parameters` MCP tool.
+- **Policy Check Flow (`vatuta policy check "<prompt>"`)**: A guided check with one execution `invocation_id`.
+  Step 1 uses `ClientControlQuery` to find and confirm controls by relative path and ID. The client verifies those
+  pairs and loads the selected files. Step 2 extracts explicit parameter values from the prompt and is skipped
+  when `merged_parameters` is empty. A failure before execution returns `{invocation_id, results: [], errors}`
+  and saves the pre-execution trace. See the [operations contract](../../specs/002-policy-checker/contracts/operations.md).
 - **Invocation Validation (`Stage E0`)**: Checks the complete supplied `ControlDefinition` list (nonempty, unique `id`s)
   and declared shared parameters (`value_schema` and required parameter presence) before evidence acquisition. Missing
   mandatory values reject the whole invocation, identifying every missing input, meaning, and affected `control_id`.
